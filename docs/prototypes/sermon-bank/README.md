@@ -1,6 +1,41 @@
-# Sermon Bank — Phase B interaction explorations
+# Sermon Bank — Selected Phase B direction
 
-**Status:** Design exploration; no visual direction approved.
+**Selected on 10 November 2026:** **C — Quiet Workspace, neutral palette**. This is the approved *visual direction*; Phase C interaction refinement, accessibility verification and production implementation are still pending.
+
+## Canonical references
+
+- **[Selected interactive concept — Quiet Workspace / neutral](selected-workspace.html)** — the current design baseline (open the raw HTML in a browser).
+- **[Static desktop reference](selected-workspace.svg)** — fictional sample data, neutral color and layout.
+- [Exploration archive — A/B/C](explorations.html) — historic comparison only; **not** the implementation target.
+- [Canonical design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2) — approvals, constraints and remaining refinements.
+- [Product requirements (draft PR #1)](https://github.com/favorchurch/sermons.favor.church/pull/1).
+
+## Locked visual direction
+
+- **Navigation:** persistent left sidebar on desktop for Archive, History, Places and Settings; on mobile, sidebar becomes a compact, horizontally scrollable header navigation. Other owned/shared workspaces are managed in Settings (not a distracting daily global switcher).
+- **Density:** compact, scannable tabular archive with predictable title, Scripture, preaching, version and action columns. Mobile prioritizes sermon title, date, and view action instead of shrinking the full desktop layout; desktop stays horizontally stable with scoped responsive reductions.
+- **Styling:** internationally neutral identity — warm-neutral/soft sage canvas, white utility surfaces, charcoal text, restrained borders, clear typographic hierarchy, subtle green action color. Do **not** make orange, Favor-specific logos, proprietary Favor typefaces, church-specific language or decorative motifs required by the interface.
+- **Detail interaction:** focused dialog on desktop, bottom-aligned scrollable sheet on mobile. Default view separates versions, read-only source status, and each preaching event. Permit an Editor to record another preaching from that context; prevent duplication of master sermon.
+- **Search:** prominent title/scripture/tag/location/full-text query, church/year filters with clear action, highlighted excerpts only when indexed and authorized; revoked and indexing content never appear as matching excerpts.
+- **Permission UX:** role-aware Owner/Admin/Editor/Viewer controls. Viewer reads; Editor manages archive metadata; Admin also invites Editor/Viewer; Owner alone delegates Admin, transfers ownership, or authorizes permanent deletion. Hide or disable action controls with explanations, and enforce rules server-side later.
+- **Source safety:** modifying app records does not modify original Google Docs or PDF bytes. Version references are explicit and pastor-managed. Indexing and searchable text require explicit owner consent, with revoked access removing derived index content.
+- **Migration:** private provisional review queue; preserve original identifiers, attribution uncertainty, possible duplicates, and historical data; only assign ownership after verification. Never expose actual source archive in the public repository.
+
+## Known Phase C refinements (not yet accepted as implementation-complete)
+
+- Validate dialogs with full keyboard focus trapping, escape/focus return, screen readers, and touch targets.
+- Design intentional loading skeletons, authorization errors, retry/fallback, stale/indexing permission revoked, blank archive and destructive confirmation/recovery.
+- Finalize table sticky/responsive behavior and deep-links, repeat-preaching association to explicit document version, full page Settings flows.
+- Validate the original pilot workflows with authorized reviewers without putting identifiable archival records in public artifacts.
+- Production will require Google OAuth read-only consent, server role checks, persistent data and real search; **this standalone HTML has none**.
+
+---
+
+## Historical exploration notes
+
+## Earlier A/B/C explorations
+
+**Archive status:** C-neutral has now been selected; A and B remain as historical comparisons.
 
 This directory is a **public-safe prototype** using entirely fictional data. It is not a production application and contains no real sermon notes, Google tokens, private pilot records, or imported content.
 
@@ -32,11 +67,11 @@ Use the three top switches to compare:
 - No file upload, Google authorization, real full-text index or backend. These are described, not simulated as successful live operations.
 - The application **must not edit original Google Docs or overwrite original PDFs**, regardless of role.
 - Owner controls Admin delegation and permanent data deletion; Admin can invite Editors/Viewers; Editor maintains records; Viewer reads/searches only.
-- No one has approved one of these visual directions. Capture review feedback in [design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2).
+- C-neutral was approved as the visual direction; capture Phase C refinements in [design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2).
 - Source requirements: [draft PRD #1](https://github.com/favorchurch/sermons.favor.church/pull/1).
 
 ## Before implementing
 
-Choose a concept or a hybrid. Lock responsive behavior, accessible forms, empty/error/indexing/revoked states, permission boundaries, workspace onboarding and non-destructive document version semantics. The interactive concept page is a conversation aid, **not** an executable functional specification.
+The selected concept is C-neutral. Refine responsive behavior, accessible forms, empty/error/indexing/revoked states, permission boundaries, workspace onboarding and non-destructive document version semantics. The interactive concept page is a conversation aid, **not** an executable functional specification.
 
 Public examples may never be replaced with real pilot sermon records in GitHub.
