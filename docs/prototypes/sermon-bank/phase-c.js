@@ -4,6 +4,7 @@
 (function(){
 'use strict';
 const root=document.getElementById('app');
+for(const row of sermons)for(const v of row.versions||[])if(/revok/i.test(v.status))v.status='Revoked';
 const data0=JSON.parse(JSON.stringify(sermons));
 const datasets={
   main:{id:'main',name:"Pastor Morgan's archive",role:'Owner',items:data0,members:[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}]},
@@ -23,6 +24,7 @@ const statuses={Indexed:['Indexed',''],Indexing:['Indexing','warn'],Revoked:['Ac
 const safe=s=>esc(s??'');
 const att=(k,v)=>' '+k+'="'+safe(v)+'"';
 const format=d=>d?formatDate(d):'Not preached yet';
+const formatOccasion=p=>p.precision==='unknown'||!p.date?'Date unknown':p.precision==='year'?p.date.slice(0,4):p.precision==='month'?new Date(p.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'}):formatDate(p.date);
 const totalPlaces=()=>uniq([...customPlaces,...sermons.flatMap(s=>s.preached.map(p=>p.place))]);
 const lastDate=s=>s.preached.length?s.preached.map(p=>p.date).sort().at(-1):null;
 const validIndexed=v=>v.status==='Indexed' && v.ownerConsent!==false;
@@ -111,7 +113,7 @@ render=function(){
 function openDetail(id){
  const s=getSermon(id);if(!s)return;
  let v=s.versions.map((x,i)=>'<div class="version"><b>'+safe(x.name)+' · '+safe(x.kind)+'</b><small>'+tag(x.status)+' · '+(x.kind==='Google Doc'?'Drive source stays unchanged':x.kind==='PDF'?'Original PDF bytes immutable':'External reference only')+'</small>'+(x.kind==='Google Doc'&&x.status==='Awaiting owner consent'&&allowedOwner()?'<button class="btn" data-c="consent-version" data-id="'+s.id+'" data-index="'+i+'">Review indexing consent</button>':'')+'</div>').join('');
- let h=s.preached.slice().sort((a,b)=>b.date.localeCompare(a.date)).map((p,i)=>'<div class="version"><b>'+format(p.date)+' — '+safe(p.place)+'</b><small>'+safe(p.occasion||'Preaching')+' · Version: '+safe(p.version||'Not specified')+'</small></div>').join('');
+ let h=s.preached.slice().sort((a,b)=>b.date.localeCompare(a.date)).map((p,i)=>'<div class="version"><b>'+formatOccasion(p)+' — '+safe(p.place)+'</b><small>'+safe(p.occasion||'Preaching')+' · Version: '+safe(p.version||'Not specified')+'</small></div>').join('');
  dialog(safe(s.title),safe(s.scripture||'No Scripture')+' · '+safe(s.series||'No series'),
  '<div class="crumbs"><button data-c="close">← Back to library</button><span>/</span><span>One sermon, many preachings</span></div>'+help+
  '<div class="detail-split"><section class="detail-panel"><h3>Document versions</h3>'+(v||'<div class="placeholder">No versions yet. You can add a named reference without changing an original file.</div>')+
@@ -122,6 +124,7 @@ function openDetail(id){
  (s.archived?'<button class="btn" data-c="restore" data-id="'+s.id+'" '+(!allowedEdit()?'disabled':'')+'>Restore</button>':'<button class="btn" data-c="archive" data-id="'+s.id+'" '+(!allowedEdit()?'disabled':'')+'>Archive</button>')+
  '<button class="btn danger" data-c="delete" data-id="'+s.id+'" '+(!allowedOwner()?'disabled title="Owner only"':'')+'>Permanently delete</button></div>');
 }
+timeline=function(items){const rows=items.flatMap(s=>s.preached.filter(p=>(!placeFilter||p.place===placeFilter)&&(!yearFilter||p.date?.startsWith(yearFilter))).map(p=>({...p,title:s.title,id:s.id}))).sort((a,b)=>(b.date||'').localeCompare(a.date||''));return '<div class="timeline">'+rows.map(p=>'<article class="timeitem"><div class="time-date">'+formatOccasion(p)+'</div><div><h3>'+safe(p.title)+'</h3><p>'+safe(p.place)+' · '+safe(p.occasion||'Preaching')+' · '+safe(p.version||'Not specified')+'</p></div><button class="btn" data-c="detail" data-id="'+p.id+'">Details</button></article>').join('')+'</div>'};
 function addForm(s){
  const edit=Boolean(s);
  const fields='<form id="phase-form" data-submit="'+(edit?'edit':'add')+'" class="fields">'+(edit?'<input type="hidden" name="id" value="'+s.id+'">':'')+
@@ -151,9 +154,9 @@ function preachingForm(id){
  const versionOptions=preferred.versions.map(v=>'<option value="'+safe(v.name)+'">'+safe(v.name)+'</option>').join('');
  dialog('Log another preaching','This adds a dated occasion to the selected sermon, never a duplicate master record.',
  '<form id="phase-form" data-submit="preaching" class="fields"><label>Existing sermon<select name="sermon" id="phase-sermon">'+choices+'</select></label>'+
- '<div class="form-row"><label>Date preached<input type="date" name="date" required value="2026-11-08"><small>Unknown date? Save a precision note for later verification.</small></label>'+
+ '<div class="form-row"><label>Date preached (if known)<input type="date" name="date" value="2026-11-08"><small>Choose a date precision; no fake exact day is implied.</small></label>'+
  '<label>Church / place<input name="place" list="phase-known-places" required placeholder="Search or enter venue"><datalist id="phase-known-places">'+totalPlaces().map(x=>'<option value="'+safe(x)+'"></option>').join('')+'</datalist></label></div>'+
- input('occasion','Event / occasion','Sunday Gathering','maxlength="160"')+
+ '<label>Date precision<select name="precision"><option value="exact">Exact day</option><option value="month">Month only</option><option value="year">Year only</option><option value="unknown">Unknown</option></select></label>'+input('occasion','Event / occasion','Sunday Gathering','maxlength="160"')+
  '<label>Version used<select id="phase-version" name="version"><option value="">Not specified</option>'+versionOptions+'</select><small>Versions must be explicitly created; no document snapshots are generated.</small></label>'+
  input('note','Date or occasion note','','maxlength="200"')+
  formActions('Log preaching')+'</form>');
@@ -262,11 +265,11 @@ function formSave(form){
  }
  if(type==='preaching'){
    const s=getSermon(d.get('sermon'));if(!s)return;
-   const place=String(d.get('place')||'').trim(),date=String(d.get('date')||'');
-   if(!place||!date)return;
+   const place=String(d.get('place')||'').trim(),date=String(d.get('date')||''),precision=String(d.get('precision')||'exact');
+   if(!place||precision==='exact'&&!date){announce('Venue and an exact date are required; choose Unknown precision if the original date is unavailable.');return}
    const version=String(d.get('version')||'');
    if(version&&!s.versions.some(v=>v.name===version)){announce('Choose a version belonging to this sermon.');return}
-   s.preached.push({date,place,occasion:String(d.get('occasion')||'').trim(),version:version||'Not specified',note:String(d.get('note')||'')});
+   s.preached.push({date:precision==='unknown'?'':date,precision,place,occasion:String(d.get('occasion')||'').trim(),version:version||'Not specified',note:String(d.get('note')||'')});
    closeDialog();render();announce('Preaching recorded against the existing sermon.');return;
  }
  if(type==='place'){
