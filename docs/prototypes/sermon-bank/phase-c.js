@@ -7,7 +7,7 @@ const root=document.getElementById('app');
 for(const row of sermons)for(const v of row.versions||[])if(/revok/i.test(v.status))v.status='Revoked';
 const data0=JSON.parse(JSON.stringify(sermons));
 const datasets={
-  main:{id:'main',name:"Pastor Morgan's archive",role:'Owner',items:data0,members:[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}]},
+  main:{id:'main',name:"Pastor Morgan's archive",role:'Owner',items:sermons,members:[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}]},
   guest:{id:'guest',name:'Riverlight Study Archive',role:'Editor',items:[],members:[{name:'Pastor Riley',role:'Owner'},{name:'Pastor Morgan',role:'Editor'}]}
 };
 let active='main',state='ready',showArchived=false,lastFocused=null,dialogOpen=false,aliases={},importRows=[
