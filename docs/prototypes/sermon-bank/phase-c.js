@@ -10,6 +10,7 @@ const datasets={
   main:{id:'main',name:"Pastor Morgan's archive",role:'Owner',items:sermons,members:[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}]},
   guest:{id:'guest',name:'Riverlight Study Archive',role:'Editor',items:[],members:[{name:'Pastor Riley',role:'Owner'},{name:'Pastor Morgan',role:'Editor'}]}
 };
+let sortBy='recent';
 let active='main',state='ready',showArchived=false,lastFocused=null,dialogOpen=false,aliases={},importRows=[
 {id:'M-001',title:'Untitled historical record',flags:['Unverified owner','Missing title'],source:'Original archive item 001',status:'Needs review',note:''},
 {id:'M-002',title:'Possible sermon duplicate',flags:['Duplicate candidate'],source:'Original archive item 002',status:'Needs review',note:''},
@@ -60,13 +61,13 @@ hero=function(){
 };
 filtered=function(){
  const q=keyword.toLowerCase().trim();const group=sermons.filter(s=>Boolean(s.archived)===showArchived);
- return group.filter(s=>(!placeFilter||s.preached.some(p=>p.place===placeFilter))&&(!yearFilter||s.preached.some(p=>p.date.startsWith(yearFilter)))&&(!q||[s.title,s.scripture,s.series,(s.tags||[]).join(' '),s.description||'',...s.preached.flatMap(p=>[p.place,p.occasion,p.date,...(aliases[p.place]||[])].filter(Boolean)),...(s.versions.some(validIndexed)?[s.excerpt||'']:[])].join(' ').toLowerCase().includes(q)));
+ return group.filter(s=>(!placeFilter||s.preached.some(p=>p.place===placeFilter))&&(!yearFilter||s.preached.some(p=>p.date.startsWith(yearFilter)))&&(!q||[s.title,s.scripture,s.series,(s.tags||[]).join(' '),s.description||'',...s.preached.flatMap(p=>[p.place,p.occasion,p.date,...(aliases[p.place]||[])].filter(Boolean)),...(s.versions.some(validIndexed)?[s.excerpt||'']:[])].join(' ').toLowerCase().includes(q))).sort((a,b)=>sortBy==='title'?a.title.localeCompare(b.title):sortBy==='most'?b.preached.length-a.preached.length:(lastDate(b)||'').localeCompare(lastDate(a)||''));
 };
 hitSnippet=function(s){
  const q=keyword.toLowerCase().trim(),body=s.excerpt||'';
  if(!q||!s.versions.some(validIndexed))return '';
  const at=body.toLowerCase().indexOf(q);if(at<0)return '';
- return '<div class="section-note" style="margin:8px 0 0"><b>Indexed note match:</b> '+safe(body.slice(0,at))+'<mark>'+safe(body.slice(at,at+q.length))+'</mark>'+safe(body.slice(at+q.length))+'</div>';
+ return '<div class="section-note" style="margin:8px 0 0"><b>Indexed note match · '+safe(s.versions.find(validIndexed)?.name||'source')+':</b> '+safe(body.slice(0,at))+'<mark>'+safe(body.slice(at,at+q.length))+'</mark>'+safe(body.slice(at+q.length))+'</div>';
 };
 stats=function(items){const events=items.flatMap(s=>s.preached.filter(p=>(!placeFilter||p.place===placeFilter)&&(!yearFilter||p.date?.startsWith(yearFilter))));const venues=uniq(events.map(e=>e.place)).length;return '<div class="stats"><div class="stat"><b>'+items.length+'</b><span>Unique sermons</span></div><div class="stat"><b>'+events.length+'</b><span>Preaching occasions</span></div><div class="stat"><b>'+venues+'</b><span>Churches / places</span></div></div>'};
 workspace=function(items){
@@ -104,11 +105,13 @@ renderContentOnly=function(){
  '</div>'+
  '<div class="subcard"><h3>Private import review</h3><p>Source originals remain unchanged; attribution, duplicates and uncertain locations require a documented review.</p><button class="btn" data-c="migration">Review '+importRows.filter(x=>x.status!=='Verified').length+' records</button></div>'+
  '<div class="subcard"><h3>Export and deletion</h3><p>Only Owners can initiate a complete archive export or permanently erase data. Editors can archive and restore.</p><button class="btn" data-c="export" '+(!allowedOwner()?'disabled':'')+'>Preview owner export</button></div>'+
+ '<div class="subcard"><h3>First-time experience</h3><p>A pastor creates a private archive; an invited assistant enters the shared workspace without needing a separate personal archive.</p><button class="btn" data-c="onboarding">Preview onboarding</button></div>'+ 
  '<div class="subcard"><h3>Session and safety</h3><p>Prototype state is temporary and local. Permission checks must also be enforced at the server, index, download and membership boundaries.</p><button class="btn" data-c="reset">Reset all sample data</button></div>'+
  '</div>';
 };
 render=function(){
  nav();hero();renderFilters();$('searcharea').insertAdjacentHTML('beforeend',demoBar());
+ if(page==='Archive'||page==='History')$('searcharea').insertAdjacentHTML('beforeend','<div style="display:flex;justify-content:flex-end;margin:9px 0"><label style="font-size:11px;color:#617168">Sort by <select id="sort-choice" aria-label="Sort archive" style="margin-left:6px;background:white;border:1px solid #ccd8cd;border-radius:7px;padding:8px;font-size:12px"><option value="recent" '+(sortBy==='recent'?'selected':'')+'>Last preached</option><option value="title" '+(sortBy==='title'?'selected':'')+'>Title A–Z</option><option value="most" '+(sortBy==='most'?'selected':'')+'>Most preachings</option></select></label></div>');
  $('searcharea').style.display=(page==='Archive'||page==='History')?'block':'block';
  renderContentOnly();
 };
@@ -221,6 +224,12 @@ function confirmation(kind,ids){
  formActions(irreversible?'Permanently delete':'Confirm')+'</form>';
  dialog(titles[kind],safe(s?.title||current().members[ids?.index]?.name||'Workspace record'),'<div class="alert '+(irreversible?'error':'')+'">'+impact+'</div>'+form);
 }
+function onboarding(){dialog('Welcome to Sermon Bank','Independent sign-in using Google or a verified email link. This offline prototype does not authenticate users.',
+ '<div class="panel-grid"><div class="subcard"><h3>I have my own sermons</h3><p>Create one private workspace and invite an assistant when ready.</p><button class="btn primary" data-c="start-own">Preview pastor setup</button></div><div class="subcard"><h3>A pastor invited me</h3><p>Accept an invitation into their private archive, without being forced to create your own.</p><button class="btn" data-c="start-invite">Preview assistant entry</button></div></div><div class="alert">Google sign-in and email verification will be connected in production; no actual accounts or emails are created here.</div>');}
+function onboardOwner(){dialog('Set up your private archive','Verified sign-in is required before real workspace creation.',
+ '<form class="fields" data-submit="onboard-owner">'+input('name','Workspace display name','Pastor Morgan’s archive','required')+'<label class="check-row"><input name="terms" type="checkbox" required><span>I acknowledge that shared indexed-text access and privacy terms will be explained before importing sermon documents.</span></label>'+formActions('Preview setup')+'</form>');}
+function onboardAssistant(){dialog('Accept a workspace invitation','After verifying your account, enter the pastor’s shared workspace directly.',
+ '<div class="version"><b>Riverlight Study Archive</b><small>Fictional invitation · Editor access · Your own sermon workspace is optional</small></div><button class="btn primary" data-c="enter-invite">Preview this shared workspace</button><button class="btn" data-c="close">Cancel</button>');}
 function permissions(){return '<div class="alert"><b>Read-only source guarantee:</b> Google Docs must be authorized file-by-file for read access only. Owners explicitly consent to indexing readable text for members. Original PDFs are never overwritten; replacement notes are a new version.</div><div class="versions">'+sermons.flatMap(s=>s.versions.filter(v=>v.kind==='Google Doc').map(v=>'<div class="version"><b>'+safe(s.title)+' · '+safe(v.name)+'</b><small>'+tag(v.status)+(v.status==='Revoked'?' — no searchable snippet':'')+'</small></div>')).join('')+'</div>'}
 openDialog=function(kind,id){
  if(kind==='detail'){openDetail(Number(id));return}
@@ -237,7 +246,7 @@ function reset(){
  const seed=JSON.parse(JSON.stringify(data0)).map(s=>({...s,archived:false}));
  datasets.main.items=seed;datasets.main.members=[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}];
  datasets.guest.items=[];datasets.guest.members=[{name:'Pastor Riley',role:'Owner'},{name:'Pastor Morgan',role:'Editor'}];
- active='main';sermons=datasets.main.items;role='Owner';state='ready';showArchived=false;keyword='';placeFilter='';yearFilter='';customPlaces=[];aliases={};page='Archive';$('role').value='Owner';closeDialog();render();announce('Sample state reset. No real data was changed.');
+ active='main';sermons=datasets.main.items;role='Owner';state='ready';showArchived=false;sortBy='recent';keyword='';placeFilter='';yearFilter='';customPlaces=[];aliases={};page='Archive';$('role').value='Owner';closeDialog();render();announce('Sample state reset. No real data was changed.');
 }
 function formSave(form){
  const d=new FormData(form),type=form.dataset.submit;
@@ -310,6 +319,7 @@ function formSave(form){
    else row.status='Needs review';
    closeDialog();render();announce(row.status==='Verified'?'Fictional ownership verification recorded.':'Review note saved in demo.');return;
  }
+ if(type==='onboard-owner'){closeDialog();announce('Setup preview complete. No account or workspace was created.');return}
  if(type==='confirm'){
    const kind=String(d.get('kind')),s=getSermon(d.get('sermon')),i=Number(d.get('index'));
    if(kind==='revoke'){
@@ -351,6 +361,10 @@ document.addEventListener('click',event=>{
    const w=datasets[btn.dataset.workspace];if(!w)return;
    active=w.id;sermons=w.items;role=w.role;$('role').value=role;keyword='';yearFilter='';placeFilter='';showArchived=false;state='ready';page='Archive';render();announce('Switched to a distinct fictional workspace. No cross-workspace data shown.');return
  }
+ if(a==='onboarding'){onboarding();return}
+ if(a==='start-own'){onboardOwner();return}
+ if(a==='start-invite'){onboardAssistant();return}
+ if(a==='enter-invite'){active='guest';sermons=datasets.guest.items;role='Editor';$('role').value=role;keyword='';placeFilter='';yearFilter='';page='Archive';state='ready';closeDialog();render();announce('Assistant workspace preview; no account or invite was actually verified.');return}
  if(a==='export'){
    if(!allowedOwner())return;
    dialog('Owner export (preview)','No files are generated by this demo; the real app will export sermon metadata and original stored uploads only.',
@@ -363,6 +377,7 @@ document.addEventListener('submit',e=>{
 });
 document.addEventListener('change',e=>{
  if(e.target.id==='phase-state'){state=e.target.value;renderContentOnly();return}
+ if(e.target.id==='sort-choice'){sortBy=e.target.value;renderContentOnly();return}
  if(e.target.id==='phase-sermon'){
    const s=getSermon(e.target.value),sel=$('phase-version');
    if(sel)sel.innerHTML='<option value="">Not specified</option>'+(s?.versions||[]).map(v=>'<option value="'+safe(v.name)+'">'+safe(v.name)+'</option>').join('');
