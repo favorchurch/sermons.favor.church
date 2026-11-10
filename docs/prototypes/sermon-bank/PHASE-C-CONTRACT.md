@@ -24,6 +24,15 @@ Tablet: narrow sidebar, trim secondary columns first; preserve title, date and a
 
 ## 3. Complete user journeys
 
+### 0 — Onboarding and assistant invite acceptance
+
+- Introduce independent Google sign-in or a verified email link; never require a Rock RMS account.
+- Distinguish **I have my own sermons** (one private default workspace) from **A pastor invited me** (verify invitation, enter only that pastor's shared workspace, personal workspace optional).
+- Keep extra owned/shared workspaces in Settings after the first-use decision. Verify target workspace, invitation expiry and role server-side before exposing any records or index snippets.
+- The offline prototype simulates entry choices only. It neither sends verification email nor creates actual identity, invitation, or workspace records.
+
+
+
 ### A — Create a sermon and edit metadata
 
 - Add Sermon → title required; Scripture, series, tags and description optional. A title alone creates a draft with zero preachings and zero versions.
@@ -44,13 +53,13 @@ Tablet: narrow sidebar, trim secondary columns first; preserve title, date and a
 
 - Select existing sermon, local preached date, church/venue, occasion, optional note, and an explicit named version from the same sermon (or Not Specified).
 - The record is associated with the existing master; never copy the sermon.
-- Show chronological history and totals; preserve uncertain date precision in the real importer instead of inventing an exact date.
+- Show chronological history and totals; preserve uncertain date precision (exact day, month only, year only, unknown) in the form and importer instead of inventing an exact date.
 - Restrict version selection to versions of the chosen sermon.
 
 ### D — Search and return
 
 - Search title, Scripture, series, tags, event, church, year and private authorized note content. Show highlighted snippets and their version only when indexed and permitted.
-- Provide church/year filters and Clear Filters. Archived records are separate from active.
+- Provide church/year filters, sorting by latest preaching/title/number of preachings, and Clear Filters. Archived records are separate from active.
 - Opening a sermon then returning keeps the current workspace, filters, search and scroll position; future implementation should serialize navigable query state into the URL.
 - Distinguish an empty workspace from no search matches and from network error, denied access and revoked source.
 
