@@ -6,7 +6,7 @@
 
 **Current source of truth:** [Phase C interaction and state contract](PHASE-C-CONTRACT.md). The user selected C-neutral, and its responsive interactions, permission rules, document-source safeguards, and error states have now been refined into a connected offline demonstration.
 
-**Open [Phase C interactive prototype](phase-c.html).** Save the entire directory to the same folder (HTML + phase-c.css + phase-c.js + selected-workspace.html) or download each file and keep them together. Phase C relies on local CSS/JS siblings, not a backend. No real OAuth, uploads, emails, database or live document reads happen.
+**Open [Phase C standalone interactive prototype](phase-c-standalone.html).** Download the raw HTML and open it locally in a modern browser; no installation or companion files are required. For engineering inspection, the modular [HTML](phase-c.html), [CSS](phase-c.css), and [JS](phase-c.js) sources are also preserved. No real OAuth, uploads, emails, database or live document reads happen.
 
 The current mock tests create/edit draft, add document version, consent, repeat preaching with a version, search and highlights, place rename/merge, archive/restore and Owner delete confirmation, membership role gates and revocation, workspace switching, private migration review, and loading/empty/error/denied/revoked states. All changes reset on refresh. **These are simulations; do not treat them as production security or persistence.**
 
