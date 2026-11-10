@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 const root=document.getElementById('app');
-const data0=sermons;
+const data0=JSON.parse(JSON.stringify(sermons));
 const datasets={
   main:{id:'main',name:"Pastor Morgan's archive",role:'Owner',items:data0,members:[{name:'Pastor Morgan',role:'Owner'},{name:'Jo Reyes',role:'Editor'},{name:'Sam Quinn',role:'Viewer'}]},
   guest:{id:'guest',name:'Riverlight Study Archive',role:'Editor',items:[],members:[{name:'Pastor Riley',role:'Owner'},{name:'Pastor Morgan',role:'Editor'}]}
@@ -321,7 +321,7 @@ function formSave(form){
  }
 }
 document.addEventListener('click',event=>{
- const btn=event.target.closest('[data-c]');if(!btn||!root.contains(btn))return;
+ const btn=event.target.closest('[data-c]');if(!btn||!(root.contains(btn)||$('overlay').contains(btn)))return;
  const a=btn.dataset.c,id=btn.dataset.id,index=Number(btn.dataset.index);
  if(a==='close'){closeDialog();return}
  if(a==='clear'){resetFilters();return}
@@ -353,7 +353,7 @@ document.addEventListener('click',event=>{
  }
 });
 document.addEventListener('submit',e=>{
- const form=e.target.closest('form[data-submit]');if(!form||!root.contains(form))return;
+ const form=e.target.closest('form[data-submit]');if(!form||!(root.contains(form)||$('overlay').contains(form)))return;
  e.preventDefault();formSave(form);
 });
 document.addEventListener('change',e=>{
