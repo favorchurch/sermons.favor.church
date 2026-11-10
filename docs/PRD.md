@@ -1,6 +1,6 @@
 # Sermon Bank — Product Requirements Document
 
-**Status:** Requirements baseline v1.0 — 10 executive decisions locked; Phase B prototyping next  
+**Status:** Requirements baseline v1.0 — 10 executive decisions locked; Phase B visual direction approved (C-neutral); Phase C UX contract drafted for review  
 **Prepared:** 10 November 2026  
 **Product URL (proposed):** `https://sermons.favor.church`  
 **Source repository:** `favorchurch/sermons.favor.church` (public; requirements developed on a non-default branch)  
@@ -154,11 +154,11 @@ All resources must be workspace-scoped at the data access boundary, including co
 
 ## 9. UX direction and prototype design brief
 
-Design for a focused writing and retrieval tool, not church administration software. Warm neutral backgrounds, excellent editorial typography, clear whitespace, purposeful accent color, calm icons, readable mobile cards and strong keyboard accessibility. Keep the existing v14 strengths — search-forward home, summary stats, card browsing and chronological preaching history — but replace the modal-heavy edit path with obvious task-oriented flows.
+**Selected design direction (10 November 2026): C — Neutral Quiet Workspace.** Design a focused, internationally reusable writing/retrieval workspace, not church administration software. Use a persistent desktop sidebar, searchable compact archive rows, a separate chronological History page, focused sermon/version/preaching dialogs, and compact mobile navigation and sheets. The visual language is neutral sage/gray with white work surfaces, clear ink typography, restrained lines, and gentle editorial warmth. Do not require Favor Church marks, proprietary Favor fonts, orange-heavy brand treatment, or church-specific interface vocabulary. Preserve the initial prototype's search and preaching-history strengths, but do not default to card-first or timeline-first browsing. The refined Phase C interaction contract is tracked in [design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2) and [draft design PR #3](https://github.com/favorchurch/sermons.favor.church/pull/3).
 
 **Prototype surfaces:** (1) public landing/login; (2) new-user onboarding; (3) archive/search; (4) sermon detail, versions and document viewer; (5) add/edit sermon drawer/wizard; (6) add preaching instance; (7) history timeline; (8) places editor/rename; (9) Owner/Admin/Editor/Viewer members, invitations and delegated permissions; (10) workspace switcher/settings; (11) read-only Google attach, owner consent, file integrity and permission status; (12) empty, indexing, error, access denied states.
 
-**Test scripts:** pastor adds a sermon in under a minute; assistant records a repeat preaching; rename "Favor Church Manila" and see changes everywhere; viewer searches a phrase in a PDF but cannot edit; owner revokes editor and search disappears; delegated Admin invites a Viewer but cannot grant Admin or remove Owner; changes to a sermon do not modify the linked Google Doc or uploaded original PDF; pastor switches between two shared workspaces without cross-leakage. Test desktop and small phone layouts.
+**Test scripts:** pastor adds a sermon in under a minute; assistant records a repeat preaching; rename a fictional church and see changes everywhere; viewer searches a phrase in a PDF but cannot edit; owner revokes editor and search disappears; delegated Admin invites a Viewer but cannot grant Admin or remove Owner; changes to a sermon do not modify the linked Google Doc or uploaded original PDF; pastor switches between two shared workspaces without cross-leakage. Test desktop and small phone layouts.
 
 ## 10. Architecture options
 
