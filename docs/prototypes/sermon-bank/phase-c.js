@@ -27,6 +27,7 @@ const format=d=>d?formatDate(d):'Not preached yet';
 const formatOccasion=p=>p.precision==='unknown'||!p.date?'Date unknown':p.precision==='year'?p.date.slice(0,4):p.precision==='month'?new Date(p.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'}):formatDate(p.date);
 const totalPlaces=()=>uniq([...customPlaces,...sermons.flatMap(s=>s.preached.map(p=>p.place))]);
 const lastDate=s=>s.preached.length?s.preached.map(p=>p.date).sort().at(-1):null;
+const lastDateLabel=s=>!s.preached.length?'Not preached yet':lastDate(s)?format(lastDate(s)):'Date unknown';
 const validIndexed=v=>v.status==='Indexed' && v.ownerConsent!==false;
 const getSermon=id=>sermons.find(s=>s.id===Number(id));
 const idxStatus=s=>{if(s.versions.some(validIndexed))return 'Indexed';if(s.versions.some(v=>v.status==='Revoked'))return 'Revoked';if(s.versions.some(v=>v.status==='Awaiting owner consent'))return 'Awaiting owner consent';if(s.versions.some(v=>v.status==='Pending upload'))return 'Pending upload';if(s.versions.some(v=>['Indexing','Awaiting indexing'].includes(v.status)))return 'Indexing';return 'Link only'};
@@ -67,9 +68,10 @@ hitSnippet=function(s){
  const at=body.toLowerCase().indexOf(q);if(at<0)return '';
  return '<div class="section-note" style="margin:8px 0 0"><b>Indexed note match:</b> '+safe(body.slice(0,at))+'<mark>'+safe(body.slice(at,at+q.length))+'</mark>'+safe(body.slice(at+q.length))+'</div>';
 };
+stats=function(items){const events=items.flatMap(s=>s.preached.filter(p=>(!placeFilter||p.place===placeFilter)&&(!yearFilter||p.date?.startsWith(yearFilter))));const venues=uniq(events.map(e=>e.place)).length;return '<div class="stats"><div class="stat"><b>'+items.length+'</b><span>Unique sermons</span></div><div class="stat"><b>'+events.length+'</b><span>Preaching occasions</span></div><div class="stat"><b>'+venues+'</b><span>Churches / places</span></div></div>'};
 workspace=function(items){
  return '<div class="workspace-list" role="table" aria-label="Sermons"><div class="workspace-row column-headers" role="row"><span role="columnheader">Sermon</span><span role="columnheader">Last preached</span><span role="columnheader" class="hide-mobile">Index state</span><span role="columnheader" class="hide-sm">Versions</span><span role="columnheader">Action</span></div>'+
- items.map(s=>'<article class="workspace-row" role="row"><div role="cell"><h3><button data-c="detail" data-id="'+s.id+'">'+safe(s.title)+'</button></h3><span class="meta">'+safe(s.scripture||'No Scripture')+' · '+safe(s.series||'No series')+'</span>'+hitSnippet(s)+'</div><span class="meta" role="cell">'+format(lastDate(s))+'</span><span role="cell" class="hide-mobile">'+tag(idxStatus(s))+'</span><span class="meta hide-sm" role="cell">'+s.versions.length+'</span><span role="cell"><button class="btn" data-c="detail" data-id="'+s.id+'">Open</button></span></article>').join('')+'</div>';
+ items.map(s=>'<article class="workspace-row" role="row"><div role="cell"><h3><button data-c="detail" data-id="'+s.id+'">'+safe(s.title)+'</button></h3><span class="meta">'+safe(s.scripture||'No Scripture')+' · '+safe(s.series||'No series')+'</span>'+hitSnippet(s)+'</div><span class="meta" role="cell">'+lastDateLabel(s)+'</span><span role="cell" class="hide-mobile">'+tag(idxStatus(s))+'</span><span class="meta hide-sm" role="cell">'+s.versions.length+'</span><span role="cell"><button class="btn" data-c="detail" data-id="'+s.id+'">Open</button></span></article>').join('')+'</div>';
 };
 renderContentOnly=function(){
  const el=$('content');
