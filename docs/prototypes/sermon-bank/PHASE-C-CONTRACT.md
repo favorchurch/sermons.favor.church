@@ -3,7 +3,7 @@
 **Date:** 10 November 2026  
 **Selected direction:** C — Neutral Quiet Workspace (user-approved)  
 **Requirements:** [PRD v1.0, draft PR #1](https://github.com/favorchurch/sermons.favor.church/pull/1)  
-**Canonical interactive prototype:** [phase-c.html](phase-c.html) (uses [phase-c.css](phase-c.css) and [phase-c.js](phase-c.js))  
+**Canonical offline preview:** [phase-c-standalone.html](phase-c-standalone.html) (one file). Modular source: [phase-c.html](phase-c.html), [phase-c.css](phase-c.css), [phase-c.js](phase-c.js)  
 **Reference screenshot:** [selected-workspace.svg](selected-workspace.svg) · **Design issue:** [#2](https://github.com/favorchurch/sermons.favor.church/issues/2)
 
 ## 1. Product invariants
