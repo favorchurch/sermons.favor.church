@@ -53,7 +53,7 @@ hero=function(){
  const headings={Archive:'Your sermon library',History:'Every preaching, remembered',Places:'Your places',Settings:'Workspace settings'};
  const descriptions={Archive:'Find a message, manage its versions, and record every occasion it was preached.',History:'One sermon master. Multiple dates, venues and document versions.',Places:'Make one change to a location and reflect it in every linked preaching.',Settings:'Manage workspace access, Google indexing consent, private imports and exports.'};
  const primary=page==='Archive'?'<button class="btn primary" data-c="add" '+(!allowedEdit()?'disabled title="Viewers have read-only access"':'')+'>+ Add sermon</button>':page==='History'?'<button class="btn primary" data-c="preaching" '+(!allowedEdit()?'disabled':'')+'>+ Log preaching</button>':page==='Places'?'<button class="btn primary" data-c="place" '+(!allowedEdit()?'disabled':'')+'>+ Add place</button>':'';
- $('hero').innerHTML='<div><div class="eyebrow">'+safe(current().name)+' / private workspace</div><h1>'+headings[page]+'</h1><p>'+descriptions[page]+'</p></div>'+primary;
+ $('hero').innerHTML='<div><div class="eyebrow">'+(state==='denied'?'Private workspace':safe(current().name))+' / private workspace</div><h1>'+(state==='denied'?'Access unavailable':headings[page])+'</h1><p>'+(state==='denied'?'This workspace is not available to your account.':descriptions[page])+'</p></div>'+(state==='denied'?'':primary);
 };
 filtered=function(){
  const q=keyword.toLowerCase().trim();const group=sermons.filter(s=>Boolean(s.archived)===showArchived);
