@@ -67,6 +67,7 @@ const initial=[
  {id:5,title:'Hope in Every Season',scripture:'Ecclesiastes 3:1–11',series:'Seasons',tags:['Hope','Patience'],versions:[{name:'Draft',kind:'PDF upload',status:'Indexing'}],preached:[{date:'2026-10-25',place:'Harbor Community Church',occasion:'Youth Night',version:'Draft'}]},
  {id:6,title:'The Good Work',scripture:'Philippians 1:6',series:'New Paths',tags:['Purpose','Growth'],versions:[{name:'Original',kind:'External link',status:'Link only'}],preached:[{date:'2026-06-21',place:'Riverlight Church',occasion:'Sunday Gathering',version:'Original'}]}
 ];
+let customPlaces=[];
 let sermons=JSON.parse(JSON.stringify(initial)), mode='editorial', page='Archive', keyword='',placeFilter='',yearFilter='',selectedId=1,role='Owner',dialogType='',dialogId=null;
 const pages=['Archive','History','Places','Settings'];
 function esc(s){return String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))}
@@ -89,7 +90,7 @@ function hero(){
 function renderFilters(){
 const el=document.getElementById('searcharea');
 if(page!=='Archive'&&page!=='History'){el.innerHTML='';return}
-const places=uniq(sermons.flatMap(s=>s.preached.map(p=>p.place))), years=uniq(sermons.flatMap(s=>s.preached.map(p=>p.date.slice(0,4)))).reverse();
+const places=uniq([...customPlaces,...sermons.flatMap(s=>s.preached.map(p=>p.place))]), years=uniq(sermons.flatMap(s=>s.preached.map(p=>p.date.slice(0,4)))).reverse();
 el.innerHTML='<div class="searchpanel"><label for="q">Find a sermon or preaching occasion</label><input id="q" placeholder="Search title, Scripture, series, tags, or church…" value="'+esc(keyword)+'" oninput="keyword=this.value;renderContentOnly()" aria-label="Search sermons"><div class="controls"><select aria-label="Filter church" onchange="placeFilter=this.value;renderContentOnly()"><option value="">All churches</option>'+places.map(p=>'<option '+(p===placeFilter?'selected':'')+' value="'+esc(p)+'">'+esc(p)+'</option>').join('')+'</select><select aria-label="Filter year" onchange="yearFilter=this.value;renderContentOnly()"><option value="">All years</option>'+years.map(y=>'<option '+(y===yearFilter?'selected':'')+'>'+y+'</option>').join('')+'</select><button class="btn" onclick="resetFilters()">Clear filters</button></div></div>'
 }
 function resetFilters(){keyword='';placeFilter='';yearFilter='';render()}
@@ -102,14 +103,14 @@ const occ=items.reduce((a,s)=>a+s.preached.length,0), venues=uniq(items.flatMap(
 return '<div class="stats"><div class="stat"><b>'+items.length+'</b><span>Unique sermons</span></div><div class="stat"><b>'+occ+'</b><span>Preaching occasions</span></div><div class="stat"><b>'+venues+'</b><span>Churches / places</span></div></div>'
 }
 function editorial(items){
-return '<div class="collection">'+items.map(s=>'<article class="sermon-card"><h3>'+esc(s.title)+'</h3><div class="meta">'+esc(s.scripture)+' · '+s.preached.length+' preaching'+(s.preached.length>1?'s':'')+' · '+s.versions.length+' version'+(s.versions.length>1?'s':'')+'</div><div class="pills"><span class="pill">'+esc(s.series)+'</span>'+s.tags.map(t=>'<span class="pill">'+esc(t)+'</span>').join('')+'</div><div class="cardfoot"><span class="meta">Last preached '+formatDate(s.preached[s.preached.length-1].date)+'</span><button class="btn" onclick="openDialog(\'detail\','+s.id+')">Open →</button></div></article>').join('')+'</div>'
+return '<div class="collection">'+items.map(s=>'<article class="sermon-card"><h3>'+esc(s.title)+'</h3><div class="meta">'+esc(s.scripture)+' · '+s.preached.length+' preaching'+(s.preached.length>1?'s':'')+' · '+s.versions.length+' version'+(s.versions.length>1?'s':'')+'</div><div class="pills"><span class="pill">'+esc(s.series)+'</span>'+s.tags.map(t=>'<span class="pill">'+esc(t)+'</span>').join('')+'</div><div class="cardfoot"><span class="meta">Last preached '+(s.preached.length?formatDate(s.preached[s.preached.length-1].date):'Not yet preached')+'</span><button class="btn" onclick="openDialog(\'detail\','+s.id+')">Open →</button></div></article>').join('')+'</div>'
 }
 function timeline(items){
 const rows=items.flatMap(s=>s.preached.filter(p=>(!placeFilter||p.place===placeFilter)&&(!yearFilter||p.date.startsWith(yearFilter))).map(p=>({...p,title:s.title,id:s.id}))).sort((a,b)=>b.date.localeCompare(a.date));
 return '<div class="timeline">'+rows.map(p=>'<article class="timeitem"><div class="time-date">'+formatDate(p.date)+'</div><div><h3>'+esc(p.title)+'</h3><p>'+esc(p.place)+' · '+esc(p.occasion)+' · '+esc(p.version)+'</p></div><button class="btn" onclick="openDialog(\'detail\','+p.id+')">Details →</button></article>').join('')+'</div>'
 }
 function workspace(items){
-return '<div class="workspace-list"><div class="workspace-row column-headers"><span>Sermon</span><span>Last preached</span><span class="hide-mobile">Documents</span><span class="hide-sm">Occurrences</span><span>Action</span></div>'+items.map(s=>'<article class="workspace-row"><div><h3>'+esc(s.title)+'</h3><span class="meta">'+esc(s.scripture)+' · '+esc(s.series)+'</span></div><span class="meta">'+formatDate(s.preached[s.preached.length-1].date)+'</span><span class="meta hide-mobile">'+s.versions.length+' version(s)</span><span class="meta hide-sm">'+s.preached.length+'</span><button class="btn" onclick="openDialog(\'detail\','+s.id+')">View →</button></article>').join('')+'</div>'
+return '<div class="workspace-list"><div class="workspace-row column-headers"><span>Sermon</span><span>Last preached</span><span class="hide-mobile">Documents</span><span class="hide-sm">Occurrences</span><span>Action</span></div>'+items.map(s=>'<article class="workspace-row"><div><h3>'+esc(s.title)+'</h3><span class="meta">'+esc(s.scripture)+' · '+esc(s.series)+'</span></div><span class="meta">'+(s.preached.length?formatDate(s.preached[s.preached.length-1].date):'Not yet preached')+'</span><span class="meta hide-mobile">'+s.versions.length+' version(s)</span><span class="meta hide-sm">'+s.preached.length+'</span><button class="btn" onclick="openDialog(\'detail\','+s.id+')">View →</button></article>').join('')+'</div>'
 }
 function renderContentOnly(){
 const el=document.getElementById('content');
@@ -119,7 +120,7 @@ if(page==='Archive'||page==='History'){
  return;
 }
 if(page==='Places'){
- const places=uniq(sermons.flatMap(s=>s.preached.map(p=>p.place)));
+ const places=uniq([...customPlaces,...sermons.flatMap(s=>s.preached.map(p=>p.place))]);
  el.innerHTML='<div class="sectiontop"><h2>Your places</h2><p>Changes update every preaching record</p></div><div class="subpage">'+places.map(p=>'<div class="subcard"><div><b>'+esc(p)+'</b><p>'+sermons.flatMap(s=>s.preached).filter(x=>x.place===p).length+' preaching occasions · Changes affect the archive and filters.</p></div><button class="btn" onclick="openDialog(\'place\',\''+esc(p).replace(/'/g,'&#39;')+'\')" '+(!canEdit()?'disabled':'')+'>Rename</button></div>').join('')+'</div>';
  return;
 }
@@ -156,7 +157,7 @@ return '<form id="frepeat" class="fields" onsubmit="saveRepeat(event)"><label>Se
 }
 function saveNew(e){e.preventDefault();const d=new FormData(e.target);let title=String(d.get('title')).trim();if(!title)return;const id=Math.max(...sermons.map(s=>s.id))+1;sermons.unshift({id,title,scripture:String(d.get('scripture')||''),series:String(d.get('series')||''),tags:String(d.get('tags')||'').split(',').map(s=>s.trim()).filter(Boolean),versions:[],preached:[]});closeDialog();render();toast('Demo sermon created; it has no source document and no preaching yet.')}
 function saveRepeat(e){e.preventDefault();const d=new FormData(e.target),s=sermons.find(s=>s.id===Number(d.get('sid')));if(!s)return;s.preached.push({date:String(d.get('date')),place:String(d.get('place')).trim(),occasion:String(d.get('occasion')),version:s.versions[0]?.name||'Not selected'});closeDialog();render();toast('Demo preaching added to existing sermon (not duplicated).')}
-function savePlace(e){e.preventDefault();const d=new FormData(e.target),old=String(d.get('oldplace')||''),v=String(d.get('place')||'').trim();if(!v)return;if(old)for(const s of sermons)for(const p of s.preached)if(p.place===old)p.place=v;else{}closeDialog();render();toast(old?'Place renamed in all preaching records.':'New places appear when used in a preaching.')}
+function savePlace(e){e.preventDefault();const d=new FormData(e.target),old=String(d.get('oldplace')||''),v=String(d.get('place')||'').trim();if(!v)return;if(old){for(const s of sermons)for(const p of s.preached)if(p.place===old)p.place=v;customPlaces=customPlaces.map(p=>p===old?v:p)}else if(!customPlaces.includes(v))customPlaces.push(v);closeDialog();render();toast(old?'Place renamed in all preaching records.':'Place added to the workspace directory.')}
 function saveInvite(e){e.preventDefault();const d=new FormData(e.target);closeDialog();toast('Demo only: '+String(d.get('access'))+' invitation previewed for '+String(d.get('email'))+'. No email sent.')}
 document.getElementById('role').addEventListener('change',e=>{role=e.target.value;render();toast('Previewing '+role+' permissions.')});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDialog()});
