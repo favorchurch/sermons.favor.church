@@ -2,6 +2,16 @@
 
 **Selected on 10 November 2026:** **C — Quiet Workspace, neutral palette**. This is the approved *visual direction*; Phase C interaction refinement, accessibility verification and production implementation are still pending.
 
+## Phase C refined experience — 10 November 2026
+
+**Current source of truth:** [Phase C interaction and state contract](PHASE-C-CONTRACT.md). The user selected C-neutral, and its responsive interactions, permission rules, document-source safeguards, and error states have now been refined into a connected offline demonstration.
+
+**Open [Phase C interactive prototype](phase-c.html).** Save the entire directory to the same folder (HTML + phase-c.css + phase-c.js + selected-workspace.html) or download each file and keep them together. Phase C relies on local CSS/JS siblings, not a backend. No real OAuth, uploads, emails, database or live document reads happen.
+
+The current mock tests create/edit draft, add document version, consent, repeat preaching with a version, search and highlights, place rename/merge, archive/restore and Owner delete confirmation, membership role gates and revocation, workspace switching, private migration review, and loading/empty/error/denied/revoked states. All changes reset on refresh. **These are simulations; do not treat them as production security or persistence.**
+
+**Original concept C reference:** selected-workspace.html. It preserves the earlier layout and is superseded for implementation interactions by phase-c.html. A/B alternatives remain historical only.
+
 ## Canonical references
 
 - **[Selected interactive concept — Quiet Workspace / neutral](selected-workspace.html)** — the current design baseline (open the raw HTML in a browser).
