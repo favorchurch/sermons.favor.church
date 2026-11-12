@@ -25,6 +25,7 @@
       "name": "sermon-bank-staging",
       "account_id": "4ef8a3ebba5a69f902bf2f935457fcd2",
       "workers_dev": false,
+      "preview_urls": false,
       "vars": { "PUBLIC_ORIGIN": "https://sermons-preview.favor.church" },
       "routes": [{ "pattern": "sermons-preview.favor.church", "custom_domain": true }],
       "d1_databases": [{
