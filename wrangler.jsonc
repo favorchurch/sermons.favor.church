@@ -19,5 +19,24 @@
   "r2_buckets": [{
     "binding": "PRIVATE_PDFS",
     "bucket_name": "sermon-bank-private-pdfs-not-provisioned"
-  }]
+  }],
+  "env": {
+    "staging": {
+      "name": "sermon-bank-staging",
+      "account_id": "4ef8a3ebba5a69f902bf2f935457fcd2",
+      "workers_dev": false,
+      "vars": { "PUBLIC_ORIGIN": "https://sermons-preview.favor.church" },
+      "routes": [{ "pattern": "sermons-preview.favor.church", "custom_domain": true }],
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "sermon-bank-staging",
+        "database_id": "9d4aee46-9a54-4699-a8d0-f212e29b8f98",
+        "migrations_dir": "migrations"
+      }],
+      "r2_buckets": [{
+        "binding": "PRIVATE_PDFS",
+        "bucket_name": "sermon-bank-private-pdfs-staging"
+      }]
+    }
+  }
 }

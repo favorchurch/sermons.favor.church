@@ -46,3 +46,16 @@ python3 scripts/check_auth_schema.py
 ```
 
 Real CI should run `npm run check` after `npm install`; it invokes Wrangler type generation (needs network-installed packages) and TypeScript, followed by the same tests. A temporary local `worker-configuration.d.ts` used to test compilation without npm network access must **not** be committed.
+
+## Staging (sermons-preview.favor.church)
+
+Staging holds synthetic data only. Never import real sermon, member or PDF data into it.
+
+- Cloudflare account: FAVOR CHURCH. Wrangler env: `staging` (Worker `sermon-bank-staging`, `workers_dev: false`).
+- Origin: `https://sermons-preview.favor.church` (custom domain route, `PUBLIC_ORIGIN` var).
+- D1: `sermon-bank-staging` (binding `DB`). R2: `sermon-bank-private-pdfs-staging` (binding `PRIVATE_PDFS`), private: r2.dev access disabled, no custom domains.
+- Secrets are set by the operator, never committed. Names only: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS`. Set each with `pnpm exec wrangler secret put <NAME> --env staging`.
+- Migrate: `pnpm exec wrangler d1 migrations apply DB --env staging --remote`, then verify with `pnpm exec wrangler d1 migrations list DB --env staging --remote`.
+- Deploy: `pnpm exec wrangler deploy --env staging`. Check `/health`.
+- Never pass `--remote` without `--env staging`. The top-level env holds placeholders only.
+- Without the secrets set, `/health` works but sign-in does not.
