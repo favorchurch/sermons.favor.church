@@ -1,0 +1,48 @@
+# Greenfield auth and private-workspace boundary (pilot)
+
+**Scope:** source-code implementation for the initial Google-only pilot sign-in and server-side role/tenant gate. This is not a deployed authentication service and does not yet send invitations by email or deliver the final Living Library UI. Email magic-link sign-in and full self-registration are separate later work.
+
+## Endpoints (JSON and no-store unless indicated)
+
+- `GET /health`: public minimal health response.
+- `GET /signin`: minimal pilot sign-in page; no content or account list.
+- `GET /auth/google/start`: one-time state and nonce in D1, PKCE S256, HTTP-only callback cookie, redirect to Google's server-side authorization-code flow.
+- `GET /auth/google/callback`: one-time state consumption, server code exchange, Google JWKS RSA verification, issuer/audience/nonce/time/email-verified checks, allowlist/invitation eligibility, hashed session token and host-only cookie. Never stores OAuth access tokens or authorization codes.
+- `POST /auth/logout`: requires exact Origin header, revokes server session and clears cookie.
+- `GET /api/me`: authenticated account identity only.
+- `GET /api/workspaces`: accepted, active memberships only.
+- `POST /api/workspaces`: only a verified Google user whose email is privately included in `PILOT_OWNER_EMAILS` can create the first personal workspace (Owner role).
+- `GET /api/workspaces/:uuid/sermons`: session plus active membership check; an explicit `workspace_id = ?` parameter is **also** included in the SQL query. Returns only metadata, not note contents or links.
+- `POST /api/workspaces/:uuid/invitations`: Owner may invite Admin/Editor/Viewer; Admin may invite Editor/Viewer; Editor/Viewer cannot invite. Rate capped at 20 invitations per workspace in 24 hours. Returns a one-time opaque token to the authorized inviter only; **no email is sent**.
+- `POST /api/invitations/accept`: requires signed-in account whose Google verified email exactly matches the invitation; one-time, 7-day expiration; membership transaction and audit.
+- `PATCH /api/workspaces/:uuid/members/:accountUuid`: Owner may manage Admin/Editor/Viewer; Admin may manage Editor/Viewer only. Nobody can demote/revoke Owner using this endpoint. Membership revocation removes access on the next request; other workspaces remain unaffected.
+
+All JSON mutation routes require `Origin` equal to the configured `PUBLIC_ORIGIN`, and no cross-origin CORS is enabled. Non-members receive `404` on workspace paths, never the requested workspace's data. Session tokens, invite tokens, OAuth codes, verified ID tokens, and raw note text must not be logged. All source records remain private and unassigned pending migration review.
+
+## Real Google OAuth / Cloudflare configuration (must be performed before deployment)
+
+1. Create a Google Cloud **Web application OAuth client** under a trusted project with appropriate consent-screen settings. Register the exact `https://<pilot-host>/auth/google/callback` redirect URI; no wildcard. Use only `openid email profile` for **sign-in**. This does not grant Google Drive document access. Docs linking/indexing will be a distinct read-only authorization and Owner consent flow.
+2. Configure `PUBLIC_ORIGIN=https://<pilot-host>` with no trailing path or port mismatch; set secret/runtime bindings `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS` through private Cloudflare secrets/vars. **Do not commit credentials or real pilot emails**. Provision real isolated D1 and private R2 resources, replacing the all-zero D1 placeholder and unprovisioned R2 bucket name in Wrangler config. The Worker intentionally refuses non-HTTPS origin and unconfigured environments.
+3. Install Wrangler and run `npm run types` (generates authoritative `worker-configuration.d.ts` from config) before `npm run typecheck`; never hand-maintain a shadow `Env` declaration. Apply both D1 migrations to a local or controlled preview database only, before testing login. Protect `/auth/*` with application rate limits / Cloudflare rules before exposing a public login endpoint.
+4. Bootstrap the pilot using a verified pastor email privately listed in `PILOT_OWNER_EMAILS`, then `POST /api/workspaces` with a confirmed workspace name. Once created, invite only verified assistants. **Do not** add a generic staff-access bypass or automatically assign imported records to the signed-in account.
+5. Add a secure invitation-delivery UI and verified email magic-link sign-in (with an email provider), plus owner consent/revocation of Google Doc index before opening registrations globally. In this PR, invitations are token-based API-only and Owner/Admin must deliver the token securely outside the app if testing; no mailer exists yet.
+
+## Privacy, permission and rollback gates
+
+- Backend D1 query tenancy is in place for the initial metadata endpoints, **not** yet for future document search, PDF downloads or import operations. These features must not be exposed until each is scoped and tested.
+- Owner sign-in eligibility uses a private allowlist; a pending invitation permits sign-in but grants **zero** workspace access until accepted.
+- Server-side sessions are valid for 7 days and hashed in D1. Revoking membership immediately prevents subsequent access; session logout invalidates the server-side token. Google subject is canonical; changing the verified email or linking a different subject to an already linked account requires manual review.
+- Source originals (Google Docs / PDFs) are never modified. Public repository holds synthetic fixtures only; no private spreadsheet rows or client secrets.
+- D1 `batch` transactional writes must be reviewed against live binding behavior. The local integration tests use Node's experimental SQLite with a thin D1 API shim, **not** a deployed Worker.
+- After configuring staging, run negative tests with two workspaces, non-member direct URL access, guest/Editor/Admin matrix, invitation token replays, logout, OAuth state replays, and session/role revocations. Review DB backups and emergency audit/recovery before pilot.
+- Block merge/release if GitHub Actions startup failure persists, Google settings are missing, consent/source revocation tests are absent, or credential/billing/preview status is unclear. No production deployment is authorized by this implementation slice.
+
+## Local validation (without Google/Cloudflare accounts)
+
+```sh
+node --experimental-strip-types --experimental-sqlite --test tests/*.test.mjs
+python3 scripts/check_schema.py
+python3 scripts/check_auth_schema.py
+```
+
+Real CI should run `npm run check` after `npm install`; it invokes Wrangler type generation (needs network-installed packages) and TypeScript, followed by the same tests. A temporary local `worker-configuration.d.ts` used to test compilation without npm network access must **not** be committed.
