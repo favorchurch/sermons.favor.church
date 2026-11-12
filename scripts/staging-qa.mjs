@@ -74,8 +74,9 @@ async function http(method, path, { cookie, headers = {}, body, origin = ORIGIN,
   const text = stdout.slice(split + 4);
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
-  if (status < 200 || status >= 300) observedErrors.push({ status, headers: head.join('\n'), text });
-  return { status, headers: resHeaders, setCookies, text, data };
+  const entry = { status, headers: head.join('\n'), text, expected: [] };
+  if (status < 200 || status >= 300) observedErrors.push(entry);
+  return { status, headers: resHeaders, setCookies, text, data, entry };
 }
 const asSession = tok => `${SESSION_COOKIE}=${tok}`;
 
@@ -200,7 +201,11 @@ async function qaOAuth() {
     const p = url?.searchParams;
     const flow = start.setCookies.find(c => c.startsWith(FLOW_COOKIE + '='));
     const flowValue = flow?.split(';')[0].slice(FLOW_COOKIE.length + 1);
-    if (flowValue) secrets.add(flowValue);
+    if (flowValue) {
+      secrets.add(flowValue);
+      // The OAuth state legitimately appears in this one response (Location + flow Set-Cookie). Exempt it here only.
+      start.entry.expected.push(flowValue);
+    }
     const ok = start.status === 303 && url?.origin === 'https://accounts.google.com' && url.pathname === '/o/oauth2/v2/auth' &&
       p.get('response_type') === 'code' && p.get('redirect_uri') === ORIGIN + '/auth/google/callback' &&
       p.get('code_challenge_method') === 'S256' && /^[A-Za-z0-9_-]{43}$/.test(p.get('code_challenge') || '') &&
@@ -426,8 +431,9 @@ async function qaLogout() {
 }
 
 // ---------- leak scan ----------
-function scanForLeaks(label, text) {
+function scanForLeaks(label, text, expected = []) {
   const hits = [];
+  for (const s of expected) text = text.split(s).join('');
   for (const s of secrets) if (text.includes(s)) hits.push('a known token/email');
   if (/(\bat\s+\S+\s+\(|\.(ts|js|mjs):\d+|\bstack\b|D1_ERROR|SQLITE_|Error:)/i.test(text)) hits.push('stack/error internals');
   if (/\b(client_secret|GOOGLE_CLIENT_SECRET|PILOT_OWNER_EMAILS)\b/.test(text)) hits.push('secret name');
@@ -485,7 +491,7 @@ async function main() {
   if (failure) check('SETUP', 'Seed and run', false, redact(failure.message));
 
   // Error response and `wrangler tail` leak checks.
-  const leaks = observedErrors.map((e, i) => scanForLeaks(`response #${i + 1} (${e.status})`, e.headers + '\n' + e.text)).filter(Boolean);
+  const leaks = observedErrors.map((e, i) => scanForLeaks(`response #${i + 1} (${e.status})`, e.headers + '\n' + e.text, e.expected)).filter(Boolean);
   check('LEAK-1', `No tokens, secrets, emails or stack traces in ${observedErrors.length} error responses`, leaks.length === 0, leaks.slice(0, 3).join('; '));
   const tailText = tail.lines.join('');
   if (tail.failure() || !/"(outcome|event|logs)"/.test(tailText)) {
