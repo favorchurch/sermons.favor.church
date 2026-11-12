@@ -8,13 +8,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
-      SERVER_URL: ${{ github.server_url }}
-      COMMIT_SHA: ${{ github.sha }}
     steps:
       - name: Fetch source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
