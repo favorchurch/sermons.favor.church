@@ -2,8 +2,8 @@
 // Strictly offline, conservative private-source migration preflight.
 // Default stdout has aggregate counts only; never echo a sermon title or raw row.
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { readFile, writeFile, realpath } from 'node:fs/promises';
+import { resolve, sep, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 function sha256(input) {
@@ -138,11 +138,13 @@ export async function main(argv) {
   const result = await preflightFile(args.input, args.tab || 'All History');
   if (args['private-output']) {
     const path = resolve(args['private-output']);
-    const repo = resolve(process.cwd());
-    if (path === repo || path.startsWith(repo + sep)) {
-      throw new Error('Refusing to write private review data inside the working repository');
+    const repo = resolve(fileURLToPath(new URL('..', import.meta.url)));
+    const parent = await realpath(dirname(path));
+    const canonicalOutput = resolve(parent, basename(path));
+    if (canonicalOutput === repo || canonicalOutput.startsWith(repo + sep)) {
+      throw new Error('Refusing to write private review data inside the public source repository');
     }
-    await writeFile(path, JSON.stringify(result, null, 2), { mode: 0o600, flag: 'wx' });
+    await writeFile(canonicalOutput, JSON.stringify(result, null, 2), { mode: 0o600, flag: 'wx' });
   }
   // Avoid source titles, venues, row contents, and source paths in logs.
   console.log(JSON.stringify({ ...result.summary, source_sha256: result.summary.source_sha256.slice(0, 12) }, null, 2));
