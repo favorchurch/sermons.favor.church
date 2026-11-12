@@ -1,0 +1,22 @@
+{
+  "name": "sermon-bank",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Open-source, private-by-default sermon archive for churches",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "migrate:local": "wrangler d1 migrations apply sermon-bank-local --local",
+    "test:unit": "node --test tests/*.test.mjs",
+    "test:schema": "python3 scripts/check_schema.py",
+    "test": "npm run test:unit && npm run test:schema",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "wrangler": "4.47.0"
+  },
+  "engines": { "node": ">=22" }
+}
