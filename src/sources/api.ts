@@ -85,15 +85,29 @@ export async function uploadPdf(c: Ctx): Promise<Response> {
   return reply(201, { version_id: version.id, indexing_state: 'awaiting_consent', bytes: bytes.byteLength, characters: text.length });
 }
 
+/** Delete the held extracted text. Reports whether it worked instead of throwing: callers decide what a leftover copy means. */
+async function dropHeldText(c: Ctx, versionId: string): Promise<boolean> {
+  try {
+    await c.env.PRIVATE_PDFS.delete(textKey(c.workspaceId, versionId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * POST /sermons/:sermonId/versions/:versionId/consent  (Owner only)
  * Records the Owner's consent, then indexes the held text. The consent update only applies
- * to a version still `awaiting_consent`, so it cannot revive a revoked version.
+ * to a version still `awaiting_consent`, so it cannot revive a revoked version. On an
+ * already `indexed` version it only retries deleting the held copy (cleanup), never reindexing.
  */
 export async function consentToIndex(c: Ctx): Promise<Response> {
   if (!can(c.role, 'consent')) return forbidden();
   const version = await loadVersion(c);
   if (!version) return notFound();
+  if (version.indexing_state === 'indexed') {
+    return reply(200, { version_id: version.id, indexing_state: 'indexed', held_text_deleted: await dropHeldText(c, version.id) });
+  }
   if (version.indexing_state !== 'awaiting_consent') throw new Conflict('not_awaiting_consent');
 
   const granted = await c.env.DB.batch([
@@ -104,10 +118,10 @@ export async function consentToIndex(c: Ctx): Promise<Response> {
   ]);
   if (changes(granted[0]) !== 1) throw new Conflict('not_awaiting_consent');
 
-  const bucket = c.env.PRIVATE_PDFS, key = textKey(c.workspaceId, version.id);
+  const bucket = c.env.PRIVATE_PDFS;
   let result: { characters: number; references: number };
   try {
-    const stored = await bucket.get(key);
+    const stored = await bucket.get(textKey(c.workspaceId, version.id));
     if (!stored) throw new IndexRefused('empty_text');
     result = await indexVersion(c.env.DB, { workspaceId: c.workspaceId, versionId: version.id, text: await stored.text(), actorId: c.actorId });
   } catch (error) {
@@ -119,12 +133,12 @@ export async function consentToIndex(c: Ctx): Promise<Response> {
     // Consent lost to a concurrent revoke changes nothing here; otherwise the text is unusable.
     if (error.code !== 'consent_required') {
       await transition(c, version.id, 'queued', 'failed', 'version.index_failed', { reason: error.code }, true);
-      await bucket.delete(key);
+      await dropHeldText(c, version.id);
     }
     throw new Conflict(error.code);
   }
-  await bucket.delete(key);
-  return reply(200, { version_id: version.id, indexing_state: 'indexed', ...result });
+  // Indexing is done; a failed delete is not an error. The response says so and the Owner can repeat consent to retry.
+  return reply(200, { version_id: version.id, indexing_state: 'indexed', ...result, held_text_deleted: await dropHeldText(c, version.id) });
 }
 
 /**
