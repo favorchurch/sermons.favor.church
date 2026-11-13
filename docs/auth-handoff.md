@@ -36,7 +36,7 @@ All JSON mutation routes require `Origin` equal to the configured `PUBLIC_ORIGIN
 - Source originals (Google Docs / PDFs) are never modified. Public repository holds synthetic fixtures only; no private spreadsheet rows or client secrets.
 - D1 `batch` transactional writes must be reviewed against live binding behavior. The local integration tests use Node's experimental SQLite with a thin D1 API shim, **not** a deployed Worker.
 - After configuring staging, run negative tests with two workspaces, non-member direct URL access, guest/Editor/Admin matrix, invitation token replays, logout, OAuth state replays, and session/role revocations. Review DB backups and emergency audit/recovery before pilot.
-- Block merge/release if GitHub Actions startup failure persists, Google settings are missing, consent/source revocation tests are absent, or credential/billing/preview status is unclear. No production deployment is authorized by this implementation slice.
+- Block merge/release if GitHub Actions startup failure persists, Google settings are missing, consent/source revocation tests are absent, or credential/billing/preview status is unclear. Production was first deployed on 2026-11-14 with Rico's approval (see Production below).
 
 ## Local validation (without Google/Cloudflare accounts)
 
@@ -67,3 +67,15 @@ Staging holds synthetic data only. Never import real sermon, member or PDF data 
   - A member of another workspace, and the Owner under another workspace's URL, get 404 on every route. Other-workspace ids inside the Owner's own workspace are 404 or refused.
   - Search and Find in notes never return another workspace's text, titles or ids, ignore search operators and never return revoked text.
 - Seed: `pnpm seed:staging --workspace "<name or id>" [--dry-run]` adds fictional demo sermons, versions, events, places and indexed note text to that one staging workspace. It needs the same migrations, refuses any other environment, is idempotent and creates no accounts, sessions or PDF objects. See [pilot.md](pilot.md#demo-data).
+
+## Production (sermons.favor.church)
+
+Production holds real data. Never run the seed or QA scripts against it, and never import synthetic data into it.
+
+- Wrangler env: `production` (Worker `sermon-bank`, `workers_dev: false`, `preview_urls: false`).
+- Origin: `https://sermons.favor.church` (custom domain route, `PUBLIC_ORIGIN` var).
+- D1: `sermon-bank` (binding `DB`). R2: `sermon-bank-private-pdfs` (binding `PRIVATE_PDFS`), private: r2.dev access disabled, no custom domains.
+- Secrets, names only: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS`. Set each with `pnpm exec wrangler secret put <NAME> --env production`. The Google OAuth client must list `https://sermons.favor.church/auth/google/callback` as an authorized redirect URI.
+- Before migrating: `pnpm exec wrangler d1 time-travel info DB --env production` and record the bookmark. Migrate: `pnpm exec wrangler d1 migrations apply DB --env production --remote`.
+- Deploy: `pnpm exec wrangler deploy --env production`. Check `/health`, the signed-out page and an API 401.
+- Rollback: `pnpm exec wrangler rollback --env production` to the previous Worker version; restore data with `pnpm exec wrangler d1 time-travel restore DB --env production --bookmark <bookmark>`.

@@ -64,11 +64,11 @@ Demo places remain and can be renamed or merged in Settings.
 - **Not yet checked in a real browser.** The interface tests use a fake DOM. Layout, phone width and focus behaviour are part of this review.
 - **Local tooling.** `pnpm run check` and `pnpm run dev` need macOS 13.5 or newer (workerd). Foundation CI runs `pnpm run check` on Ubuntu and is the source of truth for the checks.
 - **Sign-in protection.** Rate limiting for `/auth/*` is a Cloudflare setting that this repository does not configure. Confirm it before widening access.
-- **Staging only.** There is no production environment and no production deploy is authorized.
+- **Production.** https://sermons.favor.church runs the same code as staging with its own D1 and R2. Seed and QA scripts refuse production; check it by hand, read-only.
 
 ## Deferred
 
-- Production Workers, D1 and R2, budget alerts and a quota and latency review.
+- Budget alerts and a quota and latency review for production.
 - Google Docs: read-only Picker and authorization, Owner consent for Doc text, indexing and source-revoke deletion.
 - Email delivery of invitations and email magic-link sign-in. Opening registration beyond the pilot list.
 - Importing the real history workbook (needs a freshness check, ownership review and sign-off).
