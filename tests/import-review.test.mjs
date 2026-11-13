@@ -88,7 +88,7 @@ test('duplicate flags require title, date and place and alias matches are flagge
   const f = await fixture();
   try {
     f.db.execute('INSERT INTO place_aliases(workspace_id,place_id,alias) VALUES(?,?,?)',[ids.w1,ids.place1,'The Harbor']);
-    const input = 'Date Preached,Sermon Title,Category,Tags,Notes,Venue\n3/9/2025,Alpha Hope Sermon,c,t,n,The Harbor\n3/10/2025,Alpha Hope Sermon,c,t,n,The Harbor\n3/9/2025,Alpha Hope Sermon,c,t,n,The Harbor\n';
+    const input = 'Date Preached,Sermon Title,Category,Tags,Stories Shared,Location\n3/9/2025,Alpha Hope Sermon,c,t,n,The Harbor\n3/10/2025,Alpha Hope Sermon,c,t,n,The Harbor\n3/9/2025,Alpha Hope Sermon,c,t,n,The Harbor\n';
     const up = await f.call('POST',f.w('/imports'),'owner',{csv:input});
     assert.equal(up.status,201,up.text);
     const list = await f.call('GET',f.w(`/imports/${up.json.id}/rows`),'owner');
@@ -96,5 +96,76 @@ test('duplicate flags require title, date and place and alias matches are flagge
     assert.ok(list.json.rows[0].flags.includes('suspected_duplicate_event'));
     assert.ok(!list.json.rows[1].flags.includes('suspected_duplicate_event'));
     assert.ok(list.json.rows[2].flags.includes('suspected_duplicate_event'));
+  } finally { f.db.close(); }
+});
+
+test('attests a selection larger than the ordinary JSON body limit', async () => {
+  const f = await fixture();
+  try {
+    const {path,id} = await setup(f);
+    const insert = `INSERT INTO import_review_rows(id,workspace_id,batch_id,source_sheet,source_row,source_hash,original_values_json,parse_outcome,review_flags_json) VALUES(?,?,?,?,?,?,?,'parsed','[]')`;
+    const idsToAttest = [];
+    for (let n = 0; n < 210; n++) {
+      const rowId = crypto.randomUUID();
+      idsToAttest.push(rowId);
+      f.db.execute(insert,[rowId,ids.w1,id,'All History',100+n,'hash','[]']);
+    }
+    const response = await attest(f,path,idsToAttest);
+    assert.equal(response.status,200,response.text);
+    assert.equal(response.json.attested,210);
+  } finally { f.db.close(); }
+});
+
+test('mixed aliases identify the same place when finding in-batch duplicates', async () => {
+  const f = await fixture();
+  try {
+    f.db.execute('INSERT INTO place_aliases(workspace_id,place_id,alias) VALUES(?,?,?)',[ids.w1,ids.place1,'The Harbor']);
+    const input = 'Date Preached,Sermon Title,Category,Tags,Stories Shared,Location\n1/2/2024,Unique,c,t,n,Harbor Chapel\n1/2/2024,Unique,c,t,n,The Harbor\n';
+    const up = await f.call('POST',f.w('/imports'),'owner',{csv:input});
+    const list = await f.call('GET',f.w(`/imports/${up.json.id}/rows`),'owner');
+    assert.ok(list.json.rows[1].flags.includes('suspected_duplicate_event'));
+  } finally { f.db.close(); }
+});
+
+test('ignored and rolled-back rows can be explicitly attested for another review', async () => {
+  const f = await fixture();
+  try {
+    const {path,rows} = await setup(f);
+    const rowId = rows[0].id;
+    assert.equal((await action(f,path,rowId,'ignore')).status,200);
+    assert.equal((await attest(f,path,[rowId])).status,200);
+    assert.equal((await action(f,path,rowId,'approve')).status,200);
+    assert.equal((await action(f,path,rowId,'rollback')).json.rolled_back,true);
+    assert.equal((await attest(f,path,[rowId])).status,200);
+    assert.equal((await action(f,path,rowId,'approve')).json.created,true);
+    assert.equal(f.db.query('SELECT id FROM preaching_events WHERE source_import_row_id=?',[rowId]).length,1);
+  } finally { f.db.close(); }
+});
+
+test('competing state transitions cannot partially attest or falsely report ignore', async () => {
+  const f = await fixture();
+  try {
+    const {path,rows} = await setup(f);
+    const original = f.db.batch.bind(f.db);
+    let mutate = true;
+    f.db.batch = async statements => {
+      if (mutate) {
+        mutate = false;
+        f.db.execute("UPDATE import_review_rows SET status='approved',attested_by=?,attested_at=CURRENT_TIMESTAMP WHERE id=?",[ids.owner,rows[1].id]);
+      }
+      return original(statements);
+    };
+    assert.equal((await attest(f,path,[rows[0].id,rows[1].id])).status,409);
+    assert.equal(f.db.query('SELECT status FROM import_review_rows WHERE id=?',[rows[0].id])[0].status,'unreviewed');
+    mutate = true;
+    f.db.batch = async statements => {
+      if (mutate) {
+        mutate = false;
+        f.db.execute("UPDATE import_review_rows SET status='approved',attested_by=?,attested_at=CURRENT_TIMESTAMP WHERE id=?",[ids.owner,rows[0].id]);
+      }
+      return original(statements);
+    };
+    assert.equal((await action(f,path,rows[0].id,'ignore')).status,409);
+    assert.equal(f.db.query('SELECT status FROM import_review_rows WHERE id=?',[rows[0].id])[0].status,'approved');
   } finally { f.db.close(); }
 });

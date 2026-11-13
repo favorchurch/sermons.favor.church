@@ -1,5 +1,5 @@
 import { reply, isUuid } from '../auth/security.ts';
-import { Invalid, Conflict, notFound, readBody, auditStatement, changes, type Ctx } from '../api/http.ts';
+import { Invalid, Conflict, notFound, auditStatement, changes, type Ctx } from '../api/http.ts';
 import { inspectHistory } from './normalizer.mjs';
 
 type Row = { id: string; status: string; parse_outcome: string; proposed_title: string | null; proposed_date: string | null; proposed_place: string | null; review_flags_json: string; source_row: number; source_sheet: string; source_hash: string; sermon_id: string | null; event_id: string | null; place_id: string | null };
@@ -31,11 +31,16 @@ export async function upload(c: Ctx): Promise<Response> {
     if (!item.proposed_date) flags.push('undated');
     flags.push('unknown_owner');
     const place = item.proposed_place;
+    let placeKey = place?.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
     if (place) {
-      const alias = await c.env.DB.prepare('SELECT place_id FROM place_aliases WHERE workspace_id = ? AND alias = ? COLLATE NOCASE').bind(c.workspaceId, place).first();
-      if (alias) flags.push('venue_alias');
+      const alias = await c.env.DB.prepare('SELECT place_id FROM place_aliases WHERE workspace_id = ? AND alias = ? COLLATE NOCASE').bind(c.workspaceId, place).first<{place_id:string}>();
+      if (alias) { flags.push('venue_alias'); placeKey = alias.place_id; }
+      else {
+        const named = await c.env.DB.prepare('SELECT id FROM places WHERE workspace_id = ? AND display_name = ? COLLATE NOCASE').bind(c.workspaceId, place).first<{id:string}>();
+        if (named) placeKey = named.id;
+      }
     }
-    const signature = [item.proposed_title?.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' '), item.proposed_date, place?.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ')].join('|');
+    const signature = JSON.stringify([item.proposed_title?.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' '), item.proposed_date, placeKey]);
     if (item.proposed_title && item.proposed_date && place) {
       const duplicate = await c.env.DB.prepare(`SELECT e.id FROM preaching_events e JOIN sermons s ON s.workspace_id=e.workspace_id AND s.id=e.sermon_id JOIN places p ON p.workspace_id=e.workspace_id AND p.id=e.place_id WHERE e.workspace_id=? AND e.preached_on=? AND s.title=? COLLATE NOCASE AND (p.display_name=? COLLATE NOCASE OR EXISTS (SELECT 1 FROM place_aliases a WHERE a.workspace_id=p.workspace_id AND a.place_id=p.id AND a.alias=? COLLATE NOCASE)) LIMIT 1`).bind(c.workspaceId,item.proposed_date,item.proposed_title,place,place).first();
       if (signatures.has(signature) || duplicate) flags.push('suspected_duplicate_event');
@@ -68,14 +73,26 @@ export async function rows(c: Ctx): Promise<Response> {
 
 export async function attest(c: Ctx): Promise<Response> {
   const denied = owner(c); if (denied) return denied;
-  const body = await readBody(c.request,['row_ids']);
+  if (!c.request.headers.get('content-type')?.toLowerCase().startsWith('application/json') || Number(c.request.headers.get('content-length') || 0) > 32768) throw new Invalid('body');
+  const text = await c.request.text();
+  if (text.length > 32768) throw new Invalid('body');
+  let body: Record<string, unknown>;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+    body = value as Record<string, unknown>;
+  } catch { throw new Invalid('body', 'invalid_json'); }
+  if (Object.keys(body).some(key => key !== 'row_ids')) throw new Invalid('body', 'unknown_field');
   if (!Array.isArray(body.row_ids) || !body.row_ids.length || body.row_ids.length > 500 || !body.row_ids.every(isUuid) || new Set(body.row_ids).size !== body.row_ids.length) throw new Invalid('row_ids');
   if (!await batch(c)) return notFound();
   const ids = body.row_ids as string[];
   const encoded = JSON.stringify(ids);
-  const found = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM import_review_rows WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('unreviewed','attested')`).bind(c.workspaceId,c.params.batchId,encoded).first<{n:number}>();
-  if (found?.n !== ids.length) throw new Conflict('invalid_row_state');
-  const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE import_review_rows SET status='attested',attested_by=?,attested_at=CURRENT_TIMESTAMP WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND status='unreviewed'`).bind(c.actorId,c.workspaceId,c.params.batchId,encoded),auditStatement(c,'import.attest','import_batch',c.params.batchId,{count:ids.length})]);
+  const eligible = "status IN ('unreviewed','attested','ignored','rolled_back')";
+  const result = await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE import_review_rows SET status='attested',attested_by=?,attested_at=CURRENT_TIMESTAMP,sermon_id=NULL,event_id=NULL,place_id=NULL WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND ${eligible} AND (SELECT COUNT(*) FROM import_review_rows WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND ${eligible})=?`).bind(c.actorId,c.workspaceId,c.params.batchId,encoded,c.workspaceId,c.params.batchId,encoded,ids.length),
+    c.env.DB.prepare(`INSERT INTO audit_events(id,workspace_id,actor_account_id,action,target_type,target_id,details_json) SELECT ?,?,?,?,?,?,? WHERE changes()=?`).bind(crypto.randomUUID(),c.workspaceId,c.actorId,'import.attest','import_batch',c.params.batchId,JSON.stringify({count:ids.length}),ids.length)
+  ]);
+  if (changes(result[0]) !== ids.length) throw new Conflict('invalid_row_state');
   return reply(200,{attested: changes(result[0])});
 }
 
@@ -84,7 +101,8 @@ export async function ignore(c: Ctx): Promise<Response> {
   const r = await row(c); if (!r) return notFound();
   if (r.status === 'ignored') return reply(200,{ignored:true});
   if (!['unreviewed','attested'].includes(r.status)) throw new Conflict('invalid_row_state');
-  await c.env.DB.batch([c.env.DB.prepare("UPDATE import_review_rows SET status='ignored' WHERE workspace_id=? AND id=? AND status IN ('unreviewed','attested')").bind(c.workspaceId,r.id),auditStatement(c,'import.ignore','import_row',r.id,{},true)]);
+  const result = await c.env.DB.batch([c.env.DB.prepare("UPDATE import_review_rows SET status='ignored' WHERE workspace_id=? AND id=? AND status IN ('unreviewed','attested')").bind(c.workspaceId,r.id),auditStatement(c,'import.ignore','import_row',r.id,{},true)]);
+  if (!changes(result[0])) throw new Conflict('invalid_row_state');
   return reply(200,{ignored:true});
 }
 

@@ -62,12 +62,18 @@ export function inspectHistory(csvText, options = {}) {
       !/^sermon title$/i.test(String(csv[0]?.[1] ?? '').trim())) {
     throw new Error('Unexpected source headers; use the canonical All History export');
   }
+  const headers = csv[0];
+  if ((headers.length === 2 && csv.slice(1).some(row => row.length > 2)) ||
+      (headers.length > 2 && ['Category', 'Tags', 'Stories Shared', 'Location'].some((name, index) =>
+        String(headers[index + 2] ?? '').trim().toLowerCase() !== name.toLowerCase()))) {
+    throw new Error('Unexpected source headers; use the canonical All History export');
+  }
   const fingerprint = sha256(csvText);
   const rows = [], titleKeys = new Set(), placeNames = new Set(), keySet = new Set();
   const flagCounts = {};
   let duplicateCandidates = 0;
   for (let i = 1; i < csv.length; i++) {
-    const values = Array.from({ length: 6 }, (_, c) => String(csv[i][c] ?? ''));
+    const values = Array.from({ length: Math.max(6, csv[i].length) }, (_, c) => String(csv[i][c] ?? ''));
     if (!values.some(x => x.trim())) continue;
     if (/^please insert rows below this row/i.test(values[0])) continue;
     const date = normalizeDate(values[0]);
