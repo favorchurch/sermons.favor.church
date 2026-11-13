@@ -12,7 +12,7 @@ class DatabaseMock {
   constructor(){
     this.connection=new DatabaseSync(':memory:');
     this.connection.exec('PRAGMA foreign_keys=ON');
-    for(const file of ['0001_initial.sql','0002_auth.sql'])this.connection.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+    for(const file of ['0001_initial.sql','0002_auth.sql','0003_single_personal_workspace.sql'])this.connection.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   }
   prepare(sql){const db=this.connection;
     return {bind(...args){
@@ -198,5 +198,29 @@ test('async handler failures return a generic 503 instead of rejecting',async()=
    assert.equal(response.status,503,method+' '+path);
    const text=await response.text();assert.ok(!/boom|owner@|SELECT/.test(text));
   }
+ }finally{f.db.close()}
+});
+
+test('racing workspace creates conflict instead of making a second active workspace',async()=>{
+ const f=await fixture();try{
+  const realPrepare=f.db.prepare.bind(f.db);let hidden=true;
+  // Simulate the check-then-insert race: the first existence check misses the other request's workspace.
+  f.db.prepare=sql=>{const stmt=realPrepare(sql);
+   if(!hidden||!/FROM workspaces\s+WHERE owner_account_id/i.test(sql))return stmt;
+   hidden=false;return {bind:()=>({first:async()=>null})}};
+  const res=await handleRequest(f.request('POST','/api/workspaces',ids.owner,{name:'Second Archive'}),f.env);
+  assert.equal(res.status,409);assert.equal((await res.json()).error,'personal_workspace_exists');
+  assert.equal(f.db.connection.prepare('SELECT COUNT(*) AS n FROM workspaces WHERE owner_account_id=? AND deleted_at IS NULL').get(ids.owner).n,1);
+ }finally{f.db.close()}
+});
+
+test('Google start purges expired login attempts but keeps live ones',async()=>{
+ const f=await fixture();try{
+  const now=Math.floor(Date.now()/1000);
+  f.db.execute('INSERT INTO oauth_login_attempts(state_hash,nonce,code_verifier,expires_at) VALUES(?,?,?,?),(?,?,?,?)',['old','n','v',now-5,'live','n','v',now+300]);
+  const res=await handleRequest(f.request('GET','/auth/google/start'),f.env);
+  assert.equal(res.status,303);
+  const rows=f.db.connection.prepare('SELECT state_hash FROM oauth_login_attempts').all().map(r=>r.state_hash);
+  assert.ok(!rows.includes('old'));assert.ok(rows.includes('live'));assert.equal(rows.length,2);
  }finally{f.db.close()}
 });

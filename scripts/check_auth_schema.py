@@ -21,7 +21,10 @@ for statement in [
   try: connection.execute(statement)
   except sqlite3.IntegrityError: blocked+=1
   else: raise AssertionError('Invalid membership or credential write succeeded')
-assert blocked == 6
+try: connection.execute("INSERT INTO workspaces(id,name,owner_account_id) VALUES('second','Second Archive','owner')")
+except sqlite3.IntegrityError: blocked+=1
+else: raise AssertionError('A second active workspace for one Owner was created')
+assert blocked == 7
 connection.execute("INSERT INTO auth_sessions(token_hash,account_id,expires_at) VALUES('hashed-only','owner',1890000000)")
 assert connection.execute("SELECT token_hash FROM auth_sessions").fetchone()[0]=='hashed-only'
 assert connection.execute("PRAGMA foreign_key_check").fetchall()==[]
