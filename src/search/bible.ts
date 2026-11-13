@@ -260,7 +260,7 @@ const BOOK_PATTERN = aliasPatterns.join('|');
 // Matches book abbreviation with optional trailing period, whitespace,
 // chapter number, and either :verse[-verse] or bare chapter without colon
 const REF_REGEX = new RegExp(
-  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d{1,3})(?:\\s*[-–—]\\s*(?:(\\d{1,3}):)?(\\d{1,3}))?|(?!:))(?![A-Za-z0-9])`,
+  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d{1,3})(?:\\s*[-–—]\\s*(?:(\\d{1,3}):)?(\\d{1,3}))?|(?!:))(?![A-Za-z0-9]|\\s*[-–—])`,
   'gi'
 );
 
@@ -311,6 +311,7 @@ export function extractReferences(text: string | null | undefined): ExtractedRef
   let m: RegExpExecArray | null;
 
   while ((m = REF_REGEX.exec(text)) !== null) {
+    if (/\b\d+\s+$/.test(text.slice(0, m.index))) continue;
     const rawMatch = m[0];
     const bookStr = m[1];
     const canonicalBook = normalizeBook(bookStr);

@@ -295,6 +295,13 @@ test('extractReferences does not degrade malformed verse or sub-verse suffixes t
   assert.deepEqual(extractReferences('Check John 3:'), []);
 });
 
+test('extractReferences rejects malformed ranges and invalid numbered-book prefixes', () => {
+  assert.deepEqual(extractReferences('Read John 3:16–18a today'), []);
+  assert.deepEqual(extractReferences('Read John 3:16- today'), []);
+  assert.deepEqual(extractReferences('Read 4 John 3:16 today'), []);
+  assert.equal(extractReferences('Read 1 John 3:16 today')[0].book, '1 John');
+});
+
 test('overlaps rejects inverted ranges on raw reference objects', () => {
   const inverted = { book: 'John', chapter: 3, verseStart: 10, verseEnd: 5 };
   const valid = { book: 'John', chapter: 3, verseStart: 5, verseEnd: 10 };
