@@ -130,11 +130,12 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     if (parseRoute(getHash()).id === id) render();
   }
 
-  /** Go to a search. The same address does not fire a hash change, so it re-runs in place. */
-  function runSearch({ q, scope, archived }) {
-    const href = hrefFor({ name: 'search', q: cleanQuery(q), scope, archived });
-    if (getHash() === href) { search = null; render(); } else setHash(href);
+  /** Go to `href`. The same address fires no hash change, so `reset` clears the cached result and it re-runs in place. */
+  function visit(href, reset) {
+    if (getHash() === href) { reset(); render(); } else setHash(href);
   }
+
+  const runSearch = ({ q, scope, archived }) => visit(hrefFor({ name: 'search', q: cleanQuery(q), scope, archived }), () => { search = null; });
 
   async function loadSearch(route, key) {
     search = { key, phase: 'loading' };
@@ -169,10 +170,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   function notesView(route, sermon) {
     const key = JSON.stringify([state.workspaceId, route.id, route.q]);
     if (route.q && notes?.key !== key) loadNotes(route, key);
-    const find = q => {
-      const href = notesHref(route.id, cleanQuery(q));
-      if (getHash() === href) { notes = null; render(); } else setHash(href);
-    };
+    const find = q => visit(notesHref(route.id, cleanQuery(q)), () => { notes = null; });
     return notesPanel({ sermon, route, result: route.q ? notes : null, find, retry: () => { notes = null; render(); } });
   }
 

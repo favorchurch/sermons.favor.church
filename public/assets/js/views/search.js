@@ -2,7 +2,7 @@
 // own Scripture references) and note matches (from indexed text) are always shown apart.
 import { h } from '../dom.js';
 import { describeError } from '../api.js';
-import { SCOPES, hrefFor, notesHref } from '../router.js';
+import { SCOPES, notesHref } from '../router.js';
 import { highlightParts, shapeResults, noteReason, VERSION_STATUS } from '../search-model.js';
 import { SOURCE_LABELS, plural } from '../format.js';
 import { loadingLine } from './states.js';
@@ -132,5 +132,3 @@ function versionList(data) {
           : null);
     })));
 }
-
-export const searchHref = (q, scope = 'everything', archived = false) => hrefFor({ name: 'search', q, scope, archived });

@@ -42,25 +42,31 @@ function uploadResultText(result) {
   return 'PDF uploaded. Its text is held privately until an Owner consents.';
 }
 
+/**
+ * Check the chosen file locally, then run `work(file)` with the button disabled. A failure is shown
+ * under the button. Nothing is sent when the local check fails.
+ */
+async function guardedUpload({ input, button, message, work }) {
+  const file = input.files?.[0];
+  const problem = pdfProblem(file);
+  mount(message, problem && notice(problem));
+  if (problem) return;
+  button.setAttribute('disabled', '');
+  try { await work(file); } finally { button.removeAttribute('disabled'); }
+}
+
 /** File picker + button. `send(file)` performs the upload and returns the API result. */
 function uploader({ label, buttonLabel, send, onDone, toast }) {
   const input = h('input', { type: 'file', accept: 'application/pdf,.pdf', 'aria-label': label });
   const message = h('div', { class: 'upload-message' });
   const button = h('button', { type: 'button', class: 'btn', 'data-action': 'upload' }, buttonLabel);
-  button.addEventListener('click', async () => {
-    const file = input.files?.[0];
-    const problem = pdfProblem(file);
-    mount(message, problem && notice(problem));
-    if (problem) return;
-    button.setAttribute('disabled', '');
-    try {
-      const result = await send(file);
-      toast(uploadResultText(result));
-      await onDone();
-    } catch (error) {
-      mount(message, notice(describeError(error)));
-    } finally { button.removeAttribute('disabled'); }
-  });
+  button.addEventListener('click', () => guardedUpload({
+    input, button, message,
+    work: async file => {
+      try { toast(uploadResultText(await send(file))); await onDone(); }
+      catch (error) { mount(message, notice(describeError(error))); }
+    }
+  }));
   return h('div', { class: 'uploader' }, input, button, message);
 }
 
@@ -117,26 +123,23 @@ function addPdfForm(ctx, sermon, reload) {
   const input = h('input', { id: fileId, type: 'file', accept: 'application/pdf,.pdf' });
   const message = h('div', { class: 'upload-message' });
   const button = h('button', { type: 'button', class: 'btn btn-primary', 'data-action': 'add-pdf' }, 'Add PDF version');
-  button.addEventListener('click', async () => {
-    const file = input.files?.[0];
-    const problem = pdfProblem(file);
-    mount(message, problem && notice(problem));
-    if (problem) return;
-    button.setAttribute('disabled', '');
-    let created = null;
-    try {
-      created = await ctx.client.createVersion(sermon.id, { label: label.control.value, source_type: 'pdf' });
-      const result = await ctx.client.uploadPdf(sermon.id, created.id, file);
-      ctx.toast(uploadResultText(result));
-      await ctx.refreshLibrary();
-      await reload({ quiet: true });
-    } catch (error) {
-      mount(message, notice(created
-        ? `The version was created, but the file did not upload. ${describeError(error)} Use Upload PDF on it to try again.`
-        : describeError(error)));
-      if (created) await reload({ quiet: true });
-    } finally { button.removeAttribute('disabled'); }
-  });
+  button.addEventListener('click', () => guardedUpload({
+    input, button, message,
+    work: async file => {
+      let created = null;
+      try {
+        created = await ctx.client.createVersion(sermon.id, { label: label.control.value, source_type: 'pdf' });
+        ctx.toast(uploadResultText(await ctx.client.uploadPdf(sermon.id, created.id, file)));
+        await ctx.refreshLibrary();
+        await reload({ quiet: true });
+      } catch (error) {
+        mount(message, notice(created
+          ? `The version was created, but the file did not upload. ${describeError(error)} Use Upload PDF on it to try again.`
+          : describeError(error)));
+        if (created) await reload({ quiet: true });
+      }
+    }
+  }));
   return h('div', { class: 'add-pdf' }, h('h3', null, 'Add a PDF version'), label.wrapper,
     h('div', { class: 'field' }, h('label', { for: fileId }, 'PDF file (up to 10 MB)'), input), button, message);
 }
