@@ -23,7 +23,7 @@ All JSON mutation routes require `Origin` equal to the configured `PUBLIC_ORIGIN
 
 1. Create a Google Cloud **Web application OAuth client** under a trusted project with appropriate consent-screen settings. Register the exact `https://<pilot-host>/auth/google/callback` redirect URI; no wildcard. Use only `openid email profile` for **sign-in**. This does not grant Google Drive document access. Docs linking/indexing will be a distinct read-only authorization and Owner consent flow.
 2. Configure `PUBLIC_ORIGIN=https://<pilot-host>` with no trailing path or port mismatch; set secret/runtime bindings `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS` through private Cloudflare secrets/vars. **Do not commit credentials or real pilot emails**. Provision real isolated D1 and private R2 resources, replacing the all-zero D1 placeholder and unprovisioned R2 bucket name in Wrangler config. The Worker intentionally refuses non-HTTPS origin and unconfigured environments.
-3. Install Wrangler and run `npm run types` (generates authoritative `worker-configuration.d.ts` from config) before `npm run typecheck`; never hand-maintain a shadow `Env` declaration. Apply both D1 migrations to a local or controlled preview database only, before testing login. Protect `/auth/*` with application rate limits / Cloudflare rules before exposing a public login endpoint.
+3. Install Wrangler and run `pnpm run types` (generates authoritative `worker-configuration.d.ts` from config) before `pnpm run typecheck`; never hand-maintain a shadow `Env` declaration. Apply both D1 migrations to a local or controlled preview database only, before testing login. Protect `/auth/*` with application rate limits / Cloudflare rules before exposing a public login endpoint.
 4. Bootstrap the pilot using a verified pastor email privately listed in `PILOT_OWNER_EMAILS`, then `POST /api/workspaces` with a confirmed workspace name. Once created, invite only verified assistants. **Do not** add a generic staff-access bypass or automatically assign imported records to the signed-in account.
 5. Add a secure invitation-delivery UI and verified email magic-link sign-in (with an email provider), plus owner consent/revocation of Google Doc index before opening registrations globally. In this PR, invitations are token-based API-only and Owner/Admin must deliver the token securely outside the app if testing; no mailer exists yet.
 
@@ -45,4 +45,17 @@ python3 scripts/check_schema.py
 python3 scripts/check_auth_schema.py
 ```
 
-Real CI should run `npm run check` after `npm install`; it invokes Wrangler type generation (needs network-installed packages) and TypeScript, followed by the same tests. A temporary local `worker-configuration.d.ts` used to test compilation without npm network access must **not** be committed.
+Real CI should run `pnpm run check` after `pnpm install --frozen-lockfile`; it invokes Wrangler type generation (needs network-installed packages) and TypeScript, followed by the same tests. A temporary local `worker-configuration.d.ts` used to test compilation without network access to the package registry must **not** be committed.
+
+## Staging (sermons-preview.favor.church)
+
+Staging holds synthetic data only. Never import real sermon, member or PDF data into it.
+
+- Cloudflare account: FAVOR CHURCH. Wrangler env: `staging` (Worker `sermon-bank-staging`, `workers_dev: false`).
+- Origin: `https://sermons-preview.favor.church` (custom domain route, `PUBLIC_ORIGIN` var).
+- D1: `sermon-bank-staging` (binding `DB`). R2: `sermon-bank-private-pdfs-staging` (binding `PRIVATE_PDFS`), private: r2.dev access disabled, no custom domains.
+- Secrets are set by the operator, never committed. Names only: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS`. Set each with `pnpm exec wrangler secret put <NAME> --env staging`.
+- Migrate: `pnpm exec wrangler d1 migrations apply DB --env staging --remote`, then verify with `pnpm exec wrangler d1 migrations list DB --env staging --remote`.
+- Deploy: `pnpm exec wrangler deploy --env staging`. Check `/health`.
+- Never pass `--remote` without `--env staging`. The top-level env holds placeholders only.
+- Without the secrets set, `/health` works but sign-in does not.
