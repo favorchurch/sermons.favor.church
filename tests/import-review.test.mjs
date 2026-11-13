@@ -169,3 +169,22 @@ test('competing state transitions cannot partially attest or falsely report igno
     assert.equal(f.db.query('SELECT status FROM import_review_rows WHERE id=?',[rows[0].id])[0].status,'approved');
   } finally { f.db.close(); }
 });
+
+test('rows without a date or place can be attested and approved without creating a place', async () => {
+  const f = await fixture();
+  try {
+    const input = 'Date Preached,Sermon Title,Category,Tags,Stories Shared,Location\n,Undated Placeless,c,t,n,\n';
+    const up = await f.call('POST',f.w('/imports'),'owner',{csv:input});
+    assert.equal(up.status,201,up.text);
+    const list = await f.call('GET',f.w(`/imports/${up.json.id}/rows`),'owner');
+    const row = list.json.rows[0];
+    assert.ok(row.flags.includes('undated'));
+    const placesBefore = f.db.query('SELECT id FROM places').length;
+    const path = `/imports/${up.json.id}`;
+    assert.equal((await attest(f,path,[row.id])).status,200);
+    assert.equal((await action(f,path,row.id,'approve')).json.created,true);
+    const event = f.db.query('SELECT place_id,preached_on,date_precision FROM preaching_events WHERE source_import_row_id=?',[row.id])[0];
+    assert.deepEqual({...event},{place_id:null,preached_on:null,date_precision:'unknown'});
+    assert.equal(f.db.query('SELECT id FROM places').length,placesBefore);
+  } finally { f.db.close(); }
+});
