@@ -427,17 +427,14 @@ export function overlaps(
   const bStart = refB.verseStart ?? refB.v1 ?? null;
   const bEnd = refB.verseEnd ?? refB.v2 ?? bStart;
 
-  const effectiveAEnd = aEnd ?? aStart;
-  const effectiveBEnd = bEnd ?? bStart;
-
   // Inverted range check: if start > end, range is invalid and cannot overlap
-  if (aStart !== null && effectiveAEnd !== null && aStart > effectiveAEnd) return false;
-  if (bStart !== null && effectiveBEnd !== null && bStart > effectiveBEnd) return false;
+  if (aStart !== null && aEnd !== null && aStart > aEnd) return false;
+  if (bStart !== null && bEnd !== null && bStart > bEnd) return false;
 
   // Whole chapter reference overlaps anything in that same chapter
   if (aStart === null || bStart === null) return true;
 
-  return aStart <= effectiveBEnd && bStart <= effectiveAEnd;
+  return aStart <= (bEnd ?? bStart) && bStart <= (aEnd ?? aStart);
 }
 
 export const referenceOverlaps = overlaps;
