@@ -334,7 +334,8 @@ test('GET members lists active accepted members for Owner and Admin only', async
       assert.deepEqual(res.json.members.map(m => [m.role, m.display_name, m.email]), [
         ['owner', 'owner', 'owner@example.test'], ['admin', 'admin', 'admin@example.test'],
         ['editor', 'editor', 'editor@example.test'], ['viewer', 'viewer', 'viewer@example.test']]);
-      assert.deepEqual(Object.keys(res.json.members[0]).sort(), ['account_id', 'display_name', 'email', 'role']);
+      assert.deepEqual(Object.keys(res.json.members[0]).sort(), ['accepted_at', 'account_id', 'display_name', 'email', 'role']);
+      assert.ok(res.json.members.every(m => typeof m.accepted_at === 'string' && m.accepted_at.length > 0), 'accepted_at is returned for every member');
       assert.ok(!res.text.includes('Pending Pat') && !res.text.includes('Gone Gil') && !res.text.includes('owner2'), 'no pending, revoked or other-workspace people');
     }
     for (const actor of ['editor', 'viewer']) {

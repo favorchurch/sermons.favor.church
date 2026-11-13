@@ -262,3 +262,16 @@ test('Google start purges expired login attempts but keeps live ones',async()=>{
   assert.ok(!rows.includes('old'));assert.ok(rows.includes('live'));assert.equal(rows.length,2);
  }finally{f.db.close()}
 });
+
+test('GET members returns accepted_at for each active member, Owner/Admin only',async()=>{
+ const f=await fixture();try{
+  f.db.execute("UPDATE workspace_memberships SET accepted_at='2026-01-02 03:04:05' WHERE workspace_id=? AND account_id=?",[ids.w1,ids.viewer]);
+  const res=await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.admin),f.env);
+  assert.equal(res.status,200);const data=await res.json();
+  assert.deepEqual(Object.keys(data.members[0]).sort(),['accepted_at','account_id','display_name','email','role']);
+  assert.equal(data.members.find(m=>m.account_id===ids.viewer).accepted_at,'2026-01-02 03:04:05');
+  assert.ok(data.members.every(m=>typeof m.accepted_at==='string'&&m.accepted_at));
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.viewer),f.env)).status,403);
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w2+'/members',ids.viewer),f.env)).status,404);
+ }finally{f.db.close()}
+});
