@@ -2,7 +2,7 @@
 
 An open-source, private-by-default sermon archive for pastors and their teams.
 
-**Status:** Greenfield Phase 1 / unmerged authentication and tenancy implementation. A Google OIDC pilot sign-in, session handling, membership-scoped metadata routes and manual invitation API are implemented, but no online application, email delivery, private data import, PDF upload or document search is deployed. See [auth handoff](docs/auth-handoff.md).
+**Status:** Greenfield pilot. Production pilot at https://sermons.favor.church (invite-only); staging at https://sermons-preview.favor.church. Implemented and tested in this repository: Google sign-in with invite-only access and roles, the Living Library app (library, calendar, sermon detail, search and Find in notes, places, people and access, import review, private PDFs with Owner consent and revoke), and a seed and QA script for staging. Not built: Google Doc ingest, email delivery. To review it, start at the [pilot guide](docs/pilot.md). Contracts: [auth handoff](docs/auth-handoff.md), [library API](docs/library-api.md), [search](docs/search.md), [PDF sources](docs/sources.md), [UI](docs/ui.md), [import review](docs/import-review.md).
 
 - Product decisions: [PRD draft #1](https://github.com/favorchurch/sermons.favor.church/pull/1)
 - Selected UX: [Living Library + Chronicle draft #4](https://github.com/favorchurch/sermons.favor.church/pull/4)
@@ -19,9 +19,16 @@ pnpm run migrate:local
 pnpm run dev
 ```
 
-`wrangler.jsonc` deliberately contains a **non-deployable D1 database ID** and a non-provisioned private R2 bucket name. Local development is allowed; **do not deploy** until separate private Cloudflare resources are provisioned, actual IDs/bucket names are configured, authenticated endpoints and tenant isolation tests pass, and release gates are approved. The Workers D1/R2 bindings are present to define the intended topology, not to claim production provisioning.
+The top level of `wrangler.jsonc` deliberately contains a **non-deployable D1 database ID** and a non-provisioned private R2 bucket name, for local development only. Deploy only with `--env staging` or `--env production`; see [docs/auth-handoff.md](docs/auth-handoff.md).
 
-A private staging environment (`env.staging` in `wrangler.jsonc`, synthetic data only) exists for the auth pilot. Setup, secrets handling, deploy and the `pnpm qa:staging` end-to-end auth check are documented in [docs/auth-handoff.md](docs/auth-handoff.md). There is no production environment.
+A private staging environment (`env.staging` in `wrangler.jsonc`, synthetic data only) exists for the pilot. Setup, secrets handling and deploy are in [docs/auth-handoff.md](docs/auth-handoff.md). Two scripts run against it (both need a logged-in `wrangler`, both refuse anything but staging):
+
+```sh
+pnpm seed:staging --workspace "<archive name or id>" [--dry-run]   # fictional demo sermons, events, places and indexed notes
+pnpm qa:staging                                                    # end-to-end auth, access and search-isolation checks
+```
+
+Production (`env.production`: Worker `sermon-bank`, D1 `sermon-bank`, R2 `sermon-bank-private-pdfs`) holds real data. Neither script runs against it. `pnpm run check` and `pnpm run dev` need macOS 13.5 or newer (workerd); CI runs the checks on Ubuntu.
 
 ## Private historic import
 
@@ -48,4 +55,8 @@ The D1 migration is a schema baseline, **not** evidence of working application a
 
 ## Auth and tenancy implementation
 
-See [docs/auth-handoff.md](docs/auth-handoff.md) for the API contract, local tests, Google OAuth and Cloudflare prerequisites. This code will reject requests unless the exact HTTPS `PUBLIC_ORIGIN` and private sign-in credentials are configured. Email-link login and any real note indexing are **not** live.
+See [docs/auth-handoff.md](docs/auth-handoff.md) for the API contract, local tests, Google OAuth and Cloudflare prerequisites. This code will reject requests unless the exact HTTPS `PUBLIC_ORIGIN` and private sign-in credentials are configured. Email-link login and Google Doc indexing are **not** built. Note text is indexed only from uploaded PDFs after an Owner consents.
+
+## Reviewing the pilot
+
+[docs/pilot.md](docs/pilot.md) is the review path: operator checklist, sign in, what to try, known limits and what is deferred.

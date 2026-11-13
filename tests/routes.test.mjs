@@ -1,32 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
 import { handleRequest } from '../src/auth/app.ts';
 import { sha256, randomToken, SESSION_COOKIE } from '../src/auth/security.ts';
+import { DatabaseMock } from './helpers/d1.mjs';
 
 const origin='https://sermons.example.org';
 const ids={owner:'a0000000-0000-4000-8000-000000000001',admin:'a0000000-0000-4000-8000-000000000002',viewer:'a0000000-0000-4000-8000-000000000003',invitee:'a0000000-0000-4000-8000-000000000004',
   w1:'b0000000-0000-4000-8000-000000000001',w2:'b0000000-0000-4000-8000-000000000002',sermon1:'c0000000-0000-4000-8000-000000000001',sermon2:'c0000000-0000-4000-8000-000000000002'};
-class DatabaseMock {
-  constructor(){
-    this.connection=new DatabaseSync(':memory:');
-    this.connection.exec('PRAGMA foreign_keys=ON');
-    for(const file of ['0001_initial.sql','0002_auth.sql','0003_single_personal_workspace.sql'])this.connection.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
-  }
-  prepare(sql){const db=this.connection;
-    return {bind(...args){
-      return {
-        async first(){return db.prepare(sql).get(...args)??null},
-        async all(){return {results:db.prepare(sql).all(...args)}},
-        async run(){return {meta:{changes:Number(db.prepare(sql).run(...args).changes)}}}
-      };
-    }};
-  }
-  async batch(statements){this.connection.exec('BEGIN');try{const responses=[];for(const s of statements)responses.push(await s.run());this.connection.exec('COMMIT');return responses}catch(e){this.connection.exec('ROLLBACK');throw e}}
-  execute(sql,args=[]){return this.connection.prepare(sql).run(...args)}
-  close(){this.connection.close()}
-}
 async function fixture(){
   const db=new DatabaseMock();
   const accounts=[[ids.owner,'owner@example.test'],[ids.admin,'admin@example.test'],[ids.viewer,'viewer@example.test'],[ids.invitee,'invitee@example.test']];
@@ -280,5 +260,35 @@ test('Google start purges expired login attempts but keeps live ones',async()=>{
   assert.equal(res.status,303);
   const rows=f.db.connection.prepare('SELECT state_hash FROM oauth_login_attempts').all().map(r=>r.state_hash);
   assert.ok(!rows.includes('old'));assert.ok(rows.includes('live'));assert.equal(rows.length,2);
+ }finally{f.db.close()}
+});
+
+test('GET members returns every active member of a workspace with more than 500',async()=>{
+ const f=await fixture();try{
+  const extra=650;
+  for(let i=0;i<extra;i++){
+   const id='a1000000-0000-4000-8000-'+String(i).padStart(12,'0');
+   f.db.execute('INSERT INTO user_accounts(id,email_normalized,display_name) VALUES (?,?,?)',[id,'bulk'+i+'@example.test','Bulk '+String(i).padStart(4,'0')]);
+   f.db.execute('INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at) VALUES(?,?,?,CURRENT_TIMESTAMP)',[ids.w1,id,'viewer']);
+  }
+  const res=await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.admin),f.env);
+  assert.equal(res.status,200);const {members}=await res.json();
+  assert.equal(members.length,3+extra);
+  assert.equal(new Set(members.map(m=>m.account_id)).size,3+extra);
+  assert.ok(members.some(m=>m.email==='bulk'+(extra-1)+'@example.test'),'the last member past 500 is listed');
+  assert.deepEqual(members.slice(0,2).map(m=>m.role),['owner','admin']);
+ }finally{f.db.close()}
+});
+
+test('GET members returns accepted_at for each active member, Owner/Admin only',async()=>{
+ const f=await fixture();try{
+  f.db.execute("UPDATE workspace_memberships SET accepted_at='2026-01-02 03:04:05' WHERE workspace_id=? AND account_id=?",[ids.w1,ids.viewer]);
+  const res=await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.admin),f.env);
+  assert.equal(res.status,200);const data=await res.json();
+  assert.deepEqual(Object.keys(data.members[0]).sort(),['accepted_at','account_id','display_name','email','role']);
+  assert.equal(data.members.find(m=>m.account_id===ids.viewer).accepted_at,'2026-01-02 03:04:05');
+  assert.ok(data.members.every(m=>typeof m.accepted_at==='string'&&m.accepted_at));
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.viewer),f.env)).status,403);
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w2+'/members',ids.viewer),f.env)).status,404);
  }finally{f.db.close()}
 });

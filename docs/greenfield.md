@@ -1,6 +1,8 @@
 # Greenfield v0: engineering gates
 
-## Scope of this foundation PR
+## Scope of the foundation PR (historical)
+
+The first PR only. What exists now is in [Pilot status](#pilot-status).
 
 - Public repository scaffold; private-by-default Worker with `/health` only.
 - D1 schema for identity, owner-scoped workspaces, roles, canonical sermons, versions, preaching history, places, migration provenance and audit events.
@@ -17,6 +19,18 @@
 6. Add Bible-reference aliases/range normalization, distinguish sermon passage metadata vs confirmed indexed-note occurrences, include the matched document version and offset.
 7. Run pilot invite-only with pastoral reviewers, validate counts/ownership, recovery, access revocation, accessibility, data deletion/export, D1/R2 quotas and latency; then decide public onboarding.
 
+## Pilot status
+
+| Step | Status |
+|---|---|
+| 1. Isolated staging resources | Staging Worker, D1 and R2 exist. There is no production environment, and budget alerts and free-tier limits are not confirmed here. |
+| 2. Authentication, invitations, tenant checks | Built and exercised on staging by `pnpm qa:staging`. The real Google round trip is checked by hand. |
+| 3. Private import and ownership review | Built (Owner-only, attest then approve, rollback). The real workbook has not been imported. |
+| 4. Sermon, version and preaching CRUD, place merge, calendar, Living Library | Built. See [library-api.md](library-api.md) and [ui.md](ui.md). |
+| 5. Google Picker and read-only OAuth | Not built. Private R2 PDFs with Owner consent and revoke are built ([sources.md](sources.md)). |
+| 6. Bible references and notes search | Built ([search.md](search.md)), including offsets and the matched version. |
+| 7. Invite-only pilot | Starts with [pilot.md](pilot.md). Recovery, deletion and export, accessibility testing, quotas and latency are open. |
+
 ## Backfill audit snapshot (aggregates only)
 
 - Canonical history tab: 415 populated historical rows in the current workbook; 414 include a date and title.
@@ -32,11 +46,12 @@
 - Do not import source records directly into a pastor workspace. Keep unassigned staging until a human reviews ownership and duplicates.
 - Keep every original source value; additions/alias merges do not overwrite raw history.
 - Sensitive document text must never appear in public GitHub commits, client logs or observability events.
-- `wrangler deploy` is forbidden until real resources, server RBAC, consent, tested migration path and domain configuration exist.
+- `wrangler deploy` is limited to `--env staging`. A production deploy is forbidden until real resources, a tested migration path, domain configuration and release approval exist.
 
-## Known Phase 0 limitations
+## Known limitations
 
-- No real OAuth/session/permission enforcement, UI, D1 runtime query, R2 upload, Google indexing or backend import endpoint yet.
+- Phase 0 had none of the application. It now has auth, the library, search, PDF upload, import review and the UI, on staging only. The pilot's limits and deferred work are listed in [pilot.md](pilot.md).
+- Google Doc ingest and indexing, email delivery and a production environment are not built.
 - The operator dry run can export a local private review payload; this is not a database import or ownership approval.
 - Date precision and title normalization are deliberately conservative. An identical title does not imply identical sermon content or owner.
 - CI installs with `pnpm install --frozen-lockfile` against the committed `pnpm-lock.yaml`.
