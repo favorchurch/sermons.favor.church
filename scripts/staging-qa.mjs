@@ -6,22 +6,26 @@
  *   STAGING D1 only (`wrangler d1 execute --env staging --remote`).
  * - Session and invite tokens are minted by inserting only their SHA-256 hashes
  *   (the scheme in src/auth). Raw tokens live in memory and are never printed.
- * - Exercises the deployed Worker over real HTTP, prints a PASS/FAIL/SKIP table,
+ * - Exercises the deployed Worker over real HTTP, prints a PASS/FAIL/SKIP/WARN table,
  *   exits non-zero on any FAIL and removes every synthetic row it created.
  * - The real Google round trip (login, /api/me, logout) is out of scope: only the
  *   /auth/google/start redirect and state replay rejection are covered here.
+ * - The library, search, import, PDF and app-shell routes are covered by qaNewRoutes*: unauthenticated 401/404 on
+ *   every route, cross-workspace 404, Viewer 403 on every mutation (with a check that nothing changed),
+ *   and search that never returns another workspace's titles, text or revoked text.
  */
 import { execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assertStagingConfig, isStagingOrigin, STAGING_ORIGIN, SeedRefusal } from './seed-staging.mjs';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
-const ORIGIN = (process.env.STAGING_ORIGIN || 'https://sermons-preview.favor.church').replace(/\/$/, '');
-const HOST = new URL(ORIGIN).host;
+const ORIGIN = (process.env.STAGING_ORIGIN || STAGING_ORIGIN).replace(/\/$/, '');
 const DOH = process.env.QA_DOH_URL || 'https://1.1.1.1/dns-query';
 const SESSION_COOKIE = '__Host-sb_session';
 const FLOW_COOKIE = '__Secure-sb_flow';
@@ -41,6 +45,17 @@ const observedErrors = []; // every non-2xx response (status, headers, body) for
 function record(id, status, name, detail = '') { results.push({ id, status, name, detail }); }
 function check(id, name, ok, detail = '') { record(id, ok ? 'PASS' : 'FAIL', name, ok ? '' : detail); return ok; }
 function skip(id, name, reason) { record(id, 'SKIP', name, reason); }
+function warn(id, name, reason) { record(id, 'WARN', name, reason); }
+
+/** Framing guard of the signed-in shell: the CSP must carry frame-ancestors 'none'. X-Frame-Options is only a
+ *  legacy duplicate, and the live edge strips it from every response, so its absence warns without failing. */
+export function frameGuard(headers) {
+  const xfo = headers.get('x-frame-options');
+  return {
+    ok: /(?:^|;)\s*frame-ancestors 'none'\s*(?:;|$)/.test(headers.get('content-security-policy') || ''),
+    warning: !xfo ? 'X-Frame-Options is absent; the edge in front of the Worker likely strips it (CSP frame-ancestors still blocks framing)' : xfo.toUpperCase() === 'DENY' ? '' : `X-Frame-Options is ${xfo}, expected DENY`
+  };
+}
 
 function redact(text) {
   let out = String(text);
@@ -48,25 +63,50 @@ function redact(text) {
   return out.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '[email]').slice(0, 300);
 }
 
-// ---------- HTTP (curl with DNS-over-HTTPS: local DNS can hold a stale negative cache) ----------
-async function http(method, path, { cookie, headers = {}, body, origin = ORIGIN, json = true } = {}) {
+// ---------- transport (real network and D1 by default; replaceable so the checks can run against a local Worker) ----------
+async function curlSend({ method, url, headers, body }) {
   const args = ['-sS', '-i', '--max-time', '30', '--max-redirs', '0', '--doh-url', DOH, '-X', method];
+  for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
+  if (body !== undefined) args.push('--data-binary', body);
+  args.push(url);
+  for (let attempt = 1; ; attempt++) { // retry transient network errors (DoH lookup, reset) only; HTTP statuses are never retried
+    try {
+      const { stdout } = await run('curl', args, { maxBuffer: 4 << 20 });
+      const split = stdout.indexOf('\r\n\r\n');
+      return { head: stdout.slice(0, split).split('\r\n'), text: stdout.slice(split + 4) };
+    } catch (error) {
+      if (attempt >= 3) throw new Error(`curl failed (exit ${error.code}) ${method} ${url.slice(ORIGIN.length)}: ${redact(String(error.stderr || '').trim().split('\n').pop())}`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+async function wranglerSql(sql) {
+  // --command rather than --file: wrangler 4.47's --file upload trips a FileHandle error on current Node.
+  const { stdout } = await run(WRANGLER, ['d1', 'execute', 'DB', '--config', join(ROOT, 'wrangler.jsonc'), '--env', 'staging', '--remote', '--command', sql, '--json'],
+    { cwd: ROOT, maxBuffer: 16 << 20, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' } });
+  return JSON.parse(stdout);
+}
+function wranglerTail() {
+  const lines = [];
+  let ready = false;
+  const child = spawn(WRANGLER, ['tail', '--config', join(ROOT, 'wrangler.jsonc'), '--env', 'staging', '--format', 'json'], { cwd: ROOT, env: { ...process.env, NO_COLOR: '1', WRANGLER_SEND_METRICS: 'false' } });
+  const onData = chunk => { ready = true; lines.push(chunk.toString()); };
+  child.stdout.on('data', onData);
+  child.stderr.on('data', chunk => { ready = true; lines.push(chunk.toString()); });
+  let failed = null, stopping = false;
+  child.on('error', error => { failed = error.message; });
+  child.on('exit', code => { if (code && !failed && !stopping) failed = `exited ${code}`; });
+  return { child, lines, isReady: () => ready, failure: () => failed, stop: () => { stopping = true; child.kill('SIGINT'); } };
+}
+export const transport = { send: curlSend, sql: wranglerSql, tail: wranglerTail };
+
+// ---------- HTTP ----------
+async function http(method, path, { cookie, headers = {}, body, origin = ORIGIN, json = true } = {}) {
   const h = { ...headers };
   if (cookie) h.cookie = cookie;
   if (method !== 'GET' && origin) h.origin = origin;
   if (body !== undefined) { if (json) h['content-type'] = 'application/json'; }
-  for (const [k, v] of Object.entries(h)) args.push('-H', `${k}: ${v}`);
-  if (body !== undefined) args.push('--data-binary', typeof body === 'string' ? body : JSON.stringify(body));
-  args.push(ORIGIN + path);
-  let stdout;
-  for (let attempt = 1; ; attempt++) { // retry transient network errors (DoH lookup, reset) only; HTTP statuses are never retried
-    try { ({ stdout } = await run('curl', args, { maxBuffer: 4 << 20 })); break; } catch (error) {
-      if (attempt >= 3) throw new Error(`curl failed (exit ${error.code}) ${method} ${path}: ${redact(String(error.stderr || '').trim().split('\n').pop())}`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-  const split = stdout.indexOf('\r\n\r\n');
-  const head = stdout.slice(0, split).split('\r\n');
+  const { head, text } = await transport.send({ method, url: ORIGIN + path, headers: h, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
   const status = Number(head[0].split(' ')[1]);
   const resHeaders = new Map();
   const setCookies = [];
@@ -77,7 +117,6 @@ async function http(method, path, { cookie, headers = {}, body, origin = ORIGIN,
     if (k === 'set-cookie') setCookies.push(v);
     resHeaders.set(k, v);
   }
-  const text = stdout.slice(split + 4);
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
   const entry = { status, headers: head.join('\n'), text, expected: [] };
@@ -88,12 +127,7 @@ const asSession = tok => `${SESSION_COOKIE}=${tok}`;
 
 // ---------- D1 (staging only) ----------
 async function d1(sql) {
-  // --command rather than --file: wrangler 4.47's --file upload trips a FileHandle error on current Node.
-  try {
-    const { stdout } = await run(WRANGLER, ['d1', 'execute', 'DB', '--env', 'staging', '--remote', '--command', sql, '--json'],
-      { cwd: ROOT, maxBuffer: 16 << 20, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' } });
-    return JSON.parse(stdout);
-  } catch (error) {
+  try { return await transport.sql(sql); } catch (error) {
     throw new Error('wrangler d1 execute failed: ' + redact(`${error.stderr || ''}${error.stdout || ''}` || error.message));
   }
 }
@@ -148,6 +182,12 @@ async function cleanup({ requireTriggers = false } = {}) {
   await d1(statements.join(';\n') + ';');
   const left = await d1Rows(`SELECT
     (SELECT COUNT(*) FROM user_accounts WHERE email_normalized LIKE '%@${EMAIL_DOMAIN}') AS accounts,
+    (SELECT COUNT(*) FROM workspaces WHERE id IN (${q(W.alpha)}, ${q(W.beta)})) AS workspaces,
+    (SELECT COUNT(*) FROM sermons WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) + (SELECT COUNT(*) FROM sermon_versions WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) +
+      (SELECT COUNT(*) FROM preaching_events WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) + (SELECT COUNT(*) FROM places WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) +
+      (SELECT COUNT(*) FROM audit_events WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS library_rows,
+    (SELECT COUNT(*) FROM note_texts WHERE body LIKE '%qa%marker${RUN}%') + (SELECT COUNT(*) FROM note_reference_tokens WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS note_rows,
+    (SELECT COUNT(*) FROM note_fts WHERE note_fts MATCH '${MARK.alpha} OR ${MARK.beta} OR ${MARK.revoked}') AS fts_rows,
     (SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'protect_owner_membership_%') AS triggers,
     (SELECT COUNT(*) FROM oauth_login_attempts WHERE code_verifier LIKE 'qa-%') AS attempts`);
   if (requireTriggers && left[0].triggers !== 2) {
@@ -163,9 +203,22 @@ const A = Object.fromEntries(['owner', 'admin', 'admin2', 'editor', 'viewer', 'o
 const INVITE_EXPIRED = { id: uuid(), raw: token() };
 const INVITE_REVOKED = { id: uuid(), raw: token() };
 const SERMON = { alpha: uuid(), beta: uuid() };
+// Library fixtures: one sermon per workspace, so the older one-sermon checks above still hold.
+const VERSION = { alpha: uuid(), alphaRevoked: uuid(), alphaPdf: uuid(), beta: uuid() };
+const PLACE = { alpha: uuid(), alpha2: uuid(), beta: uuid() };
+const EVENT = { alpha: uuid(), beta: uuid() };
+const IMPORT = { batch: uuid(), row: uuid() }; // ids that exist nowhere: only used to prove the route exists and is gated
+// Search markers: letters and digits only, so they survive the search tokenizer as one word.
+const MARK = { alpha: `qaalphamarker${RUN}`, beta: `qabetamarker${RUN}`, revoked: `qarevokedmarker${RUN}` };
+const NOTE = {
+  alpha: `Grace notes for the alpha archive. ${MARK.alpha} appears here. Read John 3:16 aloud.`,
+  beta: `Hope notes for the beta archive. ${MARK.beta} appears here. Read Romans 8:28 aloud.`,
+  revoked: `Withdrawn notes that were never purged. ${MARK.revoked} appears here.`
+};
 const OAUTH = { state: token(), nonce: token(), verifier: 'qa-' + token() };
 for (const a of Object.values(A)) { secrets.add(a.email); secrets.add(a.session); }
 for (const t of [INVITE_EXPIRED.raw, INVITE_REVOKED.raw, OAUTH.state]) secrets.add(t);
+const ALPHA_ONLY = [MARK.alpha, MARK.revoked, 'QA alpha', 'Alpha QA'], BETA_ONLY = [MARK.beta, 'QA beta', 'Beta QA'];
 
 function seedSql() {
   const t = now();
@@ -180,8 +233,10 @@ function seedSql() {
   for (const [w, a, role] of members) {
     s.push(`INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at) VALUES(${q(w)},${q(a.id)},${q(role)},CURRENT_TIMESTAMP)`);
   }
-  s.push(`INSERT INTO sermons(id,workspace_id,title) VALUES(${q(SERMON.alpha)},${q(W.alpha)},'QA alpha sermon ${RUN}')`);
-  s.push(`INSERT INTO sermons(id,workspace_id,title) VALUES(${q(SERMON.beta)},${q(W.beta)},'QA beta sermon ${RUN}')`);
+  s.push(`INSERT INTO sermons(id,workspace_id,title,scripture_passage) VALUES(${q(SERMON.alpha)},${q(W.alpha)},'QA alpha sermon ${RUN}','John 3:16')`);
+  s.push(`INSERT INTO sermons(id,workspace_id,title,scripture_passage) VALUES(${q(SERMON.beta)},${q(W.beta)},'QA beta sermon ${RUN}','Romans 8:28')`);
+  s.push(`INSERT INTO sermon_scripture_refs(workspace_id,sermon_id,position,reference_text) VALUES(${q(W.alpha)},${q(SERMON.alpha)},0,'John 3:16'),(${q(W.beta)},${q(SERMON.beta)},0,'Romans 8:28')`);
+  s.push(...libraryFixtureSql());
   for (const a of Object.values(A)) {
     const expires = a === A.expired ? t - 60 : t + 3600;
     const revoked = a === A.revoked ? 'CURRENT_TIMESTAMP' : 'NULL';
@@ -195,6 +250,35 @@ function seedSql() {
   // A login attempt for the state replay check (hash only; raw state is the callback parameter).
   s.push(`INSERT INTO oauth_login_attempts(state_hash,nonce,code_verifier,expires_at) VALUES(${q(sha256(OAUTH.state))},${q(OAUTH.nonce)},${q(OAUTH.verifier)},${t + 600})`);
   return s.join(';\n') + ';';
+}
+
+/**
+ * Versions, places, an event and indexed note text for both QA workspaces, written the way the Worker stores them
+ * (consent by the workspace Owner, text plus reference tokens), plus one REVOKED version whose text was never purged:
+ * search must not show it even though the text is still in the table.
+ */
+function libraryFixtureSql() {
+  const s = [];
+  const version = (id, w, sermon, label, type, state, ownerId, doc) => s.push(`INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type,google_document_id,indexing_state,index_consent_by,index_consent_at)
+    VALUES(${q(id)},${q(w)},${q(sermon)},${q(label)},${q(type)},${q(doc)},${q(state)},${state === 'not_indexed' ? 'NULL' : q(ownerId)},${state === 'not_indexed' ? 'NULL' : 'CURRENT_TIMESTAMP'})`);
+  version(VERSION.alpha, W.alpha, SERMON.alpha, 'QA original', 'google_doc', 'indexed', A.owner.id, `qa-doc-alpha-${RUN}`);
+  version(VERSION.alphaRevoked, W.alpha, SERMON.alpha, 'QA revoked copy', 'google_doc', 'revoked', A.owner.id, `qa-doc-revoked-${RUN}`);
+  version(VERSION.alphaPdf, W.alpha, SERMON.alpha, 'QA pdf', 'pdf', 'not_indexed', null, null);
+  version(VERSION.beta, W.beta, SERMON.beta, 'QA original', 'google_doc', 'indexed', A.outsider.id, `qa-doc-beta-${RUN}`);
+  const note = (w, sermon, v, body) => s.push(`INSERT INTO note_texts(workspace_id,sermon_id,version_id,body,consent_at)
+    SELECT workspace_id,sermon_id,id,${q(body)},index_consent_at FROM sermon_versions WHERE workspace_id=${q(w)} AND id=${q(v)}`);
+  note(W.alpha, SERMON.alpha, VERSION.alpha, NOTE.alpha);
+  note(W.alpha, SERMON.alpha, VERSION.alphaRevoked, NOTE.revoked);
+  note(W.beta, SERMON.beta, VERSION.beta, NOTE.beta);
+  const token = (w, v, book, chapter, verse, body, ref) => s.push(`INSERT INTO note_reference_tokens(workspace_id,version_id,book,chapter,verse_start,verse_end,text_start,text_end,consent_at)
+    SELECT workspace_id,version_id,${q(book)},${chapter},${verse},${verse},${body.indexOf(ref)},${body.indexOf(ref) + ref.length},consent_at FROM note_texts WHERE workspace_id=${q(w)} AND version_id=${q(v)}`);
+  token(W.alpha, VERSION.alpha, 'John', 3, 16, NOTE.alpha, 'John 3:16');
+  token(W.beta, VERSION.beta, 'Romans', 8, 28, NOTE.beta, 'Romans 8:28');
+  s.push(`INSERT INTO places(id,workspace_id,display_name) VALUES(${q(PLACE.alpha)},${q(W.alpha)},'QA alpha hall ${RUN}'),(${q(PLACE.alpha2)},${q(W.alpha)},'QA alpha annex ${RUN}'),(${q(PLACE.beta)},${q(W.beta)},'QA beta hall ${RUN}')`);
+  s.push(`INSERT INTO preaching_events(id,workspace_id,sermon_id,version_id,place_id,preached_on,date_precision,occasion) VALUES
+    (${q(EVENT.alpha)},${q(W.alpha)},${q(SERMON.alpha)},${q(VERSION.alpha)},${q(PLACE.alpha)},'2026-03-01','exact','QA alpha occasion'),
+    (${q(EVENT.beta)},${q(W.beta)},${q(SERMON.beta)},${q(VERSION.beta)},${q(PLACE.beta)},'2026-03-01','exact','QA beta occasion')`);
+  return s;
 }
 
 // ---------- QA items ----------
@@ -312,7 +396,7 @@ async function qaTenancy() {
   const sql = await http('GET', `/api/workspaces/${"x%27--"}/sermons`, { cookie: asSession(A.owner.session) });
   check('TEN-11', 'Quote-bearing workspace id -> 404', sql.status === 404, `status ${sql.status}`);
   const post = await http('POST', `/api/workspaces/${W.alpha}/sermons`, { cookie: asSession(A.owner.session), body: {} });
-  check('TEN-12', 'No write route exists for sermons (404)', post.status === 404, `status ${post.status}`);
+  check('TEN-12', 'Sermon create rejects an empty body (400 with the field name, nothing created)', post.status === 400 && post.data?.field === 'title', `status ${post.status}`);
   const create = await http('POST', '/api/workspaces', { cookie: asSession(A.fresh.session), body: { name: 'QA self-registration' } });
   check('TEN-13', 'Non-pilot account cannot create a workspace (403 pilot_access_only)', create.status === 403 && create.data?.error === 'pilot_access_only', `status ${create.status}`);
   const after = await http('GET', '/api/workspaces', { cookie: asSession(A.fresh.session) });
@@ -331,8 +415,10 @@ async function qaRequestRules() {
   const logoutNoOrigin = await http('POST', '/auth/logout', { cookie, origin: null });
   const still = await http('GET', '/api/me', { cookie });
   check('CSRF-4', 'Logout without Origin -> 403 and the session survives', logoutNoOrigin.status === 403 && still.status === 200, `status ${logoutNoOrigin.status}/${still.status}`);
+  const put = await http('PUT', '/api/me', { cookie });
+  check('CSRF-5', 'Unsupported method (PUT) -> 405', put.status === 405, `status ${put.status}`);
   const del = await http('DELETE', '/api/me', { cookie });
-  check('CSRF-5', 'Unsupported method -> 405', del.status === 405, `status ${del.status}`);
+  check('CSRF-5b', 'DELETE on a route with no delete handler -> 404 and the session survives', del.status === 404 && (await http('GET', '/api/me', { cookie })).status === 200, `status ${del.status}`);
   const text = await http('POST', `/api/workspaces/${W.alpha}/invitations`, { cookie, body: 'email=x', json: false, headers: { 'content-type': 'text/plain' } });
   check('CSRF-6', 'Non-JSON invitation body -> 400', text.status === 400, `status ${text.status}`);
   const big = await http('POST', `/api/workspaces/${W.alpha}/invitations`, { cookie, body: { email: email('big'), role: 'viewer', pad: 'x'.repeat(9000) } });
@@ -456,6 +542,216 @@ async function qaLogout() {
   check('OUT-7', 'Logout of one session leaves other sessions alone', (await http('GET', '/api/me', { cookie: asSession(A.owner.session) })).status === 200, 'owner session affected');
 }
 
+// ---------- library, search, import, PDF and app-shell routes ----------
+// [method, workspace-relative template, body, flag]. :s sermon, :v version, :vp PDF version, :e event, :p/:p2 places,
+// :b/:r import batch and row (exist nowhere), :m a member. Flags: ownerOnly, adminOnly, noFile (a member sees 404 because
+// the QA PDF version holds no file, so no 200 control exists for that GET).
+const ROUTES = [
+  ['GET', '/sermons'], ['GET', '/sermons/:s'], ['GET', '/sermons/:s/versions'], ['GET', '/sermons/:s/events'],
+  ['GET', '/events?year=2026'], ['GET', '/events/:e'], ['GET', '/places'], ['GET', '/places/:p/merge-preview?target=:p2'],
+  ['GET', '/search?q=grace'], ['GET', '/sermons/:s/find-in-notes?q=grace'], ['GET', '/sermons/:s/versions/:vp/pdf', null, 'noFile'],
+  ['GET', '/imports/:b/summary', null, 'ownerOnly'], ['GET', '/imports/:b/rows', null, 'ownerOnly'], ['GET', '/members', null, 'adminOnly'],
+  ['POST', '/sermons', { title: 'QA rejected write' }], ['PATCH', '/sermons/:s', { title: 'QA rejected rename' }],
+  ['POST', '/sermons/:s/archive', {}], ['POST', '/sermons/:s/restore', {}],
+  ['POST', '/sermons/:s/versions', { label: 'QA rejected version', source_type: 'google_doc', google_document_id: 'qa-doc-rejected-0123456789' }],
+  ['PATCH', '/sermons/:s/versions/:v', { label: 'QA rejected relabel' }],
+  ['POST', '/sermons/:s/events', { preached_on: '2026-05-05' }], ['PATCH', '/events/:e', { occasion: 'QA rejected edit' }], ['DELETE', '/events/:e'],
+  ['POST', '/places', { display_name: 'QA rejected place' }], ['PATCH', '/places/:p', { display_name: 'QA rejected rename' }],
+  ['POST', '/places/:p/merge', { target_place_id: '::p2' }],
+  ['POST', '/imports', { csv: 'Title,Date\nQA,2026-01-01' }, 'ownerOnly'], ['POST', '/imports/:b/attest', { row_ids: ['::r'] }, 'ownerOnly'],
+  ['POST', '/imports/:b/rows/:r/ignore', {}, 'ownerOnly'], ['POST', '/imports/:b/rows/:r/approve', {}, 'ownerOnly'], ['POST', '/imports/:b/rows/:r/rollback', {}, 'ownerOnly'],
+  ['POST', '/sermons/:s/versions/:vp/pdf', '%PDF-1.4', 'raw'], ['POST', '/sermons/:s/versions/:vp/consent', {}, 'ownerOnly'], ['POST', '/sermons/:s/versions/:vp/revoke', {}, 'ownerOnly'],
+  ['POST', '/invitations', { email: 'qa-sweep@sermon-qa.test', role: 'viewer' }, 'adminOnly'], ['PATCH', '/members/:m', { role: 'editor' }, 'adminOnly']
+].map(([method, template, body, flag]) => ({ method, template, body, flag, write: method !== 'GET' }));
+
+const IDS = {
+  alpha: { w: W.alpha, s: SERMON.alpha, v: VERSION.alpha, vp: VERSION.alphaPdf, e: EVENT.alpha, p: PLACE.alpha, p2: PLACE.alpha2, b: IMPORT.batch, r: IMPORT.row, m: A.viewer.id },
+  beta: { w: W.beta, s: SERMON.beta, v: VERSION.beta, vp: VERSION.beta, e: EVENT.beta, p: PLACE.beta, p2: PLACE.beta, b: IMPORT.batch, r: IMPORT.row, m: A.outsider.id }
+};
+const fillBody = (text, ids) => text.replace(/::(\w+)/g, (_, k) => ids[k]);
+const fill = (text, ids) => text.replace(/:(\w+)\b/g, (m, k) => (k in ids && k !== 'w' ? ids[k] : m));
+const asWho = who => (who ? asSession(A[who].session) : undefined);
+const callRoute = (route, who, ids = IDS.alpha, workspace = ids.w) => {
+  const body = route.body === null || route.body === undefined ? undefined : typeof route.body === 'string' ? route.body : JSON.parse(fillBody(JSON.stringify(route.body), ids));
+  const raw = route.flag === 'raw';
+  return http(route.method, `/api/workspaces/${workspace}${fill(route.template, ids)}`, {
+    cookie: asWho(who), body, json: !raw, headers: raw ? { 'content-type': 'application/pdf' } : {}
+  });
+};
+// Run requests a few at a time; results keep route order.
+async function sweep(routes, who, ids, workspace) {
+  const out = new Array(routes.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (next < routes.length) { const i = next++; out[i] = { route: routes[i], res: await callRoute(routes[i], who, ids, workspace) }; }
+  }));
+  return out;
+}
+const wrong = (swept, want) => swept.filter(({ route, res }) => ![].concat(want(route)).includes(res.status))
+  .map(({ route, res }) => `${route.method} ${route.template} -> ${res.status}`);
+const leaked = (swept, forbidden) => swept.filter(({ res }) => forbidden.some(f => res.text.includes(f))).map(({ route }) => `${route.method} ${route.template}`);
+const ALL_ALPHA_IDS = [W.alpha, SERMON.alpha, VERSION.alpha, VERSION.alphaRevoked, VERSION.alphaPdf, EVENT.alpha, PLACE.alpha, PLACE.alpha2];
+const ALL_BETA_IDS = [W.beta, SERMON.beta, VERSION.beta, EVENT.beta, PLACE.beta];
+
+const STATE_SQL = `SELECT
+  (SELECT title FROM sermons WHERE id = ${q(SERMON.alpha)}) AS a_title, (SELECT archived_at IS NULL FROM sermons WHERE id = ${q(SERMON.alpha)}) AS a_active,
+  (SELECT title FROM sermons WHERE id = ${q(SERMON.beta)}) AS b_title, (SELECT archived_at IS NULL FROM sermons WHERE id = ${q(SERMON.beta)}) AS b_active,
+  (SELECT COUNT(*) FROM sermons WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS sermons,
+  (SELECT COUNT(*) FROM sermon_versions WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS versions,
+  (SELECT label FROM sermon_versions WHERE id = ${q(VERSION.alpha)}) AS a_label,
+  (SELECT indexing_state || ':' || COALESCE(r2_object_key, '-') FROM sermon_versions WHERE id = ${q(VERSION.alphaPdf)}) AS pdf_state,
+  (SELECT indexing_state FROM sermon_versions WHERE id = ${q(VERSION.alpha)}) AS a_state,
+  (SELECT indexing_state FROM sermon_versions WHERE id = ${q(VERSION.beta)}) AS b_state,
+  (SELECT COUNT(*) FROM preaching_events WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS events,
+  (SELECT occasion || '/' || place_id FROM preaching_events WHERE id = ${q(EVENT.alpha)}) AS a_event,
+  (SELECT occasion || '/' || place_id FROM preaching_events WHERE id = ${q(EVENT.beta)}) AS b_event,
+  (SELECT COUNT(*) FROM places WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS places,
+  (SELECT display_name FROM places WHERE id = ${q(PLACE.alpha)}) AS a_place, (SELECT display_name FROM places WHERE id = ${q(PLACE.beta)}) AS b_place,
+  (SELECT COUNT(*) FROM place_merges WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS merges,
+  (SELECT COUNT(*) FROM import_review_batches WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS imports,
+  (SELECT COUNT(*) FROM note_texts WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS notes,
+  (SELECT COUNT(*) FROM audit_events WHERE workspace_id IN (${q(W.alpha)}, ${q(W.beta)})) AS audits`;
+const expectedState = () => ({
+  a_title: `QA alpha sermon ${RUN}`, a_active: 1, b_title: `QA beta sermon ${RUN}`, b_active: 1, sermons: 2, versions: 4, a_label: 'QA original',
+  pdf_state: 'not_indexed:-', a_state: 'indexed', b_state: 'indexed', events: 2, a_event: `QA alpha occasion/${PLACE.alpha}`, b_event: `QA beta occasion/${PLACE.beta}`,
+  places: 3, a_place: `QA alpha hall ${RUN}`, b_place: `QA beta hall ${RUN}`, merges: 0, imports: 0, notes: 3, audits: 0
+});
+async function stateDiff() {
+  const [row] = await d1Rows(STATE_SQL), want = expectedState();
+  return Object.keys(want).filter(k => row?.[k] !== want[k]).map(k => k);
+}
+
+async function qaNewRoutesAccess() {
+  const total = ROUTES.length;
+  // Unauthenticated: every route is 401 and says nothing else, whichever workspace the URL names.
+  const anon = await sweep(ROUTES, null);
+  const anonBad = wrong(anon, () => 401).concat(anon.filter(({ res }) => res.data?.error !== 'unauthenticated').map(({ route }) => `${route.method} ${route.template} body`));
+  const other = await callRoute(ROUTES[0], null, IDS.alpha, uuid());
+  check('NEW-1', `Unauthenticated requests get 401 unauthenticated on all ${total} routes, for any workspace id`, anonBad.length === 0 && other.status === 401 && other.text === anon[0].res.text, anonBad.slice(0, 3).join('; ') || `status ${other.status}`);
+
+  // Signed-out app shell: only the sign-in page, never the shell, assets or index.html.
+  const css = await http('GET', '/assets/app.css'), js = await http('GET', '/assets/js/'), index = await http('GET', '/index.html');
+  const signedOutRoot = await http('GET', '/');
+  check('NEW-2', 'Signed out: /assets/* and /index.html are 404 not_found and / is the sign-in page', [css, js, index].every(r => r.status === 404 && r.data?.error === 'not_found') &&
+    signedOutRoot.status === 200 && signedOutRoot.text.includes('/auth/google/start'), `statuses ${css.status}/${js.status}/${index.status}/${signedOutRoot.status}`);
+
+  // Signed in: the static shell with a strict CSP and no embedded data.
+  const cookie = asSession(A.owner.session);
+  const shell = await http('GET', '/', { cookie }), asset = await http('GET', '/assets/app.css', { cookie }), hidden = await http('GET', '/index.html', { cookie });
+  const csp = shell.headers.get('content-security-policy') || '';
+  const frame = frameGuard(shell.headers);
+  check('NEW-3', 'Signed in: / serves the app shell (private, strict CSP, no embedded account or workspace data); /index.html is still 404', shell.status === 200 &&
+    /text\/html/.test(shell.headers.get('content-type') || '') && /private/.test(shell.headers.get('cache-control') || '') && /script-src 'self'/.test(csp) && /default-src 'none'/.test(csp) &&
+    frame.ok && shell.headers.get('x-content-type-options') === 'nosniff' &&
+    ![A.owner.email, A.owner.id, W.alpha, 'QA alpha'].some(v => shell.text.includes(v)) &&
+    asset.status === 200 && /text\/css/.test(asset.headers.get('content-type') || '') && hidden.status === 404, `statuses ${shell.status}/${asset.status}/${hidden.status}`);
+  if (frame.warning) warn('NEW-3', 'Signed in: / X-Frame-Options header', frame.warning);
+
+  // Viewer: reads work (the control that proves a 404 elsewhere is isolation, not a missing route), every mutation is 403.
+  const viewer = await sweep(ROUTES, 'viewer');
+  const viewerWant = r => r.flag === 'ownerOnly' || r.flag === 'adminOnly' || r.write ? 403 : r.flag === 'noFile' ? 404 : 200;
+  const viewerBad = wrong(viewer, viewerWant);
+  const writes = ROUTES.filter(r => r.write).length;
+  check('NEW-4', `Viewer: reads return 200, all ${writes} mutations return 403 before the body is read (owner-only and admin-only reads are 403)`, viewerBad.length === 0, viewerBad.slice(0, 3).join('; '));
+
+  // Owner-only routes refuse Editor and Admin too.
+  const ownerOnly = ROUTES.filter(r => r.flag === 'ownerOnly');
+  const editor = await sweep(ownerOnly, 'editor'), admin = await sweep(ownerOnly, 'admin');
+  const membersEditor = await callRoute(ROUTES.find(r => r.template === '/members'), 'editor'), membersAdmin = await callRoute(ROUTES.find(r => r.template === '/members'), 'admin');
+  // Control: the Owner is not refused on the same routes (the ids exist nowhere or the state does not fit, so 400/404/409).
+  const owner = await sweep(ownerOnly, 'owner');
+  const roleBad = wrong(editor, () => 403).map(x => 'editor ' + x).concat(wrong(admin, () => 403).map(x => 'admin ' + x))
+    .concat(wrong(owner, () => [400, 404, 409]).map(x => 'owner ' + x));
+  check('NEW-5', `Import review, consent and revoke are Owner-only: Editor and Admin get 403 on all ${ownerOnly.length} while the Owner is let through to the handler; the member list is Owner/Admin only`,
+    roleBad.length === 0 && membersEditor.status === 403 && membersAdmin.status === 200 && Array.isArray(membersAdmin.data?.members), roleBad.slice(0, 3).join('; ') || `members ${membersEditor.status}/${membersAdmin.status}`);
+
+  // Another workspace's member: 404 on every route, with nothing of this workspace in the response.
+  const outsider = await sweep(ROUTES, 'outsider');
+  const outsiderBad = wrong(outsider, () => 404).concat(leaked(outsider, [...ALPHA_ONLY, ...ALL_ALPHA_IDS.filter(id => id !== W.alpha)]).map(x => 'leak ' + x));
+  const same = outsider.every(({ res }) => res.text === outsider[0].res.text);
+  check('NEW-6', `A member of another workspace gets 404 not_found on all ${total} routes with no data, and one identical body`, outsiderBad.length === 0 && same, outsiderBad.slice(0, 3).join('; ') || 'bodies differ');
+  const ownerElsewhere = await sweep(ROUTES, 'owner', IDS.beta);
+  const elsewhereBad = wrong(ownerElsewhere, () => 404).concat(leaked(ownerElsewhere, [...BETA_ONLY, ...ALL_BETA_IDS.filter(id => id !== W.beta)]).map(x => 'leak ' + x));
+  check('NEW-7', `The alpha Owner gets 404 on all ${total} routes under the beta workspace URL, with no beta data`, elsewhereBad.length === 0, elsewhereBad.slice(0, 3).join('; '));
+
+  // A member naming another workspace's ids inside their own workspace: 404 (path ids) or a refusal (body ids), and no write lands.
+  const betaIds = { ...IDS.alpha, ...IDS.beta, w: W.alpha };
+  const crossRoutes = ROUTES.filter(r => /\/(sermons|events|places)\/:/.test(r.template));
+  const cross = await sweep(crossRoutes, 'owner', betaIds, W.alpha);
+  const crossBad = wrong(cross, () => 404).concat(leaked(cross, [...BETA_ONLY, ...ALL_BETA_IDS.filter(id => id !== W.beta)]).map(x => 'leak ' + x));
+  const bodyIds = [
+    { method: 'POST', template: '/places/:p/merge', body: { target_place_id: PLACE.beta } }, { method: 'GET', template: `/places/:p/merge-preview?target=${PLACE.beta}`, body: null },
+    { method: 'POST', template: '/sermons/:s/events', body: { preached_on: '2026-05-05', version_id: VERSION.beta } }, { method: 'POST', template: '/sermons/:s/events', body: { preached_on: '2026-05-05', place_id: PLACE.beta } },
+    { method: 'PATCH', template: '/events/:e', body: { place_id: PLACE.beta } }, { method: 'PATCH', template: '/events/:e', body: { version_id: VERSION.beta } }
+  ];
+  // Mixed paths: this workspace's sermon with the other workspace's version.
+  const mixed = [['GET', '/pdf'], ['POST', '/pdf', '%PDF-1.4', 'raw'], ['POST', '/consent', {}], ['POST', '/revoke', {}], ['PATCH', '', { label: 'QA rejected relabel' }]]
+    .map(([method, tail, body, flag]) => ({ method, template: `/sermons/${SERMON.alpha}/versions/${VERSION.beta}${tail}`, body, flag }));
+  const bodySweep = [];
+  for (const r of bodyIds) bodySweep.push({ route: r, res: await callRoute(r, 'owner'), want: [400, 404, 409] });
+  for (const r of mixed) bodySweep.push({ route: r, res: await callRoute(r, 'owner'), want: [404] });
+  const bodyBad = bodySweep.filter(({ res, want }) => !want.includes(res.status)).map(({ route, res }) => `${route.method} ${route.template} -> ${res.status}`);
+  check('NEW-8', `Other-workspace ids inside the Owner's own workspace: 404 on all ${crossRoutes.length} id routes and ${mixed.length} mixed paths, and body ids (place, version, merge target) are refused`,
+    crossBad.length === 0 && bodyBad.length === 0, crossBad.concat(bodyBad).slice(0, 3).join('; '));
+
+  const diff = await stateDiff();
+  check('NEW-9', 'After every refused request nothing changed: titles, archive state, versions, events, places, merges, imports, note text and audit log are as seeded', diff.length === 0, `changed: ${diff.join(', ')}`);
+
+  // Positive control: the same mutation an Editor may make succeeds and is audited, so the refusals above are about roles.
+  const made = await http('POST', `/api/workspaces/${W.alpha}/sermons`, { cookie: asSession(A.editor.session), body: { title: `QA editor sermon ${RUN}` } });
+  const audit = await d1Rows(`SELECT action FROM audit_events WHERE workspace_id = ${q(W.alpha)} AND action = 'sermon.create'`);
+  check('NEW-10', 'Control: an Editor can create a sermon (201) and it is audited', made.status === 201 && audit.length === 1, `status ${made.status}`);
+}
+
+async function qaSearchNoLeak() {
+  const search = (who, workspace, term, extra = '') => http('GET', `/api/workspaces/${workspace}/search?q=${encodeURIComponent(term)}${extra}`, { cookie: asWho(who) });
+  const find = (who, workspace, sermon, term) => http('GET', `/api/workspaces/${workspace}/sermons/${sermon}/find-in-notes?q=${encodeURIComponent(term)}`, { cookie: asWho(who) });
+  // The response echoes the caller's own query text, so leaks are looked for in the result lists only.
+  const results = res => JSON.stringify([res.data?.notesMatches, res.data?.metadataMatches]);
+  const hasAlphaHit = res => (res.data?.notesMatches || []).some(m => m.sermon_id === SERMON.alpha && m.version_id === VERSION.alpha);
+
+  const anon = await search(null, W.alpha, MARK.alpha), anonFind = await find(null, W.alpha, SERMON.alpha, MARK.alpha);
+  check('SRCH-1', 'Unauthenticated search and find-in-notes -> 401 with no results', anon.status === 401 && anonFind.status === 401 && !anon.text.includes(MARK.alpha), `statuses ${anon.status}/${anonFind.status}`);
+
+  const own = await search('viewer', W.alpha, MARK.alpha);
+  check('SRCH-2', 'A Viewer finds indexed notes in their workspace (200, excerpt highlights the word)', own.status === 200 && hasAlphaHit(own) &&
+    own.data.notesMatches[0].excerpt?.text?.includes(MARK.alpha) && own.data.notesMatches[0].excerpt.highlights.length >= 1, `status ${own.status}`);
+  const ref = await search('viewer', W.alpha, 'John 3:16');
+  check('SRCH-3', 'A Bible reference query returns the sermon passage and the indexed notes separately', ref.status === 200 &&
+    (ref.data?.metadataMatches || []).some(m => m.sermon_id === SERMON.alpha) && hasAlphaHit(ref), `status ${ref.status}`);
+
+  const betaForAlpha = await search('outsider', W.beta, MARK.alpha), betaRefAlpha = await search('outsider', W.beta, 'John 3:16');
+  check('SRCH-4', "Another workspace's search for this workspace's word and reference returns nothing and none of its titles or ids",
+    betaForAlpha.status === 200 && betaRefAlpha.status === 200 && [betaForAlpha, betaRefAlpha].every(r => !(r.data?.notesMatches || []).length && !(r.data?.metadataMatches || []).length &&
+      ![...ALPHA_ONLY, ...ALL_ALPHA_IDS].some(v => results(r).includes(v))), `statuses ${betaForAlpha.status}/${betaRefAlpha.status}`);
+  const alphaForBeta = await search('owner', W.alpha, MARK.beta), alphaRefBeta = await search('owner', W.alpha, 'Romans 8:28');
+  check('SRCH-5', "The reverse holds: alpha searching the other workspace's word and reference finds nothing of it", [alphaForBeta, alphaRefBeta].every(r => r.status === 200 &&
+    !(r.data?.notesMatches || []).length && !(r.data?.metadataMatches || []).length && ![...BETA_ONLY, ...ALL_BETA_IDS].some(v => results(r).includes(v))), `statuses ${alphaForBeta.status}/${alphaRefBeta.status}`);
+  const viaAlpha = await search('outsider', W.alpha, MARK.alpha), findViaAlpha = await find('outsider', W.alpha, SERMON.alpha, MARK.alpha);
+  const findCross = await find('owner', W.alpha, SERMON.beta, MARK.beta), findCrossBack = await find('outsider', W.beta, SERMON.alpha, MARK.alpha);
+  check('SRCH-6', 'Non-members and cross-workspace sermon ids get 404 from search and find-in-notes, with no text', [viaAlpha, findViaAlpha, findCross, findCrossBack].every(r => r.status === 404 && r.data?.error === 'not_found') &&
+    ![viaAlpha, findViaAlpha, findCross, findCrossBack].some(r => [...ALPHA_ONLY, ...BETA_ONLY].some(v => r.text.includes(v))), `statuses ${[viaAlpha, findViaAlpha, findCross, findCrossBack].map(r => r.status)}`);
+
+  // FTS syntax in the query is plain words: no query below is a single exact word of either workspace, so none may match anything.
+  const attempts = [`qabeta*`, `qaalpha*`, `${MARK.alpha} OR ${MARK.beta}`, `"${MARK.alpha}" OR "${MARK.beta}"`, `NEAR(${MARK.alpha} ${MARK.beta})`, `body:${MARK.beta}`, `${MARK.beta} -${MARK.alpha}`];
+  const inj = [];
+  for (const term of attempts) for (const [who, workspace, other] of [['outsider', W.beta, MARK.alpha], ['owner', W.alpha, MARK.beta]]) {
+    const r = await search(who, workspace, term);
+    if (r.status !== 200 || results(r).includes(other) || (r.data?.notesMatches || []).length || (r.data?.metadataMatches || []).length) inj.push(`${term.slice(0, 18)} ${r.status}`);
+  }
+  check('SRCH-7', `Search operators (prefix star, OR, quotes, NEAR, column filter, minus) never widen results: ${attempts.length} queries x 2 workspaces`, inj.length === 0, inj.slice(0, 3).join('; '));
+
+  // A revoked version whose text was never purged stays invisible; find-in-notes reports it as revoked with no excerpt.
+  const revoked = await search('viewer', W.alpha, MARK.revoked, '&archived=include'), revokedRef = await find('viewer', W.alpha, SERMON.alpha, MARK.revoked);
+  const byLabel = Object.fromEntries((revokedRef.data?.versions || []).map(v => [v.label, v]));
+  check('SRCH-8', 'Revoked-but-unpurged note text is never returned by search or find-in-notes (reported as not searchable: revoked)', revoked.status === 200 && !(revoked.data?.notesMatches || []).length &&
+    !results(revoked).includes('Withdrawn') && !revokedRef.text.includes('Withdrawn') && byLabel['QA revoked copy']?.status === 'not_searchable' && byLabel['QA revoked copy']?.reason === 'revoked' &&
+    !('excerpts' in (byLabel['QA revoked copy'] || {})) && byLabel['QA pdf']?.status === 'not_searchable' && byLabel['QA pdf']?.reason === 'unindexed', `status ${revoked.status}/${revokedRef.status}`);
+  const found = await find('viewer', W.alpha, SERMON.alpha, MARK.alpha), foundBy = Object.fromEntries((found.data?.versions || []).map(v => [v.label, v]));
+  check('SRCH-9', 'Find-in-notes marks the indexed version matched and the other versions not searchable', found.status === 200 && foundBy['QA original']?.status === 'matched' &&
+    foundBy['QA original'].excerpts?.length >= 1 && foundBy['QA revoked copy']?.status === 'not_searchable', `status ${found.status}`);
+}
+
 // ---------- leak scan ----------
 function scanForLeaks(label, { headers, text: body, expected = [] }) {
   const hits = [];
@@ -468,18 +764,6 @@ function scanForLeaks(label, { headers, text: body, expected = [] }) {
   return hits.length ? `${label}: ${[...new Set(hits)].join(', ')}` : null;
 }
 
-function startTail() {
-  const lines = [];
-  let ready = false;
-  const child = spawn(WRANGLER, ['tail', '--env', 'staging', '--format', 'json'], { cwd: ROOT, env: { ...process.env, NO_COLOR: '1', WRANGLER_SEND_METRICS: 'false' } });
-  const onData = chunk => { ready = true; lines.push(chunk.toString()); };
-  child.stdout.on('data', onData);
-  child.stderr.on('data', chunk => { ready = true; lines.push(chunk.toString()); });
-  let failed = null, stopping = false;
-  child.on('error', error => { failed = error.message; });
-  child.on('exit', code => { if (code && !failed && !stopping) failed = `exited ${code}`; });
-  return { child, lines, isReady: () => ready, failure: () => failed, stop: () => { stopping = true; child.kill('SIGINT'); } };
-}
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // ---------- main ----------
@@ -490,22 +774,31 @@ function printTable() {
     console.log(`${r.status.padEnd(8)} ${r.id.padEnd(width)}  ${r.name}${r.detail ? `  [${redact(r.detail)}]` : ''}`);
   }
   const count = s => results.filter(r => r.status === s).length;
-  console.log(`\nPASS ${count('PASS')}  FAIL ${count('FAIL')}  SKIP ${count('SKIP')}  (run ${RUN}, origin ${ORIGIN})`);
+  console.log(`\nPASS ${count('PASS')}  FAIL ${count('FAIL')}  SKIP ${count('SKIP')}  WARN ${count('WARN')}  (run ${RUN}, origin ${ORIGIN})`);
 }
 
-async function main() {
+async function main({ readConfig = () => readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'), origin = ORIGIN } = {}) {
+  // Same pinned staging identity guard as the seed, plus the origin the HTTP checks call: D1 and HTTP must both be staging.
+  assertStagingConfig(await readConfig());
+  // Requests go to ORIGIN, so it is checked as well as the argument: synthetic session cookies must only ever travel over https to staging.
+  for (const candidate of new Set([origin, ORIGIN])) {
+    if (!isStagingOrigin(candidate)) throw new SeedRefusal(`STAGING_ORIGIN must be exactly ${STAGING_ORIGIN} (got ${redact(String(candidate))}); refusing to write.`);
+  }
   await loadOwnerTriggers();
+  const [migrated] = await d1Rows(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'import_review_rows', 'note_texts', 'note_reference_tokens')`);
+  if (migrated.n !== 5) throw new Error('the staging D1 is missing migrations 0004-0006 (library, notes index, import review). Apply them and deploy the matching Worker first: pnpm exec wrangler d1 migrations apply DB --env staging --remote');
+  results.length = 0; // a second in-process run (the tests) must not inherit the first run's rows
   console.log(`Staging auth QA against ${ORIGIN} (staging D1 only)`);
   console.log('Removing leftover synthetic rows, then seeding...');
   await cleanup({ requireTriggers: true });
-  const tail = startTail();
+  const tail = transport.tail();
   let failure = null;
   try {
     await d1(seedSql());
     // Give `wrangler tail` a moment to attach before traffic starts.
     for (let i = 0; i < 20 && !tail.isReady() && !tail.failure(); i++) await sleep(500);
     await sleep(2000);
-    for (const step of [qaPublic, qaOAuth, qaSessions, qaTenancy, qaRequestRules, qaRoles, qaInvitations, qaRevocation, qaLogout]) {
+    for (const step of [qaPublic, qaOAuth, qaSessions, qaTenancy, qaNewRoutesAccess, qaSearchNoLeak, qaRequestRules, qaRoles, qaInvitations, qaRevocation, qaLogout]) {
       try { await step(); } catch (error) { check(`ERR-${step.name}`, `${step.name} ran to completion`, false, redact(error.message)); }
     }
     await sleep(4000);
@@ -534,10 +827,14 @@ async function main() {
 
   let residue = null;
   try { residue = await cleanup(); } catch (error) { check('CLEAN-1', 'Synthetic rows removed', false, redact(error.message)); }
-  if (residue) check('CLEAN-1', 'Synthetic rows removed, owner-protection triggers restored',
-    residue.accounts === 0 && residue.triggers === 2 && residue.attempts === 0, `accounts ${residue.accounts}, triggers ${residue.triggers}, attempts ${residue.attempts}`);
+  if (residue) check('CLEAN-1', 'Synthetic rows removed (accounts, workspaces, library, note text and search index), owner-protection triggers restored',
+    residue.accounts === 0 && residue.workspaces === 0 && residue.library_rows === 0 && residue.note_rows === 0 && residue.fts_rows === 0 && residue.triggers === 2 && residue.attempts === 0,
+    `accounts ${residue.accounts}, workspaces ${residue.workspaces}, library rows ${residue.library_rows}, note rows ${residue.note_rows}, search index rows ${residue.fts_rows}, triggers ${residue.triggers}, attempts ${residue.attempts}`);
   printTable();
   process.exitCode = results.some(r => r.status === 'FAIL') ? 1 : 0;
 }
 
-main().catch(error => { console.error('staging-qa aborted: ' + redact(error.message)); process.exit(2); });
+export { main };
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(error => { console.error('staging-qa aborted: ' + redact(error.message)); process.exit(2); });
+}
