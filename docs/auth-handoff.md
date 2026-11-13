@@ -59,3 +59,4 @@ Staging holds synthetic data only. Never import real sermon, member or PDF data 
 - Deploy: `pnpm exec wrangler deploy --env staging`. Check `/health`.
 - Never pass `--remote` without `--env staging`. The top-level env holds placeholders only.
 - Without the secrets set, `/health` works but sign-in does not.
+- QA: `pnpm qa:staging` seeds synthetic `*.test` rows in the staging D1 only, exercises the deployed Worker over HTTP, prints a PASS/FAIL/SKIP table, exits non-zero on failure and removes its rows. Needs a logged-in `wrangler` and resolves DNS through DoH (`QA_DOH_URL`). The `/auth/google/start` checks report SKIP while Google secrets are unset. The real Google sign-in round trip is done by hand in a browser.

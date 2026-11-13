@@ -165,3 +165,38 @@ test('full mocked Google callback links approved subject, issues session, and re
   const again=await handleRequest(callback,f.env);assert.equal(again.status,401);
  }finally{globalThis.fetch=originalFetch;f.db.close()}
 });
+
+test('invite, accept and member-change DB failures return a generic 503 instead of rejecting',async()=>{
+ const f=await fixture();try{
+  const boom=async()=>{throw new Error('boom owner@example.test SELECT secret')};
+  const realBatch=f.db.batch.bind(f.db),realPrepare=f.db.prepare.bind(f.db);
+  const token=randomToken();
+  const cases=[
+   ['inviteMember',f.request('POST','/api/workspaces/'+ids.w1+'/invitations',ids.owner,{email:'new@example.test',role:'viewer'}),'batch'],
+   ['acceptInvite',f.request('POST','/api/invitations/accept',ids.invitee,{token}),'invite-select'],
+   ['manageMember',f.request('PATCH','/api/workspaces/'+ids.w1+'/members/'+ids.viewer,ids.admin,{revoke:true}),'batch']];
+  for(const [name,request,mode] of cases){
+   f.db.batch=mode==='batch'?boom:realBatch;
+   f.db.prepare=sql=>{const stmt=realPrepare(sql);
+    if(mode!=='invite-select'||!/FROM workspace_invitations i JOIN/i.test(sql))return stmt;
+    return {bind:(...args)=>({...stmt.bind(...args),first:boom})}};
+   const response=await handleRequest(request,f.env);
+   assert.equal(response.status,503,name);
+   const text=await response.text();assert.ok(!/boom|owner@|SELECT/.test(text),name);
+  }
+ }finally{f.db.close()}
+});
+
+test('async handler failures return a generic 503 instead of rejecting',async()=>{
+ const f=await fixture();try{
+  const realPrepare=f.db.prepare.bind(f.db);
+  f.db.prepare=(sql)=>{const stmt=realPrepare(sql);
+   if(!/FROM sermons|JOIN workspaces|FROM workspaces/i.test(sql))return stmt;
+   return {bind:(...args)=>{const b=stmt.bind(...args);const fail=async()=>{throw new Error('boom owner@example.test SELECT secret')};return {...b,first:fail,all:fail,run:fail}}}};
+  for(const [method,path,body] of [['GET','/api/workspaces/'+ids.w1+'/sermons'],['GET','/api/workspaces'],['POST','/api/workspaces',{name:'Fixture'}]]){
+   const response=await handleRequest(f.request(method,path,ids.owner,body),f.env);
+   assert.equal(response.status,503,method+' '+path);
+   const text=await response.text();assert.ok(!/boom|owner@|SELECT/.test(text));
+  }
+ }finally{f.db.close()}
+});
