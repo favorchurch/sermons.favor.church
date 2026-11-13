@@ -58,7 +58,13 @@ async function http(method, path, { cookie, headers = {}, body, origin = ORIGIN,
   for (const [k, v] of Object.entries(h)) args.push('-H', `${k}: ${v}`);
   if (body !== undefined) args.push('--data-binary', typeof body === 'string' ? body : JSON.stringify(body));
   args.push(ORIGIN + path);
-  const { stdout } = await run('curl', args, { maxBuffer: 4 << 20 });
+  let stdout;
+  for (let attempt = 1; ; attempt++) { // retry transient network errors (DoH lookup, reset) only; HTTP statuses are never retried
+    try { ({ stdout } = await run('curl', args, { maxBuffer: 4 << 20 })); break; } catch (error) {
+      if (attempt >= 3) throw new Error(`curl failed (exit ${error.code}) ${method} ${path}: ${redact(String(error.stderr || '').trim().split('\n').pop())}`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
   const split = stdout.indexOf('\r\n\r\n');
   const head = stdout.slice(0, split).split('\r\n');
   const status = Number(head[0].split(' ')[1]);
@@ -106,7 +112,23 @@ async function loadOwnerTriggers() {
 }
 const SYN_ACCOUNTS = `(SELECT id FROM user_accounts WHERE email_normalized LIKE '%@${EMAIL_DOMAIN}')`;
 const SYN_WORKSPACES = `(SELECT id FROM workspaces WHERE owner_account_id IN ${SYN_ACCOUNTS})`;
+// Staging holds a real pilot workspace ("Favor Church") and pilot-qa.test accounts. This script may only touch
+// rows reachable from the sermon-qa.test domain, and aborts before any write if that boundary is crossed.
+const PROTECTED_WORKSPACE = 'Favor Church';
+async function guardProtectedData() {
+  if (EMAIL_DOMAIN !== 'sermon-qa.test') throw new Error('guard: QA email domain must be sermon-qa.test');
+  const [g] = await d1Rows(`SELECT
+    (SELECT COUNT(*) FROM workspaces WHERE id IN ${SYN_WORKSPACES} AND name = ${q(PROTECTED_WORKSPACE)}) AS named,
+    (SELECT COUNT(*) FROM workspace_memberships WHERE workspace_id IN ${SYN_WORKSPACES}
+       AND account_id NOT IN ${SYN_ACCOUNTS}) AS foreign_members,
+    (SELECT COUNT(*) FROM workspace_memberships WHERE account_id IN ${SYN_ACCOUNTS}
+       AND workspace_id NOT IN ${SYN_WORKSPACES}) AS joined_elsewhere`);
+  if (g.named || g.foreign_members || g.joined_elsewhere) {
+    throw new Error(`guard: synthetic rows touch non-QA data (named ${g.named}, foreign members ${g.foreign_members}, joined elsewhere ${g.joined_elsewhere}); aborting without writes`);
+  }
+}
 async function cleanup() {
+  await guardProtectedData();
   // The owner-protection triggers (correctly) block deleting owner memberships, so they are dropped and
   // recreated from the migration inside the same execution, then verified.
   const statements = [
@@ -118,7 +140,7 @@ async function cleanup() {
     `DROP TRIGGER IF EXISTS protect_owner_membership_delete`,
     `DELETE FROM workspace_memberships WHERE workspace_id IN ${SYN_WORKSPACES} OR account_id IN ${SYN_ACCOUNTS}`,
     `DELETE FROM sermons WHERE workspace_id IN ${SYN_WORKSPACES}`,
-    `DELETE FROM workspaces WHERE owner_account_id IN ${SYN_ACCOUNTS}`,
+    `DELETE FROM workspaces WHERE owner_account_id IN ${SYN_ACCOUNTS} AND name <> ${q(PROTECTED_WORKSPACE)}`,
     `DELETE FROM google_identities WHERE account_id IN ${SYN_ACCOUNTS}`,
     `DELETE FROM user_accounts WHERE email_normalized LIKE '%@${EMAIL_DOMAIN}'`,
     ...ownerTriggers
@@ -448,10 +470,10 @@ function startTail() {
   const onData = chunk => { ready = true; lines.push(chunk.toString()); };
   child.stdout.on('data', onData);
   child.stderr.on('data', chunk => { ready = true; lines.push(chunk.toString()); });
-  let failed = null;
+  let failed = null, stopping = false;
   child.on('error', error => { failed = error.message; });
-  child.on('exit', code => { if (code && !failed) failed = `exited ${code}`; });
-  return { child, lines, isReady: () => ready, failure: () => failed };
+  child.on('exit', code => { if (code && !failed && !stopping) failed = `exited ${code}`; });
+  return { child, lines, isReady: () => ready, failure: () => failed, stop: () => { stopping = true; child.kill('SIGINT'); } };
 }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -484,7 +506,7 @@ async function main() {
     await sleep(4000);
   } catch (error) { failure = error; }
   finally {
-    tail.child.kill('SIGINT');
+    tail.stop();
     await sleep(500);
     if (!tail.child.killed || tail.child.exitCode === null) tail.child.kill('SIGKILL');
   }

@@ -327,23 +327,23 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return reply(200, { account: actor });
     }
     if (pathname === '/api/workspaces') {
-      if (request.method === 'GET') return listWorkspaces(env, actor);
-      if (request.method === 'POST') return createWorkspace(request, env, actor);
+      if (request.method === 'GET') return await listWorkspaces(env, actor);
+      if (request.method === 'POST') return await createWorkspace(request, env, actor);
     }
-    if (pathname === '/api/invitations/accept' && request.method === 'POST') return acceptInvite(request, env, actor);
+    if (pathname === '/api/invitations/accept' && request.method === 'POST') return await acceptInvite(request, env, actor);
     const match = /^\/api\/workspaces\/([^/]+)(?:\/(sermons|invitations|members)(?:\/([^/]+))?)?$/.exec(pathname);
     if (!match) return reply(404, { error: 'not_found' });
     const workspaceId = match[1];
     const access = await membership(env, workspaceId, actor.id);
     if (!access) return reply(404, { error: 'not_found' });
-    if (match[2] === 'sermons' && !match[3] && request.method === 'GET') return listSermons(env, workspaceId);
+    if (match[2] === 'sermons' && !match[3] && request.method === 'GET') return await listSermons(env, workspaceId);
     if (match[2] === 'invitations' && !match[3] && request.method === 'POST') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
-      return inviteMember(request, env, workspaceId, actor, access.role, origin);
+      return await inviteMember(request, env, workspaceId, actor, access.role, origin);
     }
     if (match[2] === 'members' && match[3] && request.method === 'PATCH') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
-      return manageMember(request, env, workspaceId, match[3], actor, access.role);
+      return await manageMember(request, env, workspaceId, match[3], actor, access.role);
     }
     return reply(404, { error: 'not_found' });
   } catch {
