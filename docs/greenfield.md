@@ -39,4 +39,4 @@
 - No real OAuth/session/permission enforcement, UI, D1 runtime query, R2 upload, Google indexing or backend import endpoint yet.
 - The operator dry run can export a local private review payload; this is not a database import or ownership approval.
 - Date precision and title normalization are deliberately conservative. An identical title does not imply identical sermon content or owner.
-- The current CI uses an install step; pin and commit a generated npm lockfile once a connected install environment is available, before release.
+- CI installs with `pnpm install --frozen-lockfile` against the committed `pnpm-lock.yaml`.

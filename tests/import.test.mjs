@@ -57,3 +57,10 @@ test('idempotent row keys are stable for identical source exports', async () => 
   assert.deepEqual(inspectHistory(source), inspectHistory(source));
   assert.notEqual(inspectHistory(source).rows[0].id, inspectHistory(source + '\n').rows[0].id);
 });
+
+test('short rows are flagged for review instead of crashing the preflight', () => {
+  const out = inspectHistory('Date Preached,Sermon Title\n1/2/2024,Only Two Columns\n3/4/2024\n');
+  assert.equal(out.summary.rows, 2);
+  assert.equal(out.summary.flag_counts.missing_place, 2);
+  assert.equal(out.rows[1].proposed_title, null);
+});

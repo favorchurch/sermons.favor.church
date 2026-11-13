@@ -68,7 +68,7 @@ export function inspectHistory(csvText, options = {}) {
   const flagCounts = {};
   let duplicateCandidates = 0;
   for (let i = 1; i < csv.length; i++) {
-    const values = csv[i].slice(0, 6).map(v => String(v ?? ''));
+    const values = Array.from({ length: 6 }, (_, c) => String(csv[i][c] ?? ''));
     if (!values.some(x => x.trim())) continue;
     if (/^please insert rows below this row/i.test(values[0])) continue;
     const date = normalizeDate(values[0]);

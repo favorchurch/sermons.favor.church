@@ -10,13 +10,13 @@ An open-source, private-by-default sermon archive for pastors and their teams.
 
 ## Local foundation
 
-Requires Node.js 22+, Python 3.12+, and a local npm install. Run:
+Requires Node.js 22.6+, Python 3.12+, and a local pnpm install (version pinned in `package.json`). Run:
 
 ```sh
-npm install
-npm run check
-npm run migrate:local
-npm run dev
+pnpm install
+pnpm run check
+pnpm run migrate:local
+pnpm run dev
 ```
 
 `wrangler.jsonc` deliberately contains a **non-deployable D1 database ID** and a non-provisioned private R2 bucket name. Local development is allowed; **do not deploy** until separate private Cloudflare resources are provisioned, actual IDs/bucket names are configured, authenticated endpoints and tenant isolation tests pass, and release gates are approved. The Workers D1/R2 bindings are present to define the intended topology, not to claim production provisioning.

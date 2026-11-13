@@ -11,12 +11,15 @@
     "migrate:local": "wrangler d1 migrations apply sermon-bank-local --local",
     "test:unit": "node --test tests/*.test.mjs",
     "test:schema": "python3 scripts/check_schema.py",
-    "test": "npm run test:unit && npm run test:schema",
-    "check": "npm run typecheck && npm test"
+    "test": "pnpm run test:unit && pnpm run test:schema",
+    "check": "pnpm run typecheck && pnpm test"
   },
   "devDependencies": {
     "typescript": "5.8.3",
     "wrangler": "4.47.0"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22.6"
+  },
+  "packageManager": "pnpm@10.28.0"
 }
