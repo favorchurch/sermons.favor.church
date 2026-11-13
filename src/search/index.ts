@@ -108,7 +108,11 @@ type Word = { term: string; start: number; end: number };
 
 function wordsOf(text: string): Word[] {
   const out: Word[] = [];
-  for (const m of text.matchAll(WORD)) out.push({ term: fold(m[0]), start: m.index!, end: m.index! + m[0].length });
+  for (const m of text.matchAll(WORD)) {
+    const term = fold(m[0]);
+    // FTS5 skips tokens that fold to nothing (stray combining marks); so does phrase verification.
+    if (term) out.push({ term, start: m.index!, end: m.index! + m[0].length });
+  }
   return out;
 }
 
@@ -123,9 +127,12 @@ export function parseSearchQuery(raw: string): SearchQuery | null {
   const text = raw.normalize('NFC').trim();
   const reference = parseReference(text);
   if (reference) return { kind: 'reference', reference, label: formatReference(reference) };
-  const terms = wordsOf(text).map(word => word.term).filter(Boolean);
+  const terms = wordsOf(text).map(word => word.term);
   if (!terms.length || terms.length > MAX_QUERY_WORDS) return null;
-  return { kind: 'text', terms, match: `"${terms.join(' ')}"`, label: terms.join(' ') };
+  // FTS5 gets the raw word runs so it folds them exactly as it folded the stored body; `terms`
+  // (folded here) only verify phrases. Runs hold letters and digits, so they cannot contain a quote.
+  const runs = [...text.matchAll(WORD)].map(m => m[0]).filter(run => fold(run));
+  return { kind: 'text', terms, match: `"${runs.join(' ')}"`, label: terms.join(' ') };
 }
 
 // ---- Excerpts ----

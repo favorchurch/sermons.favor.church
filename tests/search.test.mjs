@@ -455,3 +455,123 @@ test('limit is validated and applied', async () => {
     assert.equal(res.json.notesMatches.length, 1);
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// Review hardening
+// ---------------------------------------------------------------------------------------
+
+test('non-Latin and polytonic text is found: FTS folds the query exactly as it folded the body', async () => {
+  await withFixture(async f => {
+    consent(f.db, ids.version1);
+    await index(f, ids.version1, 'ἐν ἀρχῇ ἦν ὁ λόγος. Ёлка и Иисус Христос. Zoë and Việt Nam.');
+    for (const q of ['ἐν ἀρχῇ ἦν', 'ἀρχῇ', 'Ёлка', 'ёлка', 'Иисус Христос', 'ὁ λόγος', 'zoe', 'Viet Nam']) {
+      const res = await search(f, q);
+      assert.equal(res.json.notesMatches.length, 1, q);
+      const { text, highlights } = res.json.notesMatches[0].excerpt;
+      assert.equal(highlights.length, 1, q);
+      assert.ok(highlights[0].end > highlights[0].start && highlights[0].end <= text.length, q);
+    }
+    assert.equal((await search(f, 'λόγος ἐν')).json.notesMatches.length, 0, 'order still matters');
+  });
+});
+
+test('stray combining marks in notes do not hide a phrase from verification', async () => {
+  await withFixture(async f => {
+    consent(f.db, ids.version1);
+    await index(f, ids.version1, 'alpha ́ beta gamma');
+    assert.equal((await search(f, 'alpha beta')).json.notesMatches.length, 1);
+  });
+});
+
+test('offsets stay exact with astral characters, CRLF, decomposed input and excerpt edges on surrogate pairs', async () => {
+  await withFixture(async f => {
+    consent(f.db, ids.version1);
+    const body = `${'😀'.repeat(40)} x\r\ncafé notes\r\nJohn 3:16 end ${'🙂'.repeat(70)}`;
+    await index(f, ids.version1, body);
+    const stored = f.db.query('SELECT body FROM note_texts')[0].body;
+    assert.ok(!stored.includes('\r') && stored.includes('café'), 'stored text is NFC with \\n newlines');
+    for (const [q, expected] of [['John 3:16', 'John 3:16'], ['café notes', 'café notes'], ['end', 'end']]) {
+      const note = (await search(f, q)).json.notesMatches[0];
+      assert.equal(stored.slice(note.offset, note.offset + expected.length), expected, q);
+      const { text, text_offset, highlights } = note.excerpt;
+      assert.equal(stored.slice(text_offset, text_offset + text.length), text, q);
+      assert.equal(text.slice(highlights[0].start, highlights[0].end), expected, q);
+      assert.ok(!/(^[\udc00-\udfff])|([\ud800-\udbff]$)/.test(text), 'no split surrogate pair in ' + q);
+    }
+    const token = f.db.query('SELECT text_start, text_end FROM note_reference_tokens')[0];
+    assert.equal(stored.slice(token.text_start, token.text_end), 'John 3:16');
+  });
+});
+
+test('query word limit: 12 words accepted, 13 rejected', async () => {
+  await withFixture(async f => {
+    assert.equal((await search(f, 'a b c d e f g h i j k l')).status, 200);
+    assert.equal((await search(f, 'a b c d e f g h i j k l m')).status, 400);
+  });
+});
+
+test('Owner consent must come from an active, accepted membership', async () => {
+  await withFixture(async f => {
+    f.db.execute('INSERT INTO user_accounts(id,email_normalized,display_name) VALUES (?,?,?),(?,?,?)', [uuid(61), 'x1@example.test', 'x1', uuid(62), 'x2@example.test', 'x2']);
+    const cases = [['revoked', uuid(61), "CURRENT_TIMESTAMP", "CURRENT_TIMESTAMP"], ['not accepted', uuid(62), 'NULL', 'NULL']];
+    for (const [i, [name, account, accepted, revoked]] of cases.entries()) {
+      const w = uuid(70 + i), s = uuid(80 + i), v = uuid(90 + i);
+      f.db.execute('INSERT INTO workspaces(id,name,owner_account_id) VALUES (?,?,?)', [w, name, account]);
+      f.db.execute(`INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at,revoked_at) VALUES (?,?,'owner',${accepted},${name === 'revoked' ? revoked : 'NULL'})`, [w, account]);
+      f.db.execute('INSERT INTO sermons(id,workspace_id,title) VALUES (?,?,?)', [s, w, 'S']);
+      f.db.execute(`INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type,index_consent_by,index_consent_at,indexing_state) VALUES (?,?,?,?,'pdf',?,'2025-06-01','queued')`, [v, w, s, 'V', account]);
+      await assert.rejects(indexVersion(f.env.DB, { workspaceId: w, versionId: v, text: 'Some notes' }), e => e.code === 'consent_required', name);
+    }
+    assert.deepEqual(stored(f.db), { texts: 0, tokens: 0 });
+  });
+});
+
+test('consent revoked between the check and the write stores nothing and leaves nothing searchable', async () => {
+  await withFixture(async f => {
+    consent(f.db, ids.version1);
+    await index(f, ids.version1, 'First text about lanterns and John 3:16.');
+    assert.equal((await search(f, 'lanterns')).json.notesMatches.length, 1);
+    const racing = {
+      prepare: sql => f.db.prepare(sql),
+      batch: async statements => {
+        f.db.execute("UPDATE sermon_versions SET indexing_state='revoked' WHERE id=?", [ids.version1]);
+        return f.db.batch(statements);
+      }
+    };
+    const auditBefore = f.db.query("SELECT 1 FROM audit_events WHERE action='version.index'").length;
+    await assert.rejects(indexVersion(racing, { workspaceId: ids.w1, versionId: ids.version1, text: 'Second text about harbors.' }),
+      e => e instanceof IndexRefused && e.code === 'consent_required');
+    assert.deepEqual(stored(f.db), { texts: 0, tokens: 0 });
+    assert.equal(ftsHits(f.db, 'harbors'), 0);
+    assert.equal(ftsHits(f.db, 'lanterns'), 0);
+    assert.equal(f.db.query("SELECT 1 FROM audit_events WHERE action='version.index'").length, auditBefore);
+    assert.deepEqual((await search(f, 'harbors')).json.notesMatches, []);
+  });
+});
+
+test('soft-deleted sermons never appear in search results', async () => {
+  await withLibrary(async f => {
+    f.db.execute('UPDATE sermons SET deleted_at=CURRENT_TIMESTAMP WHERE id=?', [ids.sermon1]);
+    for (const q of ['John 3:16', 'God so loved', 'Romans 8']) {
+      for (const archived of ['', '&archived=include']) {
+        const res = await search(f, q, 'owner', archived);
+        assert.ok(!res.json.metadataMatches.some(m => m.sermon_id === ids.sermon1), q);
+        assert.ok(!res.json.notesMatches.some(m => m.sermon_id === ids.sermon1), q);
+      }
+    }
+  });
+});
+
+test('limit caps notesMatches and metadataMatches', async () => {
+  await withLibrary(async f => {
+    // "harbors" is in two sermons' notes; "John 3" passages exist in two sermons.
+    await index(f, ids.version1, `${NOTES} We also sailed to the harbors.`);
+    const all = await search(f, 'harbors');
+    assert.equal(all.json.notesMatches.length, 2);
+    assert.equal((await search(f, 'harbors', 'owner', '&limit=1')).json.notesMatches.length, 1);
+    assert.equal((await search(f, 'John 3:16')).json.metadataMatches.length, 2);
+    assert.equal((await search(f, 'John 3:16', 'owner', '&limit=1')).json.metadataMatches.length, 1);
+    const refs = await search(f, 'John 3', 'owner', '&limit=1');
+    assert.equal(refs.json.notesMatches.length, 1);
+  });
+});
