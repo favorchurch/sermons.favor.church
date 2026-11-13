@@ -1,0 +1,6 @@
+# COPY TO .dev.vars ONLY FOR PRIVATE HTTPS TESTING; NEVER COMMIT REAL VALUES.
+# The callback origin must be an HTTPS host and match Google's OAuth console.
+PUBLIC_ORIGIN=https://sermons.example.org
+GOOGLE_CLIENT_ID=replace-with-google-web-oauth-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-client-secret
+PILOT_OWNER_EMAILS=approved-pastor@example.org
