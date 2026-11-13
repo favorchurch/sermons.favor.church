@@ -81,7 +81,21 @@ export async function uploadPdf(c: Ctx): Promise<Response> {
     await transition(c, version.id, 'not_indexed', 'failed', 'version.pdf_extract_failed', { reason: failure });
     return reply(201, { version_id: version.id, indexing_state: 'failed', reason: failure, bytes: bytes.byteLength });
   }
-  await transition(c, version.id, 'not_indexed', 'awaiting_consent', 'version.pdf_extracted', { characters: text.length });
+  // The text is already held. If the state cannot move to awaiting_consent (database error, or a revoke
+  // landed first), delete the held text so no copy is left behind a state that cannot reach it.
+  let held = false;
+  try {
+    held = await transition(c, version.id, 'not_indexed', 'awaiting_consent', 'version.pdf_extracted', { characters: text.length });
+  } catch {
+    held = false;
+  }
+  if (!held) {
+    await dropHeldText(c, version.id);
+    const state = await loadVersion(c);
+    if (state?.indexing_state === 'revoked') return reply(409, { error: 'revoked' });
+    await transition(c, version.id, 'not_indexed', 'failed', 'version.pdf_extract_failed', { reason: 'storage' }).catch(() => false);
+    return reply(201, { version_id: version.id, indexing_state: 'failed', reason: 'storage', bytes: bytes.byteLength });
+  }
   return reply(201, { version_id: version.id, indexing_state: 'awaiting_consent', bytes: bytes.byteLength, characters: text.length });
 }
 
@@ -150,7 +164,9 @@ export async function revokeIndexing(c: Ctx): Promise<Response> {
   if (!can(c.role, 'consent')) return forbidden();
   const version = await loadVersion(c);
   if (!version) return notFound();
-  if (version.indexing_state === 'not_indexed') throw new Conflict('nothing_to_revoke');
+  // A `not_indexed` version with a stored PDF is an upload that stopped before its state moved on.
+  // It may hold extracted text, so revoke is its purge route.
+  if (version.indexing_state === 'not_indexed' && version.r2_object_key === null) throw new Conflict('nothing_to_revoke');
 
   if (version.indexing_state !== 'revoked') {
     if (!(await transition(c, version.id, version.indexing_state, 'revoked', 'version.revoke', { from: version.indexing_state })))
