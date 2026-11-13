@@ -146,8 +146,12 @@ export function logPreachingDialog({ client, sermon, onSaved }) {
   dialogApi.close = opened.close;
 
   // Place options load after the dialog opens, so a slow list never blocks the form.
+  let knownPlaces = [];
   client.listPlaces().then(places => {
-    if (place.control.value === '') place.control.replaceChildren(...placeChoices(places));
+    knownPlaces = [...places, ...knownPlaces.filter(k => !places.some(p => p.id === k.id))];
+    const current = place.control.value;
+    place.control.replaceChildren(...placeChoices(knownPlaces));
+    if (current !== '') place.control.value = current;
   }).catch(() => { /* the form still works without existing places; "Add a new place" remains */ });
 
   wireForm({
@@ -163,7 +167,14 @@ export function logPreachingDialog({ client, sermon, onSaved }) {
         throw new Handled();
       }
       let placeId = place.control.value || null;
-      if (placeId === '__new__') placeId = (await client.createPlace(newPlace.control.value)).id;
+      if (placeId === '__new__') {
+        // Keep the created place selected, so a retry after a failed save reuses it instead of hitting name_in_use.
+        const created = await client.createPlace(newPlace.control.value);
+        knownPlaces = [...knownPlaces, created];
+        place.control.replaceChildren(...placeChoices(knownPlaces));
+        place.control.value = placeId = created.id;
+        setHidden(newPlace.wrapper, true);
+      }
       await client.logPreaching(sermon.id, {
         preached_on: preachedOn, date_precision: kind,
         place_id: placeId, version_id: version.control.value || null, occasion: occasion.control.value
