@@ -35,7 +35,10 @@ Viewers get `403` on the three POST routes before the body is read.
   - failure (`unreadable`, `no_text` for scanned or empty PDFs, `text_too_large` over 400,000 characters, or `storage`):
     the version becomes `failed`, no text is stored anywhere, and the response is still `201` with `indexing_state: "failed"`
     and a `reason`. The PDF itself stays stored and downloadable. A `failed` version is final because its file is set once.
-- If the Worker stops between storing the file and extracting, the version keeps its key and stays `not_indexed`.
+- If the move to `awaiting_consent` fails after the text was held (database error, or a revoke landed first), the held
+  text is deleted at once and the version becomes `failed` (`reason: "storage"`), or stays `revoked`.
+- If the Worker stops between storing the file and extracting, or after holding the text, the version keeps its key and
+  stays `not_indexed`, possibly with held text. An Owner revoke is the purge route for it (see Revoke).
 
 ## Consent
 
@@ -51,8 +54,8 @@ the version back to `awaiting_consent` with consent cleared (`version.consent_re
 
 ## Revoke
 
-Only an Owner can revoke. It works from `awaiting_consent`, `queued`, `indexed` and `failed`, and is `409
-nothing_to_revoke` for `not_indexed`. The version is set to `revoked` first, so search and download stop at once.
+Only an Owner can revoke. It works from `awaiting_consent`, `queued`, `indexed`, `failed` and `not_indexed` with a stored PDF
+(an interrupted upload), and is `409 nothing_to_revoke` for `not_indexed` with no PDF. The version is set to `revoked` first, so search and download stop at once.
 Then `purgeVersionIndex` deletes the text, full-text entry and reference tokens, and the held text is deleted.
 Calling revoke again finishes any deletion that failed. Revoked is final: consent, upload and indexing are refused.
 The stored PDF object is kept but cannot be downloaded.

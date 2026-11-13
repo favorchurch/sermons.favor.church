@@ -248,6 +248,60 @@ test('a failure while holding the extracted text leaves the version failed and n
   });
 });
 
+test('a failed state transition after holding the text deletes the held text', async () => {
+  await withFixture(async f => {
+    const batch = f.env.DB.batch.bind(f.env.DB);
+    let calls = 0;
+    // Batch 1 stores the key; batch 2 is the move to awaiting_consent and fails; later ones work.
+    f.env.DB.batch = async statements => {
+      if (++calls === 2) throw new Error('d1 down');
+      return batch(statements);
+    };
+    const response = await f.upload('editor');
+    assert.equal(response.status, 201);
+    assert.equal(response.json.indexing_state, 'failed');
+    assert.equal(f.state().indexing_state, 'failed');
+    assert.deepEqual(f.bucket.keys('extracted'), []);
+    assert.equal((await f.consent('owner', pdfVersion)).status, 409);
+  });
+});
+
+test('a revoke that lands before the upload finishes leaves the version revoked and no held text', async () => {
+  await withFixture(async f => {
+    const batch = f.env.DB.batch.bind(f.env.DB);
+    let calls = 0;
+    f.env.DB.batch = async statements => {
+      if (++calls === 2) f.db.execute("UPDATE sermon_versions SET indexing_state='revoked' WHERE id=?", [pdfVersion]);
+      return batch(statements);
+    };
+    assert.equal((await f.upload('editor')).status, 409);
+    assert.equal(f.state().indexing_state, 'revoked');
+    assert.deepEqual(f.bucket.keys('extracted'), []);
+  });
+});
+
+test('when the database stays down the held text is still deleted, and revoke recovers a stuck upload', async () => {
+  await withFixture(async f => {
+    const batch = f.env.DB.batch.bind(f.env.DB);
+    let calls = 0;
+    f.env.DB.batch = async statements => {
+      if (++calls >= 2) throw new Error('d1 down');
+      return batch(statements);
+    };
+    assert.equal((await f.upload('editor')).json.indexing_state, 'failed');
+    assert.equal(f.state().indexing_state, 'not_indexed');
+    assert.deepEqual(f.bucket.keys('extracted'), [], 'compensation removed the held text');
+    f.env.DB.batch = batch;
+
+    // A Worker that stopped after the text put leaves text behind a not_indexed version.
+    await f.bucket.put(`workspaces/${ids.w1}/extracted/${pdfVersion}.txt`, 'Grace upon grace');
+    assert.equal((await f.consent('owner', pdfVersion)).status, 409);
+    assert.equal((await f.revoke('owner', pdfVersion)).status, 200);
+    assert.equal(f.state().indexing_state, 'revoked');
+    assert.deepEqual(f.bucket.keys('extracted'), []);
+  });
+});
+
 test('only the Owner can consent; everyone else is refused and nothing is indexed', async () => {
   await withFixture(async f => {
     assert.equal((await f.upload('editor')).status, 201);
