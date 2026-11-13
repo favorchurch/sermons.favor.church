@@ -12,18 +12,20 @@ ALTER TABLE places ADD COLUMN updated_at TEXT;
 
 -- Ordered scripture references for a sermon. sermons.scripture_passage remains as the
 -- joined display text for the legacy column; this table is the structured source.
+-- The API caps new references at 120 characters, but the backfill below copies legacy
+-- free text verbatim, so the table does not cap length (truncating would lose data).
 CREATE TABLE sermon_scripture_refs (
   workspace_id TEXT NOT NULL,
   sermon_id TEXT NOT NULL,
   position INTEGER NOT NULL CHECK(position >= 0),
-  reference_text TEXT NOT NULL CHECK(length(trim(reference_text)) > 0 AND length(reference_text) <= 200),
+  reference_text TEXT NOT NULL CHECK(length(trim(reference_text)) > 0),
   PRIMARY KEY(workspace_id, sermon_id, position),
   FOREIGN KEY(workspace_id, sermon_id) REFERENCES sermons(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX idx_scripture_refs_text ON sermon_scripture_refs(workspace_id, reference_text COLLATE NOCASE);
 
 INSERT INTO sermon_scripture_refs(workspace_id, sermon_id, position, reference_text)
-SELECT workspace_id, id, 0, substr(trim(scripture_passage), 1, 200)
+SELECT workspace_id, id, 0, trim(scripture_passage)
 FROM sermons WHERE scripture_passage IS NOT NULL AND trim(scripture_passage) <> '';
 
 -- Aliases must be unique per workspace ignoring case, matching place display names.
