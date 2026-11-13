@@ -56,7 +56,7 @@ export async function summary(c: Ctx): Promise<Response> {
   const denied = owner(c); if (denied) return denied;
   if (!await batch(c)) return notFound();
   const counts = await c.env.DB.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM(parse_outcome='parsed'),0) AS parsed, COALESCE(SUM(parse_outcome='invalid'),0) AS invalid, COALESCE(SUM(json_array_length(review_flags_json)>0),0) AS flagged, COALESCE(SUM(attested_at IS NOT NULL),0) AS attested, COALESCE(SUM(status='approved'),0) AS approved FROM import_review_rows WHERE workspace_id=? AND batch_id=?`).bind(c.workspaceId,c.params.batchId).first();
-  return reply(200, counts);
+  return reply(200, counts ?? { total: 0, parsed: 0, invalid: 0, flagged: 0, attested: 0, approved: 0 });
 }
 
 export async function rows(c: Ctx): Promise<Response> {
@@ -72,10 +72,10 @@ export async function attest(c: Ctx): Promise<Response> {
   if (!Array.isArray(body.row_ids) || !body.row_ids.length || body.row_ids.length > 500 || !body.row_ids.every(isUuid) || new Set(body.row_ids).size !== body.row_ids.length) throw new Invalid('row_ids');
   if (!await batch(c)) return notFound();
   const ids = body.row_ids as string[];
-  const slots = ids.map(() => '?').join(',');
-  const found = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM import_review_rows WHERE workspace_id=? AND batch_id=? AND id IN (${slots}) AND status IN ('unreviewed','attested')`).bind(c.workspaceId,c.params.batchId,...ids).first<{n:number}>();
+  const encoded = JSON.stringify(ids);
+  const found = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM import_review_rows WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('unreviewed','attested')`).bind(c.workspaceId,c.params.batchId,encoded).first<{n:number}>();
   if (found?.n !== ids.length) throw new Conflict('invalid_row_state');
-  const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE import_review_rows SET status='attested',attested_by=?,attested_at=CURRENT_TIMESTAMP WHERE workspace_id=? AND batch_id=? AND id IN (${slots}) AND status='unreviewed'`).bind(c.actorId,c.workspaceId,c.params.batchId,...ids),auditStatement(c,'import.attest','import_batch',c.params.batchId,{count:ids.length})]);
+  const result = await c.env.DB.batch([c.env.DB.prepare(`UPDATE import_review_rows SET status='attested',attested_by=?,attested_at=CURRENT_TIMESTAMP WHERE workspace_id=? AND batch_id=? AND id IN (SELECT value FROM json_each(?)) AND status='unreviewed'`).bind(c.actorId,c.workspaceId,c.params.batchId,encoded),auditStatement(c,'import.attest','import_batch',c.params.batchId,{count:ids.length})]);
   return reply(200,{attested: changes(result[0])});
 }
 
