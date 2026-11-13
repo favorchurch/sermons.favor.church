@@ -282,3 +282,30 @@ test('findReferenceHits filters text references that overlap target query', () =
   const noHits = findReferenceHits(noteText, 'John 3:1');
   assert.equal(noHits.length, 0);
 });
+
+test('extractReferences does not falsely match common English prose words', () => {
+  const prose = 'Today is 10 days since the event. I am 12 years old. Email re 15 questions. He 11 runners.';
+  const refs = extractReferences(prose);
+  assert.equal(refs.length, 0, `Expected 0 matches in plain prose, but found: ${refs.map(r => r.raw).join(', ')}`);
+});
+
+test('extractReferences does not degrade malformed verse or sub-verse suffixes to bare chapters', () => {
+  assert.deepEqual(extractReferences('Read John 3:16a today'), []);
+  assert.deepEqual(extractReferences('Check John 3:abc today'), []);
+  assert.deepEqual(extractReferences('Check John 3:'), []);
+});
+
+test('overlaps rejects inverted ranges on raw reference objects', () => {
+  const inverted = { book: 'John', chapter: 3, verseStart: 10, verseEnd: 5 };
+  const valid = { book: 'John', chapter: 3, verseStart: 5, verseEnd: 10 };
+  assert.equal(overlaps(inverted, valid), false);
+  assert.equal(overlaps(valid, inverted), false);
+});
+
+test('reference object methods evaluate dynamically with this context', () => {
+  const ref = parseReference('John 3:16');
+  assert.ok(ref);
+  assert.equal(ref.format(), 'John 3:16');
+  ref.chapter = 4;
+  assert.equal(ref.format(), 'John 4:16');
+});

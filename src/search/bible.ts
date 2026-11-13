@@ -140,14 +140,14 @@ export const BOOK_ALIASES: Record<string, readonly string[]> = {
     'song of solomon', 'song of songs', 'song of sol', 'canticle of canticles',
     'canticles', 'song', 'sos', 'cant'
   ],
-  Isaiah: ['isaiah', 'isa', 'is'],
+  Isaiah: ['isaiah', 'isa'],
   Jeremiah: ['jeremiah', 'jer', 'je', 'jr'],
   Lamentations: ['lamentations', 'lam', 'la'],
   Ezekiel: ['ezekiel', 'ezek', 'eze', 'ezk'],
   Daniel: ['daniel', 'dan', 'da', 'dn'],
   Hosea: ['hosea', 'hos', 'ho'],
   Joel: ['joel', 'joe', 'jl'],
-  Amos: ['amos', 'am'],
+  Amos: ['amos'],
   Obadiah: ['obadiah', 'obad', 'oba', 'ob'],
   Jonah: ['jonah', 'jon', 'jnh'],
   Micah: ['micah', 'mic', 'mc'],
@@ -193,7 +193,7 @@ export const BOOK_ALIASES: Record<string, readonly string[]> = {
   ],
   Titus: ['titus', 'tit', 'ti'],
   Philemon: ['philemon', 'philem', 'phlm', 'phm', 'pm'],
-  Hebrews: ['hebrews', 'heb', 'he'],
+  Hebrews: ['hebrews', 'heb'],
   James: ['james', 'jas', 'jam', 'jm'],
   '1 Peter': [
     '1 peter', '1peter', '1 pet', '1pet', '1 pe', '1pe', '1 pt', '1pt',
@@ -216,7 +216,7 @@ export const BOOK_ALIASES: Record<string, readonly string[]> = {
     '3 j', '3j', 'iii john', 'iii jn', 'iii jhn', '3rd john', 'third john'
   ],
   Jude: ['jude', 'jud', 'jd'],
-  Revelation: ['revelation', 'revelations', 'rev', 're', 'the revelation', 'apocalypse']
+  Revelation: ['revelation', 'revelations', 'rev', 'the revelation', 'apocalypse']
 };
 
 // Map each normalized alias to canonical book name
@@ -258,37 +258,22 @@ aliasPatterns.sort((a, b) => b.length - a.length);
 const BOOK_PATTERN = aliasPatterns.join('|');
 
 // Matches book abbreviation with optional trailing period, whitespace,
-// chapter number, and optional :verse[-verse]
+// chapter number, and either :verse[-verse] or bare chapter without colon
 const REF_REGEX = new RegExp(
-  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d{1,3})(?:\\s*[-–—]\\s*(?:(\\d{1,3}):)?(\\d{1,3}))?)?(?![A-Za-z0-9])`,
+  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d{1,3})(?:\\s*[-–—]\\s*(?:(\\d{1,3}):)?(\\d{1,3}))?|(?!:))(?![A-Za-z0-9])`,
   'gi'
 );
 
-function createReferenceMethods(
-  book: string,
-  chapter: number,
-  verseStart: number | null,
-  verseEnd: number | null,
-  raw: string
-): Pick<BibleReference, 'overlaps' | 'format' | 'toString'> {
-  const self = {
-    book,
-    chapter,
-    verseStart,
-    verseEnd,
-    v1: verseStart,
-    v2: verseEnd,
-    raw
-  };
+function createReferenceMethods(): Pick<BibleReference, 'overlaps' | 'format' | 'toString'> {
   return {
-    overlaps(other: BibleReference | string): boolean {
-      return overlaps(self, other);
+    overlaps(this: BibleReference, other: BibleReference | string): boolean {
+      return overlaps(this, other);
     },
-    format(): string {
-      return formatReference(self);
+    format(this: BibleReference): string {
+      return formatReference(this);
     },
-    toString(): string {
-      return formatReference(self);
+    toString(this: BibleReference): string {
+      return formatReference(this);
     }
   };
 }
@@ -366,13 +351,7 @@ export function extractReferences(text: string | null | undefined): ExtractedRef
     const start = m.index;
     const end = m.index + rawMatch.length;
 
-    const methods = createReferenceMethods(
-      canonicalBook,
-      chapter,
-      verseStart,
-      verseEnd,
-      rawMatch
-    );
+    const methods = createReferenceMethods();
 
     out.push({
       book: canonicalBook,
@@ -448,11 +427,15 @@ export function overlaps(
   const bStart = refB.verseStart ?? refB.v1 ?? null;
   const bEnd = refB.verseEnd ?? refB.v2 ?? bStart;
 
-  // Whole chapter reference overlaps anything in that same chapter
-  if (aStart === null || bStart === null) return true;
-
   const effectiveAEnd = aEnd ?? aStart;
   const effectiveBEnd = bEnd ?? bStart;
+
+  // Inverted range check: if start > end, range is invalid and cannot overlap
+  if (aStart !== null && effectiveAEnd !== null && aStart > effectiveAEnd) return false;
+  if (bStart !== null && effectiveBEnd !== null && bStart > effectiveBEnd) return false;
+
+  // Whole chapter reference overlaps anything in that same chapter
+  if (aStart === null || bStart === null) return true;
 
   return aStart <= effectiveBEnd && bStart <= effectiveAEnd;
 }
