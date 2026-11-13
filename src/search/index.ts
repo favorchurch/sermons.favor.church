@@ -9,6 +9,7 @@ import { extractReferences, overlaps, parseReference, formatReference, type Bibl
 
 export const MAX_NOTE_CHARS = 400_000;
 const MAX_REFERENCES = 5000;
+const MAX_VERSE = 999; // matches the CHECK on note_reference_tokens; the resolver accepts any digit count
 export const MAX_QUERY_CHARS = 200;
 export const MAX_QUERY_WORDS = 12;
 const EXCERPT_BEFORE = 80;
@@ -54,7 +55,9 @@ export async function indexVersion(db: D1Database, input: {
   if (!body) throw new IndexRefused('empty_text');
   if (body.length > MAX_NOTE_CHARS) throw new IndexRefused('text_too_large');
 
-  const references = extractReferences(body).slice(0, MAX_REFERENCES).map(ref => ({
+  const references = extractReferences(body)
+    .filter(ref => (ref.verseStart ?? 1) <= MAX_VERSE && (ref.verseEnd ?? 1) <= MAX_VERSE)
+    .slice(0, MAX_REFERENCES).map(ref => ({
     book: ref.book, chapter: ref.chapter, verse_start: ref.verseStart, verse_end: ref.verseEnd,
     text_start: ref.start, text_end: ref.end
   }));

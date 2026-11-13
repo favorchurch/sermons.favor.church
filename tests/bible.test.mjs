@@ -164,6 +164,15 @@ test('validates chapter bounds without enforcing verse counts', () => {
   assert.equal(parseReference('John 21:25-24'), null);
   assert.equal(parseReference('John 21:25')?.verseStart, 25);
   assert.equal(parseReference('John 21:999')?.verseStart, 999);
+  // Verse numbers are not bounded, regardless of digit count
+  assert.equal(parseReference('John 21:1000')?.verseStart, 1000);
+  assert.equal(parseReference('John 21:1-1000')?.verseEnd, 1000);
+  assert.equal(parseReference('John 21:1000-999'), null);
+  assert.equal(parseReference('John 21:0000'), null);
+  assert.equal(parseReference(`John 21:${'9'.repeat(400)}`), null);
+  const found = extractReferences('See John 21:1000 today');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].raw, 'John 21:1000');
 });
 
 test('overlaps: verifies reference overlap rules', () => {

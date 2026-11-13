@@ -13,7 +13,7 @@ All paths start `/sermons/:sermonId/versions/:versionId`.
 |---|---|---|---|
 | POST | `/pdf` | Editor, Admin, Owner | Raw `application/pdf` body. `201 {version_id, indexing_state, bytes, characters}` |
 | GET | `/pdf` | any member | The file, streamed |
-| POST | `/consent` | Owner only | Indexes the held text. `200 {indexing_state: "indexed", characters, references}` |
+| POST | `/consent` | Owner only | Indexes the held text. `200 {indexing_state: "indexed", characters, references, held_text_deleted}` |
 | POST | `/revoke` | Owner only | `200 {indexing_state: "revoked"}` |
 
 Viewers get `403` on the three POST routes before the body is read.
@@ -41,7 +41,10 @@ Viewers get `403` on the three POST routes before the body is read.
 
 Only an Owner can consent (`can(role, "consent")`). It requires `awaiting_consent` (`409 not_awaiting_consent`
 otherwise). In order: the version moves to `queued` with `index_consent_by` and `index_consent_at` set, the held
-text is read and passed to `indexVersion` (see [search.md](search.md)), then the held copy is deleted. If the held
+text is read and passed to `indexVersion` (see [search.md](search.md)), then the held copy is deleted. A failed delete
+is not an error: the index is already committed, the response is `200` with `held_text_deleted: false`, and the Owner
+repeats `POST /consent` to retry. On an `indexed` version that call never reindexes. It only deletes the held copy and
+reports `held_text_deleted` (`403` for non-Owners). Revoke also deletes the held copy. If the held
 text is missing or unusable the version becomes `failed` and the consent fields are cleared. A revoke that lands
 in between wins: indexing refuses and the version stays `revoked`. A storage or database error (not a refusal) puts
 the version back to `awaiting_consent` with consent cleared (`version.consent_reset`) so the Owner can retry.
