@@ -12,7 +12,7 @@
  * - Idempotent: every row has an id derived from the workspace id and a fixed key, and every statement is an
  *   INSERT OR IGNORE or a guarded INSERT ... SELECT. Running it again adds nothing, and it never overwrites a
  *   demo row someone has edited, never re-indexes a version whose consent was revoked and never recreates a
- *   place that was merged away.
+ *   place that was merged away. A demo event you deleted does come back on the next run.
  * - Everything is fictional: invented sermons, notes, places and dates. Demo sermons carry the tag `demo-data`.
  * - Note text is stored the way src/search/index.ts stores it (text, full-text row via trigger, reference
  *   tokens from src/search/bible.ts), with consent attributed to the workspace's active Owner. No PDF objects
@@ -22,11 +22,11 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 export const STAGING_DATABASE = 'sermon-bank-staging';
 export const STAGING_HOST = 'sermons-preview.favor.church';
@@ -188,7 +188,7 @@ export function seedId(workspaceId, key) {
 
 /** Every id this seed owns in a workspace, by table, for counting what is already there. */
 export function seedIds(workspaceId) {
-  const ids = { places: [], sermons: [], versions: [], events: [], notes: [] };
+  const ids = { places: [], sermons: [], versions: [], events: [], notes: [], refs: SERMONS.reduce((n, s) => n + s.refs.length, 0) };
   for (const place of PLACES) ids.places.push(seedId(workspaceId, `place:${place.key}`));
   for (const s of SERMONS) {
     ids.sermons.push(seedId(workspaceId, `sermon:${s.key}`));
@@ -212,7 +212,8 @@ export function buildSeedStatements(workspaceId, ownerAccountId, extractReferenc
   // A place is found by name or by an alias a merge left behind, so renamed or merged places are never recreated.
   const placeRef = key => {
     const name = PLACES.find(p => p.key === key).name;
-    return `COALESCE((SELECT p.id FROM places p WHERE p.workspace_id = ${w} AND p.display_name = ${q(name)} COLLATE NOCASE),
+    return `COALESCE((SELECT p.id FROM places p WHERE p.workspace_id = ${w} AND p.id = ${q(placeId(key))}),
+      (SELECT p.id FROM places p WHERE p.workspace_id = ${w} AND p.display_name = ${q(name)} COLLATE NOCASE),
       (SELECT a.place_id FROM place_aliases a WHERE a.workspace_id = ${w} AND a.alias = ${q(name)} COLLATE NOCASE))`;
   };
 
@@ -232,9 +233,11 @@ export function buildSeedStatements(workspaceId, ownerAccountId, extractReferenc
     out.push(`INSERT OR IGNORE INTO sermons(id, workspace_id, title, scripture_passage, series_name, description, tags_json, created_at, archived_at)
       VALUES (${q(sid)}, ${w}, ${q(s.title)}, ${q(s.refs.join('; '))}, ${q(s.series ?? null)}, ${q(s.description ?? null)},
         ${q(JSON.stringify([DEMO_TAG]))}, ${q(s.created)}, ${q(s.archived ?? null)})`);
-    s.refs.forEach((ref, position) => out.push(`INSERT OR IGNORE INTO sermon_scripture_refs(workspace_id, sermon_id, position, reference_text)
-      SELECT ${w}, ${q(sid)}, ${position}, ${q(ref)} WHERE EXISTS (SELECT 1 FROM sermons s WHERE s.workspace_id = ${w} AND s.id = ${q(sid)})
-        AND NOT EXISTS (SELECT 1 FROM sermon_scripture_refs r WHERE r.workspace_id = ${w} AND r.sermon_id = ${q(sid)})`));
+    // One statement for all references: the "has none yet" guard is read once, so every position is inserted together.
+    out.push(`INSERT OR IGNORE INTO sermon_scripture_refs(workspace_id, sermon_id, position, reference_text)
+      SELECT ${w}, ${q(sid)}, j.key, j.value FROM json_each(${q(JSON.stringify(s.refs))}) j
+      WHERE EXISTS (SELECT 1 FROM sermons s WHERE s.workspace_id = ${w} AND s.id = ${q(sid)})
+        AND NOT EXISTS (SELECT 1 FROM sermon_scripture_refs r WHERE r.workspace_id = ${w} AND r.sermon_id = ${q(sid)})`);
     for (const v of s.versions) {
       const vid = seedId(workspaceId, `version:${s.key}:${v.key}`);
       const state = v.notes ? 'indexed' : v.revoked ? 'revoked' : 'not_indexed';
@@ -320,11 +323,15 @@ export async function countPresent(exec, workspaceId) {
     (SELECT COUNT(*) FROM sermons WHERE workspace_id = ${w} AND id IN (${list(ids.sermons)})) AS sermons,
     (SELECT COUNT(*) FROM sermon_versions WHERE workspace_id = ${w} AND id IN (${list(ids.versions)})) AS versions,
     (SELECT COUNT(*) FROM preaching_events WHERE workspace_id = ${w} AND id IN (${list(ids.events)})) AS events,
-    (SELECT COUNT(*) FROM note_texts WHERE workspace_id = ${w} AND version_id IN (${list(ids.notes)})) AS notes`);
+    (SELECT COUNT(*) FROM note_texts WHERE workspace_id = ${w} AND version_id IN (${list(ids.notes)})) AS notes,
+    (SELECT COUNT(*) FROM sermon_scripture_refs WHERE workspace_id = ${w} AND sermon_id IN (${list(ids.sermons)})) AS refs`);
   return row;
 }
 
-const describe = counts => `${counts.sermons} sermons, ${counts.versions} versions, ${counts.notes} indexed notes, ${counts.events} events, ${counts.places} places`;
+const describe = counts => `${counts.sermons} sermons, ${counts.refs} scripture references, ${counts.versions} versions, ${counts.notes} indexed notes, ${counts.events} events, ${counts.places} places`;
+const KINDS = ['places', 'sermons', 'versions', 'events', 'notes', 'refs'];
+/** Expected totals when nothing the seed owns is missing. Notes are lower when a demo version was revoked, so only a first run is held to it. */
+export const expectedCounts = workspaceId => { const ids = seedIds(workspaceId); return Object.fromEntries(KINDS.map(k => [k, typeof ids[k] === 'number' ? ids[k] : ids[k].length])); };
 
 export async function main(argv = process.argv.slice(2), exec = d1) {
   const args = parseArgs(argv);
@@ -333,7 +340,11 @@ export async function main(argv = process.argv.slice(2), exec = d1) {
     return;
   }
   assertStagingConfig(await readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'));
-  const { extractReferences } = await import('../src/search/bible.ts');
+  let extractReferences;
+  try { ({ extractReferences } = await import('../src/search/bible.ts')); } catch (error) {
+    if (error.code === 'ERR_UNKNOWN_FILE_EXTENSION') throw new SeedRefusal('This Node cannot load TypeScript. Run it as: pnpm seed:staging ... (adds --experimental-strip-types).');
+    throw error;
+  }
   await assertMigrated(exec);
   const workspace = await findWorkspace(exec, args.workspace);
   const statements = buildSeedStatements(workspace.id, workspace.ownerId, extractReferences);
@@ -343,8 +354,13 @@ export async function main(argv = process.argv.slice(2), exec = d1) {
   await exec(statements.join(';\n') + ';');
   const after = await countPresent(exec, workspace.id);
   console.log(`Seeded. Now present: ${describe(after)}.`);
-  console.log(after.sermons === before.sermons && after.versions === before.versions && after.events === before.events && after.notes === before.notes
-    ? 'Nothing new was added (already seeded).' : 'Done. Run it again any time: it only adds what is missing.');
+  const want = expectedCounts(workspace.id);
+  const short = KINDS.filter(k => after[k] < want[k]);
+  if (short.length && KINDS.every(k => before[k] === 0)) {
+    // INSERT OR IGNORE hides name or label clashes with rows that were already in the workspace.
+    throw new Error(`Some demo rows were not added (${short.map(k => `${k} ${after[k]}/${want[k]}`).join(', ')}): existing rows in the workspace probably use the same place name or version label.`);
+  }
+  console.log(KINDS.every(k => after[k] === before[k]) ? 'Nothing new was added (already seeded).' : 'Done. Run it again any time: it only adds what is missing.');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

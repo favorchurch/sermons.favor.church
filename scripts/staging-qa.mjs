@@ -18,11 +18,11 @@ import { execFile, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 const ORIGIN = (process.env.STAGING_ORIGIN || 'https://sermons-preview.favor.church').replace(/\/$/, '');
 const HOST = new URL(ORIGIN).host;
@@ -645,8 +645,11 @@ async function qaNewRoutesAccess() {
   const ownerOnly = ROUTES.filter(r => r.flag === 'ownerOnly');
   const editor = await sweep(ownerOnly, 'editor'), admin = await sweep(ownerOnly, 'admin');
   const membersEditor = await callRoute(ROUTES.find(r => r.template === '/members'), 'editor'), membersAdmin = await callRoute(ROUTES.find(r => r.template === '/members'), 'admin');
-  const roleBad = wrong(editor, () => 403).map(x => 'editor ' + x).concat(wrong(admin, () => 403).map(x => 'admin ' + x));
-  check('NEW-5', `Import review, consent and revoke are Owner-only: Editor and Admin get 403 on all ${ownerOnly.length}; the member list is Owner/Admin only`,
+  // Control: the Owner is not refused on the same routes (the ids exist nowhere or the state does not fit, so 400/404/409).
+  const owner = await sweep(ownerOnly, 'owner');
+  const roleBad = wrong(editor, () => 403).map(x => 'editor ' + x).concat(wrong(admin, () => 403).map(x => 'admin ' + x))
+    .concat(wrong(owner, () => [400, 404, 409]).map(x => 'owner ' + x));
+  check('NEW-5', `Import review, consent and revoke are Owner-only: Editor and Admin get 403 on all ${ownerOnly.length} while the Owner is let through to the handler; the member list is Owner/Admin only`,
     roleBad.length === 0 && membersEditor.status === 403 && membersAdmin.status === 200 && Array.isArray(membersAdmin.data?.members), roleBad.slice(0, 3).join('; ') || `members ${membersEditor.status}/${membersAdmin.status}`);
 
   // Another workspace's member: 404 on every route, with nothing of this workspace in the response.
