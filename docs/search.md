@@ -60,7 +60,7 @@ Returns every version of the sermon with one status:
 
 `reason`: `pending` for `awaiting_consent` and `queued`, `revoked` for `revoked`, `unindexed` for `not_indexed`,
 `failed`, and `indexed` with no stored text (for example after a purge). Non-searchable versions never include an
-excerpt or count.
+excerpt or count. Every version of the sermon is reported; there is no cap or pagination.
 
 ## Indexing (module API, no HTTP route yet)
 
