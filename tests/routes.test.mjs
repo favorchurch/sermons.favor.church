@@ -131,20 +131,22 @@ test('unconfigured app gives no auth or content exposure',async()=>{
  }finally{f.db.close()}
 });
 
-test('full mocked Google callback links approved subject, issues session, and rejects replay',async()=>{
- const f=await fixture(); const originalFetch=globalThis.fetch;
- try{
+let signingKeys;
+// Runs /auth/google/start then builds a signed fake id_token callback request for the given identity.
+async function googleCallback(f,{sub,email}){
   const start=await handleRequest(f.request('GET','/auth/google/start'),f.env);
   assert.equal(start.status,303);
   const state=start.headers.get('set-cookie').match(/__Secure-sb_flow=([^;]+)/)?.[1];
   assert.ok(state);
   const login=f.db.connection.prepare('SELECT nonce FROM oauth_login_attempts').get();
-  const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+  // One key pair per process: the app caches Google's JWKS at module level.
+  signingKeys??=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+  const keys=signingKeys;
   const jwk={...await crypto.subtle.exportKey('jwk',keys.publicKey),kid:'fixture-key-2026',use:'sig',alg:'RS256'};
   const encode=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
   const now=Math.floor(Date.now()/1000);
   const header=encode({alg:'RS256',typ:'JWT',kid:jwk.kid});
-  const payload=encode({iss:'https://accounts.google.com',aud:f.env.GOOGLE_CLIENT_ID,iat:now,exp:now+3600,nonce:login.nonce,sub:'approved-google-subject',email:'owner@example.test',email_verified:true,name:'Owner'});
+  const payload=encode({iss:'https://accounts.google.com',aud:f.env.GOOGLE_CLIENT_ID,iat:now,exp:now+3600,nonce:login.nonce,sub,email,email_verified:true,name:'Fixture'});
   const text=header+'.'+payload;
   const signature=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(text));
   const idToken=text+'.'+Buffer.from(signature).toString('base64url');
@@ -154,8 +156,13 @@ test('full mocked Google callback links approved subject, issues session, and re
     if(value.includes('/certs')) return new Response(JSON.stringify({keys:[jwk]}),{status:200,headers:{'content-type':'application/json','cache-control':'max-age=60'}});
     throw Error('Unexpected network request');
   };
-  const callbackPath='/auth/google/callback?code=fictional-code&state='+state;
-  const callback=new Request(origin+callbackPath,{headers:{cookie:'__Secure-sb_flow='+state}});
+  return new Request(origin+'/auth/google/callback?code=fictional-code&state='+state,{headers:{cookie:'__Secure-sb_flow='+state}});
+}
+
+test('full mocked Google callback links approved subject, issues session, and rejects replay',async()=>{
+ const f=await fixture(); const originalFetch=globalThis.fetch;
+ try{
+  const callback=await googleCallback(f,{sub:'approved-google-subject',email:'owner@example.test'});
   const complete=await handleRequest(callback,f.env);
   assert.equal(complete.status,303);
   const sessionToken=complete.headers.get('set-cookie')?.match(/__Host-sb_session=([^;]+)/)?.[1];
@@ -164,6 +171,57 @@ test('full mocked Google callback links approved subject, issues session, and re
   assert.equal(me.status,200);assert.equal((await me.json()).account.email_normalized,'owner@example.test');
   const again=await handleRequest(callback,f.env);assert.equal(again.status,401);
  }finally{globalThis.fetch=originalFetch;f.db.close()}
+});
+
+test('callback for a Google subject linked to a disabled account is refused explicitly with no session',async()=>{
+ const f=await fixture(); const originalFetch=globalThis.fetch;
+ try{
+  // Owner email is pilot-approved, so only the explicit disabled check stops the email/provision path.
+  f.db.execute('INSERT INTO google_identities(subject,account_id) VALUES(?,?)',['disabled-google-subject',ids.owner]);
+  f.db.execute('UPDATE user_accounts SET disabled_at=CURRENT_TIMESTAMP WHERE id=?',[ids.owner]);
+  const sessions=()=>f.db.connection.prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n;
+  const accounts=()=>f.db.connection.prepare('SELECT COUNT(*) AS n FROM user_accounts').get().n;
+  const before={sessions:sessions(),accounts:accounts()};
+  const callback=await googleCallback(f,{sub:'disabled-google-subject',email:'owner@example.test'});
+  const res=await handleRequest(callback,f.env);
+  assert.equal(res.status,403);
+  assert.ok(!res.headers.get('set-cookie')?.includes('__Host-sb_session'));
+  assert.deepEqual({sessions:sessions(),accounts:accounts()},before);
+ }finally{globalThis.fetch=originalFetch;f.db.close()}
+});
+
+test('a revoked member re-accepting an invitation is restored in place with one audit row',async()=>{
+ const f=await fixture();try{
+  const path='/api/workspaces/'+ids.w1+'/members/'+ids.viewer;
+  assert.equal((await handleRequest(f.request('PATCH',path,ids.admin,{revoke:true}),f.env)).status,200);
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/sermons',ids.viewer),f.env)).status,404);
+  const invited=await handleRequest(f.request('POST','/api/workspaces/'+ids.w1+'/invitations',ids.owner,{email:'viewer@example.test',role:'editor'}),f.env);
+  assert.equal(invited.status,201);const {token,invitation_id}=await invited.json();
+  const accepted=await handleRequest(f.request('POST','/api/invitations/accept',ids.viewer,{token}),f.env);
+  assert.equal(accepted.status,200);assert.equal((await accepted.json()).role,'editor');
+  const rows=f.db.connection.prepare('SELECT role,revoked_at FROM workspace_memberships WHERE workspace_id=? AND account_id=?').all(ids.w1,ids.viewer);
+  assert.equal(rows.length,1);assert.equal(rows[0].role,'editor');assert.equal(rows[0].revoked_at,null);
+  assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/sermons',ids.viewer),f.env)).status,200);
+  const audit=f.db.connection.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='invitation.accept' AND target_id=?").get(invitation_id).n;
+  assert.equal(audit,1);
+  assert.equal((await handleRequest(f.request('POST','/api/invitations/accept',ids.viewer,{token}),f.env)).status,404);
+ }finally{f.db.close()}
+});
+
+test('member change with a stale role returns 409 and writes no audit row',async()=>{
+ const f=await fixture();try{
+  const realPrepare=f.db.prepare.bind(f.db);
+  // Another request changes the role right after this one reads it.
+  f.db.prepare=sql=>{const stmt=realPrepare(sql);
+   if(!/SELECT role FROM workspace_memberships/i.test(sql))return stmt;
+   return {bind:(...args)=>({first:async()=>{const row=await stmt.bind(...args).first();
+     f.db.execute("UPDATE workspace_memberships SET role='editor' WHERE workspace_id=? AND account_id=?",[ids.w1,ids.viewer]);return row}})}};
+  const res=await handleRequest(f.request('PATCH','/api/workspaces/'+ids.w1+'/members/'+ids.viewer,ids.admin,{revoke:true}),f.env);
+  assert.equal(res.status,409);assert.equal((await res.json()).error,'membership_changed');
+  const m=f.db.connection.prepare('SELECT role,revoked_at FROM workspace_memberships WHERE workspace_id=? AND account_id=?').get(ids.w1,ids.viewer);
+  assert.equal(m.role,'editor');assert.equal(m.revoked_at,null);
+  assert.equal(f.db.connection.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE target_type='membership'").get().n,0);
+ }finally{f.db.close()}
 });
 
 test('invite, accept and member-change DB failures return a generic 503 instead of rejecting',async()=>{

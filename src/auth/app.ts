@@ -53,11 +53,13 @@ async function activeInviteForEmail(env: Env, email: string): Promise<boolean> {
 }
 
 async function findOrProvisionAccount(env: Env, identity: GoogleIdentity): Promise<Account | null> {
-  const existing = await env.DB.prepare(`SELECT a.id, a.email_normalized, a.display_name
+  const existing = await env.DB.prepare(`SELECT a.id, a.email_normalized, a.display_name, a.disabled_at
     FROM google_identities gi JOIN user_accounts a ON a.id = gi.account_id
-    WHERE gi.subject = ? AND a.disabled_at IS NULL`)
-    .bind(identity.subject).first<Account>();
+    WHERE gi.subject = ?`)
+    .bind(identity.subject).first<Account & { disabled_at: string | null }>();
   if (existing) {
+    // A disabled account must never fall through to email lookup or provisioning.
+    if (existing.disabled_at !== null) return null;
     // A verified email change can change who controls that address. Require
     // explicit reconciliation rather than silently inheriting workspace access.
     return existing.email_normalized === identity.email ? existing : null;
