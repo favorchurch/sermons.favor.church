@@ -38,7 +38,12 @@ test('arguments: anything that could aim the script away from staging is refused
 test('config guard: wrangler.jsonc must still describe the staging database and origin', () => {
   seed.assertStagingConfig(WRANGLER_JSONC);
   assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replaceAll('sermon-bank-staging', 'sermon-bank-prod')), seed.SeedRefusal);
-  assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace('9d4aee46-9a54-4699-a8d0-f212e29b8f98', '00000000-0000-0000-0000-000000000000')), seed.SeedRefusal);
+  // Any database id other than the pinned one is refused: all-zero, another real-looking id, and a wrong account.
+  for (const other of ['00000000-0000-0000-0000-000000000000', '11111111-2222-4333-8444-555555555555', seed.STAGING_DATABASE_ID.toUpperCase().replace(/^9/, '8')]) {
+    assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(seed.STAGING_DATABASE_ID, other)), seed.SeedRefusal, other);
+  }
+  assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(seed.STAGING_ACCOUNT_ID, '7eeeea8eb48ea2c7c3f17f4a54a7d3ca')), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(/"account_id": "[^"]*",\s*/, '')), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace('sermons-preview.favor.church"', 'sermons.favor.church"')), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig('not json'), seed.SeedRefusal);
 });

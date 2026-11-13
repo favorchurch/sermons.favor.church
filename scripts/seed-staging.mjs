@@ -30,6 +30,10 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 export const STAGING_DATABASE = 'sermon-bank-staging';
 export const STAGING_HOST = 'sermons-preview.favor.church';
+// Pinned identities of the staging Cloudflare account and D1 database (the values committed in wrangler.jsonc).
+// A config edited to name another database or account fails the guard even when the name and origin still match.
+export const STAGING_DATABASE_ID = '9d4aee46-9a54-4699-a8d0-f212e29b8f98';
+export const STAGING_ACCOUNT_ID = '4ef8a3ebba5a69f902bf2f935457fcd2';
 export const DEMO_TAG = 'demo-data';
 const SEED_VERSION = 'v1';
 const REFUSED_FLAGS = new Set(['--remote', '--local', '--preview', '--db', '--database-id', '--config', '-c', '--persist-to', '-e']);
@@ -61,15 +65,15 @@ export function parseArgs(argv) {
   return out;
 }
 
-/** wrangler.jsonc must still describe staging as the staging database and origin, or nothing is written. */
+/** wrangler.jsonc must still describe staging as exactly the pinned staging account, database and origin, or nothing is written. */
 export function assertStagingConfig(text) {
   let config;
   try { config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, '')); } catch { throw new SeedRefusal('Cannot read wrangler.jsonc; refusing to write.'); }
   const staging = config?.env?.staging;
   const database = staging?.d1_databases?.find(d => d.binding === 'DB');
-  if (database?.database_name !== STAGING_DATABASE || !database.database_id || /^0+(-0+)*$/.test(database.database_id) ||
+  if (database?.database_name !== STAGING_DATABASE || database.database_id !== STAGING_DATABASE_ID || staging?.account_id !== STAGING_ACCOUNT_ID ||
       new URL(staging?.vars?.PUBLIC_ORIGIN ?? 'https://invalid.invalid').host !== STAGING_HOST) {
-    throw new SeedRefusal(`wrangler.jsonc env.staging no longer points at ${STAGING_DATABASE} / ${STAGING_HOST}; refusing to write.`);
+    throw new SeedRefusal(`wrangler.jsonc env.staging no longer points at the pinned ${STAGING_DATABASE} database, account and ${STAGING_HOST}; refusing to write.`);
   }
 }
 

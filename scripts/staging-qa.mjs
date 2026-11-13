@@ -19,6 +19,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assertStagingConfig } from './seed-staging.mjs';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
@@ -765,6 +766,7 @@ function printTable() {
 }
 
 async function main() {
+  assertStagingConfig(await readFile(join(ROOT, 'wrangler.jsonc'), 'utf8')); // same pinned staging identity guard as the seed
   await loadOwnerTriggers();
   const [migrated] = await d1Rows(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'import_review_rows', 'note_texts', 'note_reference_tokens')`);
   if (migrated.n !== 5) throw new Error('the staging D1 is missing migrations 0004-0006 (library, notes index, import review). Apply them and deploy the matching Worker first: pnpm exec wrangler d1 migrations apply DB --env staging --remote');
