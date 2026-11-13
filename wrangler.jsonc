@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sermon-bank",
+  "name": "sermon-bank-local",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-12",
   "compatibility_flags": ["nodejs_compat"],
@@ -45,6 +45,11 @@
       "account_id": "4ef8a3ebba5a69f902bf2f935457fcd2",
       "workers_dev": false,
       "preview_urls": false,
+      "observability": {
+        "enabled": true,
+        "logs": { "enabled": true, "head_sampling_rate": 0.05, "invocation_logs": false },
+        "traces": { "enabled": false }
+      },
       "vars": { "PUBLIC_ORIGIN": "https://sermons.favor.church" },
       "routes": [{ "pattern": "sermons.favor.church", "custom_domain": true }],
       "d1_databases": [{
