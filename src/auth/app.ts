@@ -6,6 +6,7 @@ import {
   readJson, can, canInvite, canManageMember, isRole, isUuid, type Role
 } from './security.ts';
 import { handleLibraryRoute } from '../api/index.ts';
+import { isStaticPath, serveStatic } from '../ui/assets.ts';
 import { googleAuthorizationUrl, pkceChallenge, exchangeCode, verifyGoogleIdToken, type GoogleIdentity } from './google.ts';
 
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -126,7 +127,7 @@ async function finishLogin(request: Request, env: Env): Promise<Response> {
     const rawSession = randomToken();
     await env.DB.prepare(`INSERT INTO auth_sessions(token_hash, account_id, expires_at)
       VALUES(?, ?, ?)`).bind(await sha256(rawSession), account.id, NOW() + SESSION_SECONDS).run();
-    const response = redirect('/welcome', sessionCookie(rawSession, SESSION_SECONDS));
+    const response = redirect('/', sessionCookie(rawSession, SESSION_SECONDS));
     response.headers.append('set-cookie', clearFlowCookie());
     return response;
   } catch {
@@ -312,7 +313,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const origin = publicOrigin(env);
   if (!origin || new URL(request.url).origin !== origin || !env.DB) return reply(503, { error: 'service_not_configured' });
   try {
-    if (request.method === 'GET' && (pathname === '/' || pathname === '/signin')) return signInPage();
+    if (request.method === 'GET' && pathname === '/signin') return signInPage();
+    if ((request.method === 'GET' || request.method === 'HEAD') && isStaticPath(pathname)) {
+      // The app shell and its assets are for signed-in users only. Signed out, `/` is the sign-in page.
+      if (await session(request, env)) return await serveStatic(request, env);
+      return pathname === '/' && request.method === 'GET' ? signInPage() : reply(404, { error: 'not_found' });
+    }
     if (request.method === 'GET' && pathname === '/auth/google/start') return await startLogin(request, env);
     if (request.method === 'GET' && pathname === '/auth/google/callback') return await finishLogin(request, env);
     if (request.method === 'POST' && pathname === '/auth/logout') return await logout(request, env, origin);
