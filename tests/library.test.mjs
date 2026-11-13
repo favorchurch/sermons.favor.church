@@ -668,7 +668,7 @@ test('invitation and member routes are unaffected by library routing', async () 
     assert.equal(invite.status, 201);
     const patch = await f.call('PATCH', f.w(`/members/${ids.viewer}`), 'owner', { role: 'editor' });
     assert.equal(patch.status, 200);
-    assert.equal((await f.call('GET', f.w('/members'), 'owner')).status, 404);
+    assert.equal((await f.call('GET', f.w('/members'), 'owner')).status, 200, 'read-only members list (T7 A13)');
   });
 });
 

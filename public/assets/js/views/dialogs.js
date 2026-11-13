@@ -5,13 +5,13 @@ import { describeError, ApiError } from '../api.js';
 import { PRECISION_OPTIONS, plural } from '../format.js';
 
 /** Thrown by a save() that has already shown its own inline message. */
-class Handled extends Error {}
+export class Handled extends Error {}
 
-function setHidden(el, hidden) {
+export function setHidden(el, hidden) {
   if (hidden) el.setAttribute('hidden', ''); else el.removeAttribute('hidden');
 }
 
-function actions(dialogApi, submitLabel, { danger = false, cancelFirst = false } = {}) {
+export function actions(dialogApi, submitLabel, { danger = false, cancelFirst = false } = {}) {
   const submit = h('button', { type: 'submit', class: 'btn ' + (danger ? 'btn-danger' : 'btn-primary') }, submitLabel);
   // For destructive confirmations the safe choice gets focus, so Enter cannot archive by accident.
   const cancel = h('button', { type: 'button', class: 'btn', 'data-autofocus': cancelFirst, onclick: () => dialogApi.close() }, 'Cancel');
@@ -19,7 +19,7 @@ function actions(dialogApi, submitLabel, { danger = false, cancelFirst = false }
 }
 
 /** Wire a form: run `save`, map failures to inline messages, close on success. */
-function wireForm({ form, submit, formError, fields, save, dialog, onDone }) {
+export function wireForm({ form, submit, formError, fields, save, dialog, onDone }) {
   form.addEventListener('submit', async event => {
     event.preventDefault();
     formError.textContent = '';
@@ -43,7 +43,7 @@ function wireForm({ form, submit, formError, fields, save, dialog, onDone }) {
   });
 }
 
-const formErrorBox = () => h('p', { class: 'form-error', role: 'alert', tabindex: '-1', hidden: true });
+export const formErrorBox = () => h('p', { class: 'form-error', role: 'alert', tabindex: '-1', hidden: true });
 
 export function newDraftDialog({ client, onCreated }) {
   const title = field({ label: 'Title', name: 'title', required: true, maxlength: 200, autofocus: true, hint: 'Just a title is enough. You can add the rest later.' });
@@ -190,5 +190,20 @@ export function confirmArchiveDialog({ client, sermon, restore, onDone }) {
     form, submit, formError, fields: {}, dialog: opened, onDone,
     save: () => restore ? client.restoreSermon(sermon.id) : client.archiveSermon(sermon.id)
   });
+  return opened;
+}
+
+/**
+ * Generic confirmation for a consequential action. Cancel has focus, so Enter cannot confirm by
+ * accident. `body` is a string or nodes; `save` runs the write and may throw an ApiError.
+ */
+export function confirmDialog({ title, body, confirmLabel, danger = false, save, onDone }) {
+  const formError = formErrorBox();
+  const dialogApi = { close: () => {} };
+  const { submit, node } = actions(dialogApi, confirmLabel, { danger, cancelFirst: true });
+  const form = h('form', { novalidate: true }, ...[body].flat().map(item => typeof item === 'string' ? h('p', null, item) : item), formError, node);
+  const opened = openDialog({ title, body: form });
+  dialogApi.close = opened.close;
+  wireForm({ form, submit, formError, fields: {}, dialog: opened, onDone, save });
   return opened;
 }

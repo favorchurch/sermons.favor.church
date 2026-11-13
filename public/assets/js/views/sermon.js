@@ -1,7 +1,7 @@
 // Sermon detail: metadata, versions with indexing status, preaching events, and the write
 // actions (edit, log preaching, archive/restore) which only editors, admins and owners see.
 import { h } from '../dom.js';
-import { hrefFor } from '../router.js';
+import { hrefFor, sermonHref, notesHref } from '../router.js';
 import { SOURCE_LABELS, formatStamp, formatWhen, indexingStatus, plural } from '../format.js';
 import { canEdit } from '../permissions.js';
 import { coverFor } from '../covers.js';
@@ -28,6 +28,12 @@ function eventRow(event, versionLabel) {
     event.raw_date ? h('div', { class: 'timeline-detail' }, `Recorded as “${event.raw_date}”`) : null);
 }
 
+function sermonTabs(sermon, tab, q) {
+  return h('nav', { class: 'view-tabs sermon-tabs', 'aria-label': 'Sermon sections' },
+    h('a', { href: sermonHref(sermon.id), 'aria-current': tab === 'notes' ? null : 'page' }, 'Details'),
+    h('a', { href: notesHref(sermon.id, q || ''), 'aria-current': tab === 'notes' ? 'page' : null }, 'Find in notes'));
+}
+
 export function sermonPage(ctx) {
   const { sermon, role } = ctx;
   const editor = canEdit(role);
@@ -51,7 +57,8 @@ export function sermonPage(ctx) {
           h('button', { type: 'button', class: 'btn', 'data-action': sermon.archived_at ? 'restore' : 'archive', onclick: sermon.archived_at ? ctx.restore : ctx.archive },
             sermon.archived_at ? 'Restore' : 'Archive'))
         : h('p', { class: 'view-only' }, 'View-only access')),
-    h('div', { class: 'detail-grid' },
+    sermonTabs(sermon, ctx.tab, ctx.q),
+    ctx.tab === 'notes' ? ctx.notes : h('div', { class: 'detail-grid' },
       h('div', { class: 'detail-main' },
         h('section', { 'aria-labelledby': 'about-title' },
           h('h2', { id: 'about-title' }, 'About this sermon'),
@@ -66,7 +73,8 @@ export function sermonPage(ctx) {
           h('h2', { id: 'versions-title' }, 'Versions'),
           (sermon.versions || []).length
             ? h('ul', { class: 'versions' }, ...sermon.versions.map(versionCard))
-            : h('p', { class: 'muted' }, 'No versions attached yet.')),
+            : h('p', { class: 'muted' }, 'No versions attached yet.'),
+          editor ? h('p', null, h('a', { href: hrefFor({ name: 'settings', section: 'docs', sermon: sermon.id }) }, 'Manage documents and privacy')) : null),
         h('section', { 'aria-labelledby': 'record-title' },
           h('h2', { id: 'record-title' }, 'Record'),
           h('dl', { class: 'facts' },

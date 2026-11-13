@@ -19,3 +19,6 @@ function stateBox(kind, { title, body, actions = [], role }) {
 export const emptyState = options => stateBox('empty', { ...options, role: 'status' });
 export const errorState = options => stateBox('error', { ...options, role: 'alert' });
 export const deniedState = options => stateBox('denied', { ...options, role: 'alert' });
+
+/** A one-line polite status for a region that is loading, without replacing the whole page. */
+export const loadingLine = label => h('p', { class: 'muted', role: 'status', 'aria-busy': 'true' }, label);

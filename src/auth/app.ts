@@ -286,6 +286,18 @@ async function manageMember(request: Request, env: Env, workspaceId: string, mem
   return reply(200, { member_id: memberId, role: newRole });
 }
 
+/** Active, accepted members of one workspace. Read-only, for the people who can already manage them. */
+async function listMembers(env: Env, workspaceId: string): Promise<Response> {
+  const rows = await env.DB.prepare(`SELECT u.id AS account_id, u.display_name, u.email_normalized AS email, wm.role
+    FROM workspace_memberships wm JOIN user_accounts u ON u.id = wm.account_id
+    WHERE wm.workspace_id = ? AND wm.accepted_at IS NOT NULL AND wm.revoked_at IS NULL
+    ORDER BY CASE wm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END,
+      u.display_name COLLATE NOCASE, u.id
+    LIMIT 500`)
+    .bind(workspaceId).all<{ account_id: string; display_name: string; email: string; role: Role }>();
+  return reply(200, { members: rows.results || [] });
+}
+
 async function logout(request: Request, env: Env, origin: string): Promise<Response> {
   const denied = csrfRejected(request, origin);
   if (denied) return denied;
@@ -350,6 +362,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (rest?.[1] === 'invitations' && !rest[2] && request.method === 'POST') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
       return await inviteMember(request, env, workspaceId, actor, access.role, origin);
+    }
+    if (rest?.[1] === 'members' && !rest[2] && request.method === 'GET') {
+      if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
+      return await listMembers(env, workspaceId);
     }
     if (rest?.[1] === 'members' && rest[2] && request.method === 'PATCH') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
