@@ -19,3 +19,4 @@ coverage/
 *private-import*.json
 *source-snapshot*.json
 .DS_Store
+worker-configuration.d.ts
