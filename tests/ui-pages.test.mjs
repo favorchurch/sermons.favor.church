@@ -1498,3 +1498,21 @@ test('someone who already has an archive can join another with a code from Works
     assert.deepEqual(f.db.query('SELECT role FROM workspace_memberships WHERE account_id=? AND workspace_id=?', [ids.owner2, ids.w1]).map(r => r.role), ['viewer']);
   });
 });
+
+test('text typed in the header search box survives a result arriving', async () => {
+  await withLibrary(async f => {
+    const { api, release } = gatedApi(f, 'owner', /search\?q=lanterns/);
+    const dom = await mountApp(f, 'owner', { api, hash: '#/search?q=lanterns&scope=everything' });
+    const box = one(dom.header, e => e.tag === 'input');
+    box.value = 'half a thought';
+    box.focus();
+    release(); // the search page re-renders when its answer lands
+    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'results');
+    assert.equal(one(dom.header, e => e.tag === 'input'), box, 'the header box was not rebuilt');
+    assert.equal(box.value, 'half a thought');
+    assert.equal(dom.document.activeElement, box, 'and it kept focus');
+    // Going to another page still refreshes the header's current-page marker.
+    dom.go('#/settings/places');
+    assert.equal(textOf(one(dom.header, e => e.tag === 'a' && e.getAttribute('aria-current') === 'page')), 'Settings');
+  });
+});

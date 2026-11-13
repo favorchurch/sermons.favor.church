@@ -29,6 +29,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   let search = null; // { key, phase, data?, error? } for the search page
   let notes = null; // the same, for a sermon's Find in notes tab
   let lastSignature = null;
+  let headerSignature = null;
   let needsFocus = false;
   let toastTimer = null;
 
@@ -283,7 +284,10 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
 
   function render() {
     const route = parseRoute(getHash());
-    renderHeader();
+    const signature = `${route.name}|${route.view || ''}|${route.id || ''}|${route.section || ''}|${route.tab || ''}`;
+    // The header only shows which page is current, so it is rebuilt when the page changes. A result that
+    // arrives later re-renders the page but must not wipe what the person is typing in the header box.
+    if (signature !== headerSignature) { renderHeader(); headerSignature = signature; }
     const focusKey = document.activeElement?.getAttribute?.('data-focus-key');
     let view;
     if (state.phase === 'boot' || state.phase === 'loading') view = loadingState('Loading your library…');
@@ -309,7 +313,6 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     mount(root, view);
     // Move focus to the new page only after a route change (never on first load or data refresh).
     // Keep calendar controls focused across their own re-renders.
-    const signature = `${route.name}|${route.view || ''}|${route.id || ''}|${route.section || ''}|${route.tab || ''}`;
     if (lastSignature !== null && signature !== lastSignature) needsFocus = true;
     lastSignature = signature;
     const target = focusKey && root.querySelector(`[data-focus-key="${focusKey}"]`);
