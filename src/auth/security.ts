@@ -6,6 +6,12 @@ export function isRole(value: unknown): value is Role {
   return value === 'owner' || value === 'admin' || value === 'editor' || value === 'viewer';
 }
 
+const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID.test(value);
+}
+
 export function can(role: Role, operation: Operation): boolean {
   if (operation === 'read') return true;
   if (operation === 'edit') return role !== 'viewer';

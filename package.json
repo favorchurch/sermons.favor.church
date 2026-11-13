@@ -11,7 +11,7 @@
     "migrate:local": "wrangler d1 migrations apply sermon-bank-local --local",
     "qa:staging": "node scripts/staging-qa.mjs",
     "test:unit": "node --experimental-strip-types --experimental-sqlite --test tests/*.test.mjs",
-    "test:schema": "python3 scripts/check_schema.py && python3 scripts/check_auth_schema.py",
+    "test:schema": "for f in scripts/check_*.py; do python3 \"$f\" || exit 1; done",
     "test": "pnpm run test:unit && pnpm run test:schema",
     "check": "pnpm run types && pnpm run typecheck && pnpm test"
   },
