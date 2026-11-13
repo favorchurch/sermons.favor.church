@@ -67,13 +67,11 @@ export async function renamePlace(c: Ctx): Promise<Response> {
   return reply(200, placeDto((await loadPlace(c, id))!));
 }
 
-async function mergePair(c: Ctx, targetId: unknown): Promise<{ source: PlaceRow; target: PlaceRow }> {
+/** Validates the target id shape, then loads it. Null (a bare 404) for a missing or foreign place. */
+async function loadMergeTarget(c: Ctx, targetId: unknown): Promise<PlaceRow | null> {
   if (!isUuid(targetId)) throw new Invalid('target_place_id');
   if (targetId === c.params.placeId) throw new Invalid('target_place_id', 'same_place');
-  const [source, target] = await Promise.all([loadPlace(c, c.params.placeId), loadPlace(c, targetId)]);
-  // Same answer for a missing place and a place in another workspace.
-  if (!source || !target) throw new Invalid('target_place_id', 'not_found');
-  return { source, target };
+  return loadPlace(c, targetId);
 }
 
 function impact(source: PlaceRow, target: PlaceRow) {
@@ -92,14 +90,16 @@ export async function previewPlaceMerge(c: Ctx): Promise<Response> {
   const source = await loadPlace(c, c.params.placeId);
   if (!source) return notFound();
   const targetId = uuidParam(c.url, 'target');
-  const { target } = await mergePair(c, targetId);
-  return reply(200, impact(source, target));
+  const target = await loadMergeTarget(c, targetId);
+  return target ? reply(200, impact(source, target)) : notFound();
 }
 
 export async function mergePlace(c: Ctx): Promise<Response> {
   const body = await readBody(c.request, ['target_place_id']);
-  if (!(await loadPlace(c, c.params.placeId))) return notFound();
-  const { source, target } = await mergePair(c, body.target_place_id);
+  const source = await loadPlace(c, c.params.placeId);
+  if (!source) return notFound();
+  const target = await loadMergeTarget(c, body.target_place_id);
+  if (!target) return notFound();
   const ws = c.workspaceId, from = source.id, to = target.id;
   // One transaction. A second merge of the same source violates UNIQUE(workspace_id,
   // source_place_id) and rolls everything back; a vanished target fails the event foreign key.
