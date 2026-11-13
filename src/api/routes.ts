@@ -13,6 +13,7 @@ import {
 } from './sermons.ts';
 import { createEvent, deleteEvent, getEvent, listEvents, listSermonEvents, updateEvent } from './events.ts';
 import { createPlace, listPlaces, mergePlace, previewPlaceMerge, renamePlace } from './places.ts';
+import { findInNotes, search } from '../search/api.ts';
 
 export type Handler = (c: Ctx) => Promise<Response>;
 export type Route = { method: string; pattern: string[]; write: boolean; handler: Handler };
@@ -41,5 +42,7 @@ export const ROUTES: Route[] = [
   route('PATCH', '/places/:placeId', renamePlace),
   route('GET', '/places/:placeId/merge-preview', previewPlaceMerge),
   route('POST', '/places/:placeId/merge', mergePlace),
+  route('GET', '/search', search),
+  route('GET', '/sermons/:sermonId/find-in-notes', findInNotes),
   // --- append new routes above this line ---
 ];
