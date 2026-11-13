@@ -656,6 +656,43 @@ test('logging a repeat preaching honours date precision and adds a new place on 
   } finally { f.db.close(); }
 });
 
+test('a failed preaching save keeps the newly created place, so the corrected retry completes', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'editor', { hash: '#/sermons/' + ids.sermon1 });
+    await settle();
+    buttons(dom.root, 'Log preaching')[0].dispatch('click');
+    const dialog = one(dom.document.body, e => e.tag === 'dialog');
+    await settle();
+    const field = name => one(dialog, e => e.getAttribute('name') === name);
+    const submit = () => one(dialog, e => e.tag === 'form').dispatch('submit');
+    const placeCount = () => f.db.query("SELECT COUNT(*) AS n FROM places WHERE display_name = 'Lakeside Tent'")[0].n;
+    const eventCount = () => f.db.query('SELECT COUNT(*) AS n FROM preaching_events WHERE sermon_id = ?', [ids.sermon1])[0].n;
+    const before = eventCount();
+    field('date_precision').value = 'year';
+    field('date_precision').dispatch('change');
+    field('preached_on_year').value = '19999';
+    field('place_id').value = '__new__';
+    field('place_id').dispatch('change');
+    field('display_name').value = 'Lakeside Tent';
+    submit();
+    await settle(); await settle(); await settle();
+    assert.ok(dialog.open, 'dialog stays open on the server error');
+    assert.equal(eventCount(), before, 'the rejected event was not saved');
+    assert.equal(placeCount(), 1, 'the place was created once');
+    const created = f.db.query("SELECT id FROM places WHERE display_name = 'Lakeside Tent'")[0].id;
+    assert.equal(field('place_id').value, created, 'the created place is now the selected one');
+    assert.ok(field('display_name').parent.hasAttribute('hidden'), 'the new-place name input is hidden again');
+    field('preached_on_year').value = '2019';
+    submit();
+    await settle(); await settle(); await settle();
+    assert.ok(!dialog.open, 'the corrected retry completes');
+    assert.equal(placeCount(), 1, 'the retry did not create the place again');
+    const saved = f.db.query('SELECT place_id, preached_on, date_precision FROM preaching_events WHERE sermon_id = ? AND place_id = ?', [ids.sermon1, created]);
+    assert.deepEqual(saved.map(e => [e.preached_on, e.date_precision]), [['2019-01-01', 'year']]);
+  } finally { f.db.close(); }
+});
+
 test('archive and restore need confirmation, default focus to Cancel, and use the right API calls', async () => {
   const f = await fixture();
   try {
