@@ -13,6 +13,7 @@ import {
 } from './sermons.ts';
 import { createEvent, deleteEvent, getEvent, listEvents, listSermonEvents, updateEvent } from './events.ts';
 import { createPlace, listPlaces, mergePlace, previewPlaceMerge, renamePlace } from './places.ts';
+import { upload, summary, rows, attest, ignore, approve, rollback } from '../import/routes.ts';
 
 export type Handler = (c: Ctx) => Promise<Response>;
 export type Route = { method: string; pattern: string[]; write: boolean; handler: Handler };
@@ -41,5 +42,12 @@ export const ROUTES: Route[] = [
   route('PATCH', '/places/:placeId', renamePlace),
   route('GET', '/places/:placeId/merge-preview', previewPlaceMerge),
   route('POST', '/places/:placeId/merge', mergePlace),
+  route('POST', '/imports', upload),
+  route('GET', '/imports/:batchId/summary', summary),
+  route('GET', '/imports/:batchId/rows', rows),
+  route('POST', '/imports/:batchId/attest', attest),
+  route('POST', '/imports/:batchId/rows/:rowId/ignore', ignore),
+  route('POST', '/imports/:batchId/rows/:rowId/approve', approve),
+  route('POST', '/imports/:batchId/rows/:rowId/rollback', rollback),
   // --- append new routes above this line ---
 ];
