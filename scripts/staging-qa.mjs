@@ -811,7 +811,7 @@ async function main() {
   process.exitCode = results.some(r => r.status === 'FAIL') ? 1 : 0;
 }
 
-export { main, results };
+export { main };
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => { console.error('staging-qa aborted: ' + redact(error.message)); process.exit(2); });
 }
