@@ -127,7 +127,7 @@ async function guardProtectedData() {
     throw new Error(`guard: synthetic rows touch non-QA data (named ${g.named}, foreign members ${g.foreign_members}, joined elsewhere ${g.joined_elsewhere}); aborting without writes`);
   }
 }
-async function cleanup() {
+async function cleanup({ requireTriggers = false } = {}) {
   await guardProtectedData();
   // The owner-protection triggers (correctly) block deleting owner memberships, so they are dropped and
   // recreated from the migration inside the same execution, then verified.
@@ -150,6 +150,9 @@ async function cleanup() {
     (SELECT COUNT(*) FROM user_accounts WHERE email_normalized LIKE '%@${EMAIL_DOMAIN}') AS accounts,
     (SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'protect_owner_membership_%') AS triggers,
     (SELECT COUNT(*) FROM oauth_login_attempts WHERE code_verifier LIKE 'qa-%') AS attempts`);
+  if (requireTriggers && left[0].triggers !== 2) {
+    throw new Error(`ABORT: staging D1 has ${left[0].triggers} owner-protection triggers after cleanup (expected 2); restore them from migrations/0002_auth.sql before any further run`);
+  }
   return left[0];
 }
 
@@ -225,7 +228,8 @@ async function qaOAuth() {
     const flowValue = flow?.split(';')[0].slice(FLOW_COOKIE.length + 1);
     if (flowValue) {
       secrets.add(flowValue);
-      // The OAuth state legitimately appears in this one response (Location + flow Set-Cookie). Exempt it here only.
+      // The OAuth state legitimately appears in this one response's Location and flow Set-Cookie header lines.
+      // Exempt it from those header lines only; the body is scanned unchanged.
       start.entry.expected.push(flowValue);
     }
     const ok = start.status === 303 && url?.origin === 'https://accounts.google.com' && url.pathname === '/o/oauth2/v2/auth' &&
@@ -453,9 +457,10 @@ async function qaLogout() {
 }
 
 // ---------- leak scan ----------
-function scanForLeaks(label, text, expected = []) {
+function scanForLeaks(label, { headers, text: body, expected = [] }) {
   const hits = [];
-  for (const s of expected) text = text.split(s).join('');
+  const exempt = line => /^(location|set-cookie):/i.test(line) ? expected.reduce((l, s) => l.split(s).join(''), line) : line;
+  const text = headers.split('\n').map(exempt).join('\n') + '\n' + body;
   for (const s of secrets) if (text.includes(s)) hits.push('a known token/email');
   if (/(\bat\s+\S+\s+\(|\.(ts|js|mjs):\d+|\bstack\b|D1_ERROR|SQLITE_|Error:)/i.test(text)) hits.push('stack/error internals');
   if (/\b(client_secret|GOOGLE_CLIENT_SECRET|PILOT_OWNER_EMAILS)\b/.test(text)) hits.push('secret name');
@@ -492,7 +497,7 @@ async function main() {
   await loadOwnerTriggers();
   console.log(`Staging auth QA against ${ORIGIN} (staging D1 only)`);
   console.log('Removing leftover synthetic rows, then seeding...');
-  await cleanup();
+  await cleanup({ requireTriggers: true });
   const tail = startTail();
   let failure = null;
   try {
@@ -513,7 +518,7 @@ async function main() {
   if (failure) check('SETUP', 'Seed and run', false, redact(failure.message));
 
   // Error response and `wrangler tail` leak checks.
-  const leaks = observedErrors.map((e, i) => scanForLeaks(`response #${i + 1} (${e.status})`, e.headers + '\n' + e.text, e.expected)).filter(Boolean);
+  const leaks = observedErrors.map((e, i) => scanForLeaks(`response #${i + 1} (${e.status})`, e)).filter(Boolean);
   check('LEAK-1', `No tokens, secrets, emails or stack traces in ${observedErrors.length} error responses`, leaks.length === 0, leaks.slice(0, 3).join('; '));
   const tailText = tail.lines.join('');
   if (tail.failure() || !/"(outcome|event|logs)"/.test(tailText)) {
