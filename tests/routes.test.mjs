@@ -263,6 +263,23 @@ test('Google start purges expired login attempts but keeps live ones',async()=>{
  }finally{f.db.close()}
 });
 
+test('GET members returns every active member of a workspace with more than 500',async()=>{
+ const f=await fixture();try{
+  const extra=650;
+  for(let i=0;i<extra;i++){
+   const id='a1000000-0000-4000-8000-'+String(i).padStart(12,'0');
+   f.db.execute('INSERT INTO user_accounts(id,email_normalized,display_name) VALUES (?,?,?)',[id,'bulk'+i+'@example.test','Bulk '+String(i).padStart(4,'0')]);
+   f.db.execute('INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at) VALUES(?,?,?,CURRENT_TIMESTAMP)',[ids.w1,id,'viewer']);
+  }
+  const res=await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/members',ids.admin),f.env);
+  assert.equal(res.status,200);const {members}=await res.json();
+  assert.equal(members.length,3+extra);
+  assert.equal(new Set(members.map(m=>m.account_id)).size,3+extra);
+  assert.ok(members.some(m=>m.email==='bulk'+(extra-1)+'@example.test'),'the last member past 500 is listed');
+  assert.deepEqual(members.slice(0,2).map(m=>m.role),['owner','admin']);
+ }finally{f.db.close()}
+});
+
 test('GET members returns accepted_at for each active member, Owner/Admin only',async()=>{
  const f=await fixture();try{
   f.db.execute("UPDATE workspace_memberships SET accepted_at='2026-01-02 03:04:05' WHERE workspace_id=? AND account_id=?",[ids.w1,ids.viewer]);

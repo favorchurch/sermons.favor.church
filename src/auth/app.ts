@@ -286,14 +286,13 @@ async function manageMember(request: Request, env: Env, workspaceId: string, mem
   return reply(200, { member_id: memberId, role: newRole });
 }
 
-/** Active, accepted members of one workspace. Read-only, for the people who can already manage them. */
+/** Every active, accepted member of one workspace (no cap, so People & Access can manage all of them). Read-only, for the people who can already manage them. */
 async function listMembers(env: Env, workspaceId: string): Promise<Response> {
   const rows = await env.DB.prepare(`SELECT u.id AS account_id, u.display_name, u.email_normalized AS email, wm.role, wm.accepted_at
     FROM workspace_memberships wm JOIN user_accounts u ON u.id = wm.account_id
     WHERE wm.workspace_id = ? AND wm.accepted_at IS NOT NULL AND wm.revoked_at IS NULL
     ORDER BY CASE wm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END,
-      u.display_name COLLATE NOCASE, u.id
-    LIMIT 500`)
+      u.display_name COLLATE NOCASE, u.id`)
     .bind(workspaceId).all<{ account_id: string; display_name: string; email: string; role: Role; accepted_at: string }>();
   return reply(200, { members: rows.results || [] });
 }

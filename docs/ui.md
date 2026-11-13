@@ -53,7 +53,7 @@ Sections are shown by role. A hidden section that is opened by address says it i
 
 ### API addition
 
-`GET /api/workspaces/:id/members` (Owner and Admin, `403` for Editor and Viewer, `404` outside the workspace) returns `{"members":[{"account_id","display_name","email","role","accepted_at"}]}` for accepted, unrevoked members only, Owner first. It is the read side of the existing `PATCH /members/:accountUuid`. Pending invitations are not listed.
+`GET /api/workspaces/:id/members` (Owner and Admin, `403` for Editor and Viewer, `404` outside the workspace) returns `{"members":[{"account_id","display_name","email","role","accepted_at"}]}` for every accepted, unrevoked member (no row cap), Owner first. It is the read side of the existing `PATCH /members/:accountUuid`. Pending invitations are not listed.
 
 ## States and accessibility
 
