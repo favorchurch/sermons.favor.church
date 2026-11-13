@@ -6,7 +6,7 @@ All routes live under `/api/workspaces/:workspaceId`. Ids are UUIDs.
 ## Access rules
 
 - Session cookie required (`401` otherwise). Every non-GET request must be same-origin (`403 invalid_origin`).
-- A caller who is not an active member of the workspace, or who names an id from another workspace, gets `404 {"error":"not_found"}` with no titles or counts.
+- A caller who is not an active member of the workspace, or who names an id from another workspace, gets `404 {"error":"not_found"}` with no titles or counts. This includes ids in query filters (`sermon_id`, `place_id`), body references (`version_id`, `place_id`) and the merge target: a missing or foreign id gets the same bare 404. A malformed id is still a 400.
 - Read routes: any member. Mutations: Owner, Admin, Editor. Viewer gets `403 forbidden` before the body is read.
 - Every mutation writes one `audit_events` row (ids, counts and field names only, never titles or notes).
 - Bodies are strict JSON objects: unknown fields are `400 unknown_field`. Validation errors are `400 {"error","field"}`. State conflicts are `409`.
