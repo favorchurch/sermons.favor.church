@@ -307,6 +307,8 @@ test('sermon list filters archived, paginates, and lists scripture references', 
   });
 });
 
+const LONG_PASSAGE = Array.from({ length: 40 }, (_, i) => `Psalm ${i + 1}:1-${i + 5}`).join('; ');
+
 test('migration 0004 backfills structured references from the legacy scripture_passage column', () => {
   const connection = new DatabaseSync(':memory:');
   try {
@@ -315,12 +317,27 @@ test('migration 0004 backfills structured references from the legacy scripture_p
     for (const name of ['0001_initial.sql', '0002_auth.sql', '0003_single_personal_workspace.sql']) connection.exec(sql(name));
     connection.exec(`INSERT INTO user_accounts(id,email_normalized,display_name) VALUES ('u','u@example.test','U');
       INSERT INTO workspaces(id,name,owner_account_id) VALUES ('w','Archive','u');
-      INSERT INTO sermons(id,workspace_id,title,scripture_passage) VALUES ('s1','w','One','John 3:16'),('s2','w','Two',NULL),('s3','w','Three','   '),('s4','w','Four','  ${'x'.repeat(250)}')`);
+      INSERT INTO sermons(id,workspace_id,title,scripture_passage) VALUES ('s1','w','One','John 3:16'),('s2','w','Two',NULL),('s3','w','Three','   '),('s4','w','Four','  ${LONG_PASSAGE}  ')`);
     connection.exec(sql('0004_library.sql'));
     const rows = connection.prepare('SELECT sermon_id, position, length(reference_text) AS n, reference_text FROM sermon_scripture_refs ORDER BY sermon_id').all();
-    assert.deepEqual(rows.map(r => [r.sermon_id, r.position, r.n]), [['s1', 0, 9], ['s4', 0, 200]]);
+    assert.deepEqual(rows.map(r => [r.sermon_id, r.position, r.n]), [['s1', 0, 9], ['s4', 0, LONG_PASSAGE.length]]);
     assert.equal(rows[0].reference_text, 'John 3:16');
+    assert.equal(rows[1].reference_text, LONG_PASSAGE, 'legacy text beyond 200 characters is preserved in full');
   } finally { connection.close(); }
+});
+
+test('a migrated legacy passage longer than 200 characters is returned in full by get and list', async () => {
+  await withFixture(async f => {
+    f.db.execute('UPDATE sermons SET scripture_passage = ? WHERE id = ?', [LONG_PASSAGE, S]);
+    f.db.execute('UPDATE sermon_scripture_refs SET reference_text = ? WHERE sermon_id = ?', [LONG_PASSAGE, S]);
+    const got = await f.call('GET', f.w(`/sermons/${S}`), 'viewer');
+    assert.deepEqual(got.json.scripture_references, [LONG_PASSAGE]);
+    const list = await f.call('GET', f.w('/sermons'), 'viewer');
+    assert.deepEqual(list.json.sermons.find(x => x.id === S).scripture_references, [LONG_PASSAGE]);
+    const renamed = await f.call('PATCH', f.w(`/sermons/${S}`), 'editor', { title: 'Renamed' });
+    assert.deepEqual(renamed.json.scripture_references, [LONG_PASSAGE], 'unrelated edits keep the legacy value');
+    assert.equal((await f.call('PATCH', f.w(`/sermons/${S}`), 'editor', { scripture_references: ['x'.repeat(121)] })).status, 400);
+  });
 });
 
 test('archive and restore are explicit state changes; repeating either is a conflict', async () => {

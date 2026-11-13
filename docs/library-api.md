@@ -30,6 +30,8 @@ All routes live under `/api/workspaces/:workspaceId`. Ids are UUIDs.
 | GET | `/places/:id/merge-preview?target=:id` | events and aliases that would move; changes nothing |
 | POST | `/places/:id/merge` | body `{"target_place_id"}`; source is deleted, its name becomes an alias, history goes to `place_merges` |
 
+New references are capped at 120 characters each. Migration 0004 copies legacy `scripture_passage` text verbatim as one reference, so a migrated reference can be longer; it is returned in full until the list is replaced.
+
 Version responses never include storage keys or consent identities. Version create cannot set `indexing_state`.
 
 ## Dates
