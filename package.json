@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply sermon-bank-local --local",
     "qa:staging": "node scripts/staging-qa.mjs",
+    "seed:staging": "node --experimental-strip-types scripts/seed-staging.mjs",
     "test:unit": "node --experimental-strip-types --experimental-sqlite --test tests/*.test.mjs",
     "test:schema": "for f in scripts/check_*.py; do python3 \"$f\" || exit 1; done",
     "test": "pnpm run test:unit && pnpm run test:schema",

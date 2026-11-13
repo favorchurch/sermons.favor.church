@@ -763,6 +763,8 @@ function printTable() {
 
 async function main() {
   await loadOwnerTriggers();
+  const [migrated] = await d1Rows(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'import_review_rows', 'note_texts', 'note_reference_tokens')`);
+  if (migrated.n !== 5) throw new Error('the staging D1 is missing migrations 0004-0006 (library, notes index, import review). Apply them and deploy the matching Worker first: pnpm exec wrangler d1 migrations apply DB --env staging --remote');
   console.log(`Staging auth QA against ${ORIGIN} (staging D1 only)`);
   console.log('Removing leftover synthetic rows, then seeding...');
   await cleanup({ requireTriggers: true });

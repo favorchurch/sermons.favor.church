@@ -286,9 +286,19 @@ async function d1(sql) {
       { cwd: ROOT, maxBuffer: 16 << 20, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' } });
     return JSON.parse(stdout).flatMap(statement => statement.results || []);
   } catch (error) {
-    // Only wrangler's own message: never echo the SQL, which holds the demo text.
-    throw new Error(`wrangler d1 execute failed: ${String(error.stderr || error.message).split('\n').filter(Boolean).slice(-3).join(' | ').slice(0, 400)}`);
+    // Only wrangler's own message: never echo the SQL, which holds the demo text. `--json` puts errors on stdout.
+    let detail = '';
+    try { const e = JSON.parse(error.stdout).error; detail = [e.text, ...(e.notes ?? []).map(n => n.text)].join(' ').slice(0, 400); } catch {
+      detail = String(error.stderr || error.message).split('\n').filter(line => line.trim() && !/Unsupported macOS/.test(line)).slice(-2).join(' | ').slice(0, 400);
+    }
+    throw new Error(`wrangler d1 execute failed: ${detail}`);
   }
+}
+
+/** The tables this seed writes to, one per migration it depends on (0004 library, 0005 notes index). */
+export async function assertMigrated(exec) {
+  const [row] = await exec(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'note_texts', 'note_reference_tokens')`);
+  if (row.n !== 4) throw new SeedRefusal('The staging D1 is missing migrations 0004 and 0005. Apply them first: pnpm exec wrangler d1 migrations apply DB --env staging --remote. Nothing was written.');
 }
 
 export async function findWorkspace(exec, nameOrId) {
@@ -324,6 +334,7 @@ export async function main(argv = process.argv.slice(2), exec = d1) {
   }
   assertStagingConfig(await readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'));
   const { extractReferences } = await import('../src/search/bible.ts');
+  await assertMigrated(exec);
   const workspace = await findWorkspace(exec, args.workspace);
   const statements = buildSeedStatements(workspace.id, workspace.ownerId, extractReferences);
   const before = await countPresent(exec, workspace.id);
