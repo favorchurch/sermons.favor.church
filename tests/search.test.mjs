@@ -575,3 +575,16 @@ test('limit caps notesMatches and metadataMatches', async () => {
     assert.equal(refs.json.notesMatches.length, 1);
   });
 });
+
+test('references with impossible verse numbers are skipped, not fatal to indexing', async () => {
+  await withFixture(async f => {
+    consent(f.db, ids.version1);
+    const text = 'Odd John 3:1000, Psalm 119:5-99999 and real John 3:16.';
+    const result = await index(f, ids.version1, text);
+    assert.equal(result.references, 1);
+    const tokens = f.db.query('SELECT verse_start, text_start, text_end FROM note_reference_tokens');
+    assert.deepEqual(tokens.map(t => [t.verse_start, text.slice(t.text_start, t.text_end)]), [[16, 'John 3:16']]);
+    assert.equal((await search(f, 'John 3:16')).json.notesMatches.length, 1);
+    assert.equal((await search(f, 'John 3:1000')).json.notesMatches.length, 0);
+  });
+});

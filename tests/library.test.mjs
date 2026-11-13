@@ -147,7 +147,8 @@ test("another workspace's ids under my workspace are 404, never leak titles or c
     for (const actor of ['owner', 'admin', 'editor']) {
       for (const [method, path, body] of foreign) {
         const res = await f.call(method, f.w(path), actor, body);
-        assert.ok([400, 404].includes(res.status), `${actor} ${method} ${path} -> ${res.status}`);
+        assert.equal(res.status, 404, `${actor} ${method} ${path} -> ${res.status}`);
+        assert.deepEqual(res.json, NOT_FOUND, `${actor} ${method} ${path}`);
         assert.ok(!/Beta|Secret|betaDoc/.test(res.text), `${method} ${path} leaked: ${res.text}`);
       }
     }
@@ -155,21 +156,29 @@ test("another workspace's ids under my workspace are 404, never leak titles or c
   });
 });
 
-test('cross-workspace references in a body are rejected with the same answer as a missing id', async () => {
+test('cross-workspace ids in bodies, filters and merge targets get the same bare 404 as a missing id', async () => {
   await withFixture(async f => {
     const missing = '00000000-0000-4000-8000-0000000000ff';
+    const before = snapshot(f.db);
     const create = (version_id, place_id) => f.call('POST', f.w(`/sermons/${S}/events`), 'owner', { preached_on: '2025-05-04', version_id, place_id });
-    const foreignPlace = await create(null, ids.place2), missingPlace = await create(null, missing);
-    assert.equal(foreignPlace.status, 400);
-    assert.deepEqual(foreignPlace.json, missingPlace.json);
-    const foreignVersion = await create(ids.version2, null), missingVersion = await create(missing, null);
-    assert.equal(foreignVersion.status, 400);
-    assert.deepEqual(foreignVersion.json, missingVersion.json);
-    const merge = await f.call('POST', f.w(`/places/${P}/merge`), 'owner', { target_place_id: ids.place2 });
-    const mergeMissing = await f.call('POST', f.w(`/places/${P}/merge`), 'owner', { target_place_id: missing });
-    assert.equal(merge.status, 400);
-    assert.deepEqual(merge.json, mergeMissing.json);
-    assert.equal(f.db.query('SELECT COUNT(*) AS n FROM preaching_events WHERE workspace_id=?', [ids.w2])[0].n, 1);
+    const patch = body => f.call('PATCH', f.w(`/events/${ids.event1}`), 'owner', body);
+    const pairs = [
+      [() => create(null, ids.place2), () => create(null, missing)],
+      [() => create(ids.version2, null), () => create(missing, null)],
+      [() => patch({ place_id: ids.place2 }), () => patch({ place_id: missing })],
+      [() => patch({ version_id: ids.version2 }), () => patch({ version_id: missing })],
+      [() => f.call('GET', f.w(`/events?sermon_id=${ids.sermon2}`), 'viewer'), () => f.call('GET', f.w(`/events?sermon_id=${missing}`), 'viewer')],
+      [() => f.call('GET', f.w(`/events?year=2025&place_id=${ids.place2}`), 'viewer'), () => f.call('GET', f.w(`/events?year=2025&place_id=${missing}`), 'viewer')],
+      [() => f.call('GET', f.w(`/places/${P}/merge-preview?target=${ids.place2}`), 'viewer'), () => f.call('GET', f.w(`/places/${P}/merge-preview?target=${missing}`), 'viewer')],
+      [() => f.call('POST', f.w(`/places/${P}/merge`), 'owner', { target_place_id: ids.place2 }), () => f.call('POST', f.w(`/places/${P}/merge`), 'owner', { target_place_id: missing })]
+    ];
+    for (const [i, [foreign, absent]] of pairs.entries()) {
+      const [foreignRes, absentRes] = [await foreign(), await absent()];
+      assert.equal(foreignRes.status, 404, `case ${i}: ${foreignRes.text}`);
+      assert.deepEqual(foreignRes.json, NOT_FOUND, `case ${i}`);
+      assert.deepEqual(absentRes.json, foreignRes.json, `case ${i} missing id answers the same`);
+    }
+    assert.equal(snapshot(f.db), before);
   });
 });
 
@@ -499,7 +508,7 @@ test('calendar year and month queries return events with date_precision and stay
     assert.deepEqual(idsOf(await events('?year=2024&month=2')), [feb28]);
     assert.deepEqual(idsOf(await events('?year=2025&month=4')), []);
     assert.equal((await events('')).length, 9, 'unfiltered list includes undated events');
-    assert.deepEqual(idsOf(await events(`?year=2025&sermon_id=${ids.sermon2}`)), [], "other workspace's sermon id matches nothing");
+    assert.equal((await f.call('GET', f.w(`/events?year=2025&sermon_id=${ids.sermon2}`), 'viewer')).status, 404, "other workspace's sermon id is a 404");
     assert.deepEqual(idsOf(await events(`?year=2025&month=3&place_id=${P}`)), [ids.event1]);
     for (const e of march) assert.ok(!JSON.stringify(e).includes('Beta'));
 
@@ -585,9 +594,10 @@ test('merge preview reports the impact without changing anything', async () => {
       events_to_move: 1, aliases_to_move: ['Harbor'], new_alias: 'Harbor Chapel', resulting_event_count: 2
     });
     assert.equal(snapshot(f.db), before);
-    for (const q of ['', '?target=x', `?target=${P}`, '?target=00000000-0000-4000-8000-0000000000ff']) {
+    for (const q of ['', '?target=x', `?target=${P}`]) {
       assert.equal((await f.call('GET', f.w(`/places/${P}/merge-preview${q}`), 'owner')).status, 400, q);
     }
+    assert.equal((await f.call('GET', f.w(`/places/${P}/merge-preview?target=00000000-0000-4000-8000-0000000000ff`), 'owner')).status, 404);
   });
 });
 
@@ -636,7 +646,7 @@ test('merge input is validated and a failed merge leaves everything untouched', 
   await withFixture(async f => {
     const main = await mergeFixture(f);
     const before = snapshot(f.db);
-    for (const body of [{}, { target_place_id: 'x' }, { target_place_id: P }, { target_place_id: main, extra: 1 }, { target_place_id: ids.place2 }]) {
+    for (const body of [{}, { target_place_id: 'x' }, { target_place_id: P }, { target_place_id: main, extra: 1 }]) {
       assert.equal((await f.call('POST', f.w(`/places/${P}/merge`), 'owner', body)).status, 400, JSON.stringify(body));
     }
     assert.equal(snapshot(f.db), before);
