@@ -1,6 +1,6 @@
 // Import Review (Owner only): stage the canonical history CSV, review each row's flags, then
 // attest, ignore, approve or roll back. Attesting and approving are separate, explicit steps.
-import { h } from '../dom.js';
+import { h, mount } from '../dom.js';
 import { describeError, ApiError } from '../api.js';
 import { hrefFor } from '../router.js';
 import { formatDay, plural } from '../format.js';
@@ -14,7 +14,7 @@ function uploadCard(ctx) {
   const input = h('input', { id: 'import-file', type: 'file', accept: '.csv,text/csv' });
   const message = h('div', { class: 'upload-message' });
   const button = h('button', { type: 'button', class: 'btn btn-primary', 'data-action': 'stage' }, 'Stage file');
-  const show = (text, tone) => message.replaceChildren(text ? notice(text, tone) : '');
+  const show = (text, tone) => mount(message, text && notice(text, tone));
   button.addEventListener('click', async () => {
     const file = input.files?.[0];
     if (!file) { show('Choose the history CSV first.'); return; }
@@ -65,7 +65,7 @@ function reviewPanel(ctx, batchId) {
   function drawBar() {
     const attest = selectedWith('attest'), approve = selectedWith('approve');
     const tooMany = attest.length > MAX_ATTEST;
-    bar.replaceChildren(
+    mount(bar,
       h('span', { class: 'muted' }, `${plural(view.selected.size, 'row')} selected`),
       h('button', { type: 'button', class: 'btn', 'data-action': 'attest-selected', disabled: view.busy || !attest.length || tooMany, onclick: () => attestDialog(attest) }, `Attest selected (${attest.length})`),
       h('button', { type: 'button', class: 'btn', 'data-action': 'approve-selected', disabled: view.busy || !approve.length, onclick: () => approveMany(approve) }, `Approve selected (${approve.length})`),
@@ -178,7 +178,7 @@ function reviewPanel(ctx, batchId) {
       drawBar();
     });
     const body = page.rows.map(rowNode);
-    tableBox.replaceChildren(
+    mount(tableBox,
       h('p', { class: 'result-count' }, `${plural(page.total, 'row')}${view.filter === 'all' ? '' : ' match this filter'}`),
       page.total
         ? h('div', { class: 'table-wrap' }, h('table', { class: 'sermon-table import-table' },

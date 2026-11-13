@@ -1,6 +1,6 @@
 // Docs & Privacy: per-sermon versions, PDF upload, Owner consent to index, and revoke.
 // Extracted PDF text stays private until an Owner consents, and revoke deletes it for good.
-import { h, field, uid } from '../dom.js';
+import { h, field, uid, mount } from '../dom.js';
 import { describeError } from '../api.js';
 import { hrefFor } from '../router.js';
 import { SOURCE_LABELS, indexingStatus } from '../format.js';
@@ -50,7 +50,7 @@ function uploader({ label, buttonLabel, send, onDone, toast }) {
   button.addEventListener('click', async () => {
     const file = input.files?.[0];
     const problem = pdfProblem(file);
-    message.replaceChildren(problem ? notice(problem) : '');
+    mount(message, problem && notice(problem));
     if (problem) return;
     button.setAttribute('disabled', '');
     try {
@@ -58,7 +58,7 @@ function uploader({ label, buttonLabel, send, onDone, toast }) {
       toast(uploadResultText(result));
       await onDone();
     } catch (error) {
-      message.replaceChildren(notice(describeError(error)));
+      mount(message, notice(describeError(error)));
     } finally { button.removeAttribute('disabled'); }
   });
   return h('div', { class: 'uploader' }, input, button, message);
@@ -120,7 +120,7 @@ function addPdfForm(ctx, sermon, reload) {
   button.addEventListener('click', async () => {
     const file = input.files?.[0];
     const problem = pdfProblem(file);
-    message.replaceChildren(problem ? notice(problem) : '');
+    mount(message, problem && notice(problem));
     if (problem) return;
     button.setAttribute('disabled', '');
     let created = null;
@@ -131,7 +131,7 @@ function addPdfForm(ctx, sermon, reload) {
       await ctx.refreshLibrary();
       await reload({ quiet: true });
     } catch (error) {
-      message.replaceChildren(notice(created
+      mount(message, notice(created
         ? `The version was created, but the file did not upload. ${describeError(error)} Use Upload PDF on it to try again.`
         : describeError(error)));
       if (created) await reload({ quiet: true });

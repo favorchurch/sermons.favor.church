@@ -4,7 +4,7 @@ import { canEdit } from '../permissions.js';
 import { plural } from '../format.js';
 import { Handled, actions, formErrorBox, wireForm, setHidden } from './dialogs.js';
 import { panel, sectionBox } from './panel.js';
-import { describeError } from '../api.js';
+import { ApiError, describeError } from '../api.js';
 
 function renameDialog({ client, place, onDone }) {
   const name = field({ label: 'Place name', name: 'display_name', value: place.display_name, required: true, maxlength: 120, autofocus: true,
@@ -15,7 +15,19 @@ function renameDialog({ client, place, onDone }) {
   const form = h('form', { novalidate: true }, name.wrapper, formError, node);
   const opened = openDialog({ title: 'Rename place', body: form });
   dialogApi.close = opened.close;
-  wireForm({ form, submit, formError, dialog: opened, onDone, fields: { display_name: name }, save: () => client.renamePlace(place.id, name.control.value) });
+  wireForm({
+    form, submit, formError, dialog: opened, onDone, fields: { display_name: name },
+    save: async () => {
+      try { await client.renamePlace(place.id, name.control.value); }
+      catch (error) {
+        // A taken name is about the field, not the whole form.
+        if (!(error instanceof ApiError && error.status === 409)) throw error;
+        name.setError(describeError(error));
+        name.control.focus();
+        throw new Handled();
+      }
+    }
+  });
   return opened;
 }
 
