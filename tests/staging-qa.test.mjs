@@ -17,14 +17,14 @@ const assets = { async fetch(request) {
 } };
 
 /** Run the QA once. `mutate` may change the worker environment or database before it starts. */
-async function runQa(t, { env: extraEnv = {} } = {}) {
+async function runQa(t, { env: extraEnv = {}, strip = [] } = {}) {
   const qa = await import('../scripts/staging-qa.mjs');
   const db = new DatabaseMock();
   const env = { DB: db, ASSETS: assets, PUBLIC_ORIGIN: 'https://sermons-preview.favor.church', ...extraEnv };
   const traffic = [];
   qa.transport.send = async ({ method, url, headers, body }) => {
     const response = await handleRequest(new Request(url, { method, headers, body: method === 'GET' ? undefined : body }), env);
-    const head = [`HTTP/1.1 ${response.status} X`, ...[...response.headers].filter(([k]) => k !== 'set-cookie').map(([k, v]) => `${k}: ${v}`),
+    const head = [`HTTP/1.1 ${response.status} X`, ...[...response.headers].filter(([k]) => k !== 'set-cookie' && !strip.includes(k)).map(([k, v]) => `${k}: ${v}`),
       ...response.headers.getSetCookie().map(c => `set-cookie: ${c}`)];
     traffic.push({ method, path: new URL(url).pathname, status: response.status });
     return { head, text: await response.text() };
@@ -40,7 +40,7 @@ async function runQa(t, { env: extraEnv = {} } = {}) {
   await qa.main();
   const exitCode = process.exitCode;
   process.exitCode = 0;
-  const rows = lines.join('\n').split('\n').map(line => /^(PASS|FAIL|SKIP)\s+(\S+)\s+(.*)$/.exec(line)).filter(Boolean).map(m => ({ status: m[1], id: m[2], text: m[3] }));
+  const rows = lines.join('\n').split('\n').map(line => /^(PASS|FAIL|SKIP|WARN)\s+(\S+)\s+(.*)$/.exec(line)).filter(Boolean).map(m => ({ status: m[1], id: m[2], text: m[3] }));
   return { rows, exitCode, traffic, db };
 }
 
@@ -81,4 +81,27 @@ test('QA fails when the app shell is missing its assets binding (the checks can 
   const { rows, exitCode } = await runQa(t, { env: { ASSETS: undefined } });
   assert.ok(rows.some(r => r.status === 'FAIL' && r.id === 'NEW-3'), 'NEW-3 should fail without ASSETS');
   assert.equal(exitCode, 1);
+});
+
+test('NEW-3 frame guard: CSP frame-ancestors is required, a missing X-Frame-Options only warns', async () => {
+  const { frameGuard } = await import('../scripts/staging-qa.mjs');
+  const csp = "default-src 'none'; frame-ancestors 'none'";
+  const withBoth = frameGuard(new Headers({ 'content-security-policy': csp, 'x-frame-options': 'DENY' }));
+  assert.deepEqual(withBoth, { ok: true, warning: '' });
+  // The live edge strips X-Frame-Options: still ok, with a warning that names the edge.
+  const stripped = frameGuard(new Headers({ 'content-security-policy': csp }));
+  assert.equal(stripped.ok, true);
+  assert.match(stripped.warning, /X-Frame-Options is absent.*edge/);
+  // Without the CSP directive the check fails, whatever X-Frame-Options says.
+  assert.equal(frameGuard(new Headers({ 'x-frame-options': 'DENY' })).ok, false);
+  assert.equal(frameGuard(new Headers({ 'content-security-policy': "default-src 'none'; frame-ancestors 'self'", 'x-frame-options': 'DENY' })).ok, false);
+  assert.equal(frameGuard(new Headers({ 'content-security-policy': "default-src 'none'; x-frame-ancestors 'none'" })).ok, false);
+  assert.match(frameGuard(new Headers({ 'content-security-policy': csp, 'x-frame-options': 'SAMEORIGIN' })).warning, /SAMEORIGIN/);
+});
+
+test('QA passes NEW-3 with a WARN when the edge strips X-Frame-Options from the shell', { timeout: 120_000 }, async t => {
+  const { rows, exitCode } = await runQa(t, { strip: ['x-frame-options'] });
+  assert.equal(exitCode, 0);
+  assert.ok(rows.some(r => r.status === 'PASS' && r.id === 'NEW-3'), 'NEW-3 should pass');
+  assert.ok(rows.some(r => r.status === 'WARN' && r.id === 'NEW-3' && /edge/.test(r.text)), 'NEW-3 should warn naming the edge');
 });

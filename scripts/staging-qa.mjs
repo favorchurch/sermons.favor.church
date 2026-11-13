@@ -6,7 +6,7 @@
  *   STAGING D1 only (`wrangler d1 execute --env staging --remote`).
  * - Session and invite tokens are minted by inserting only their SHA-256 hashes
  *   (the scheme in src/auth). Raw tokens live in memory and are never printed.
- * - Exercises the deployed Worker over real HTTP, prints a PASS/FAIL/SKIP table,
+ * - Exercises the deployed Worker over real HTTP, prints a PASS/FAIL/SKIP/WARN table,
  *   exits non-zero on any FAIL and removes every synthetic row it created.
  * - The real Google round trip (login, /api/me, logout) is out of scope: only the
  *   /auth/google/start redirect and state replay rejection are covered here.
@@ -46,6 +46,17 @@ const observedErrors = []; // every non-2xx response (status, headers, body) for
 function record(id, status, name, detail = '') { results.push({ id, status, name, detail }); }
 function check(id, name, ok, detail = '') { record(id, ok ? 'PASS' : 'FAIL', name, ok ? '' : detail); return ok; }
 function skip(id, name, reason) { record(id, 'SKIP', name, reason); }
+function warn(id, name, reason) { record(id, 'WARN', name, reason); }
+
+/** Framing guard of the signed-in shell: the CSP must carry frame-ancestors 'none'. X-Frame-Options is only a
+ *  legacy duplicate, and the live edge strips it from every response, so its absence warns without failing. */
+export function frameGuard(headers) {
+  const xfo = headers.get('x-frame-options');
+  return {
+    ok: /(?:^|;)\s*frame-ancestors 'none'\s*(?:;|$)/.test(headers.get('content-security-policy') || ''),
+    warning: !xfo ? 'X-Frame-Options is absent; the edge in front of the Worker likely strips it (CSP frame-ancestors still blocks framing)' : xfo.toUpperCase() === 'DENY' ? '' : `X-Frame-Options is ${xfo}, expected DENY`
+  };
+}
 
 function redact(text) {
   let out = String(text);
@@ -629,11 +640,13 @@ async function qaNewRoutesAccess() {
   const cookie = asSession(A.owner.session);
   const shell = await http('GET', '/', { cookie }), asset = await http('GET', '/assets/app.css', { cookie }), hidden = await http('GET', '/index.html', { cookie });
   const csp = shell.headers.get('content-security-policy') || '';
+  const frame = frameGuard(shell.headers);
   check('NEW-3', 'Signed in: / serves the app shell (private, strict CSP, no embedded account or workspace data); /index.html is still 404', shell.status === 200 &&
     /text\/html/.test(shell.headers.get('content-type') || '') && /private/.test(shell.headers.get('cache-control') || '') && /script-src 'self'/.test(csp) && /default-src 'none'/.test(csp) &&
-    shell.headers.get('x-frame-options') === 'DENY' && shell.headers.get('x-content-type-options') === 'nosniff' &&
+    frame.ok && shell.headers.get('x-content-type-options') === 'nosniff' &&
     ![A.owner.email, A.owner.id, W.alpha, 'QA alpha'].some(v => shell.text.includes(v)) &&
     asset.status === 200 && /text\/css/.test(asset.headers.get('content-type') || '') && hidden.status === 404, `statuses ${shell.status}/${asset.status}/${hidden.status}`);
+  if (frame.warning) warn('NEW-3', 'Signed in: / X-Frame-Options header', frame.warning);
 
   // Viewer: reads work (the control that proves a 404 elsewhere is isolation, not a missing route), every mutation is 403.
   const viewer = await sweep(ROUTES, 'viewer');
@@ -762,7 +775,7 @@ function printTable() {
     console.log(`${r.status.padEnd(8)} ${r.id.padEnd(width)}  ${r.name}${r.detail ? `  [${redact(r.detail)}]` : ''}`);
   }
   const count = s => results.filter(r => r.status === s).length;
-  console.log(`\nPASS ${count('PASS')}  FAIL ${count('FAIL')}  SKIP ${count('SKIP')}  (run ${RUN}, origin ${ORIGIN})`);
+  console.log(`\nPASS ${count('PASS')}  FAIL ${count('FAIL')}  SKIP ${count('SKIP')}  WARN ${count('WARN')}  (run ${RUN}, origin ${ORIGIN})`);
 }
 
 async function main({ readConfig = () => readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'), origin = ORIGIN } = {}) {
@@ -772,6 +785,7 @@ async function main({ readConfig = () => readFile(join(ROOT, 'wrangler.jsonc'), 
   await loadOwnerTriggers();
   const [migrated] = await d1Rows(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'import_review_rows', 'note_texts', 'note_reference_tokens')`);
   if (migrated.n !== 5) throw new Error('the staging D1 is missing migrations 0004-0006 (library, notes index, import review). Apply them and deploy the matching Worker first: pnpm exec wrangler d1 migrations apply DB --env staging --remote');
+  results.length = 0; // a second in-process run (the tests) must not inherit the first run's rows
   console.log(`Staging auth QA against ${ORIGIN} (staging D1 only)`);
   console.log('Removing leftover synthetic rows, then seeding...');
   await cleanup({ requireTriggers: true });

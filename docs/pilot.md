@@ -10,7 +10,7 @@ The review needs a staging Worker that matches this code, a migrated staging dat
 2. Apply any that are missing: `pnpm exec wrangler d1 migrations apply DB --env staging --remote`.
 3. Deploy: `pnpm exec wrangler deploy --env staging`. Check `https://sermons-preview.favor.church/health`.
 4. Confirm the three secrets exist (`pnpm exec wrangler secret list --env staging`): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PILOT_OWNER_EMAILS`. The reviewer's Google account email must be in `PILOT_OWNER_EMAILS` (to create or own an archive) or have an invitation. If sign-in answers `503 identity_provider_not_configured`, the Google secrets are not set.
-5. Run the automated checks: `pnpm qa:staging`. It adds and removes its own `*.test` rows and never touches real rows. `SKIP` lines for Google are expected until the secrets are set.
+5. Run the automated checks: `pnpm qa:staging`. It adds and removes its own `*.test` rows and never touches real rows. `SKIP` lines for Google are expected until the secrets are set. A `WARN NEW-3` line about X-Frame-Options is also expected on live staging: the edge strips that header, and framing is still blocked by the CSP `frame-ancestors 'none'`.
 6. Add the demo data to the reviewer's archive: `pnpm seed:staging --workspace "<archive name or id>"` (add `--dry-run` first to see what it would do). It is idempotent. See [Demo data](#demo-data).
 
 ## Sign in
