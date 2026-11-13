@@ -66,3 +66,13 @@ test('short rows are flagged for review instead of crashing the preflight', () =
   assert.equal(out.summary.flag_counts.missing_place, 2);
   assert.equal(out.rows[1].proposed_title, null);
 });
+
+test('preserves additional source columns in the original values', () => {
+  const out = inspectHistory('Date Preached,Sermon Title,Category,Tags,Stories Shared,Location,Extra\n1/2/2024,Title,c,t,n,Place,extra value\n');
+  assert.equal(out.rows[0].raw[6], 'extra value');
+});
+
+test('rejects reordered or partial positional source headers', () => {
+  assert.throws(() => inspectHistory('Date Preached,Sermon Title,Category,Tags,Location,Stories Shared\n1/2/2024,T,c,t,Here,Story'), /Unexpected source headers/);
+  assert.throws(() => inspectHistory('Date Preached,Sermon Title,Category\n1/2/2024,T,c'), /Unexpected source headers/);
+});

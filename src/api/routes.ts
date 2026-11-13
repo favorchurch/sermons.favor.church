@@ -13,6 +13,7 @@ import {
 } from './sermons.ts';
 import { createEvent, deleteEvent, getEvent, listEvents, listSermonEvents, updateEvent } from './events.ts';
 import { createPlace, listPlaces, mergePlace, previewPlaceMerge, renamePlace } from './places.ts';
+import { upload, summary, rows, attest, ignore, approve, rollback } from '../import/routes.ts';
 import { findInNotes, search } from '../search/api.ts';
 import { consentToIndex, downloadPdf, revokeIndexing, uploadPdf } from '../sources/api.ts';
 
@@ -43,6 +44,13 @@ export const ROUTES: Route[] = [
   route('PATCH', '/places/:placeId', renamePlace),
   route('GET', '/places/:placeId/merge-preview', previewPlaceMerge),
   route('POST', '/places/:placeId/merge', mergePlace),
+  route('POST', '/imports', upload),
+  route('GET', '/imports/:batchId/summary', summary),
+  route('GET', '/imports/:batchId/rows', rows),
+  route('POST', '/imports/:batchId/attest', attest),
+  route('POST', '/imports/:batchId/rows/:rowId/ignore', ignore),
+  route('POST', '/imports/:batchId/rows/:rowId/approve', approve),
+  route('POST', '/imports/:batchId/rows/:rowId/rollback', rollback),
   route('GET', '/search', search),
   route('GET', '/sermons/:sermonId/find-in-notes', findInNotes),
   route('POST', '/sermons/:sermonId/versions/:versionId/pdf', uploadPdf),
