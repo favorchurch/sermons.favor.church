@@ -30,6 +30,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 export const STAGING_DATABASE = 'sermon-bank-staging';
 export const STAGING_HOST = 'sermons-preview.favor.church';
+export const STAGING_ORIGIN = `https://${STAGING_HOST}`;
 // Pinned identities of the staging Cloudflare account and D1 database (the values committed in wrangler.jsonc).
 // A config edited to name another database or account fails the guard even when the name and origin still match.
 export const STAGING_DATABASE_ID = '9d4aee46-9a54-4699-a8d0-f212e29b8f98';
@@ -65,6 +66,11 @@ export function parseArgs(argv) {
   return out;
 }
 
+/** True only for exactly https://<staging host>: no other scheme, port, credentials, path, query or fragment (a plain-http origin would send session cookies in clear). */
+export function isStagingOrigin(value) {
+  try { return new URL(String(value)).href === `${STAGING_ORIGIN}/`; } catch { return false; }
+}
+
 /** wrangler.jsonc must still describe staging as exactly the pinned staging account, database and origin, or nothing is written. */
 export function assertStagingConfig(text) {
   let config;
@@ -73,8 +79,8 @@ export function assertStagingConfig(text) {
   // Exactly one D1 entry: wrangler resolves `DB` by binding or name, so a second entry could be the one it picks.
   const database = staging?.d1_databases?.length === 1 ? staging.d1_databases[0] : undefined;
   if (database?.binding !== 'DB' || database.database_name !== STAGING_DATABASE || database.database_id !== STAGING_DATABASE_ID || staging?.account_id !== STAGING_ACCOUNT_ID ||
-      new URL(staging?.vars?.PUBLIC_ORIGIN ?? 'https://invalid.invalid').host !== STAGING_HOST) {
-    throw new SeedRefusal(`wrangler.jsonc env.staging no longer points at the pinned ${STAGING_DATABASE} database, account and ${STAGING_HOST}; refusing to write.`);
+      !isStagingOrigin(staging?.vars?.PUBLIC_ORIGIN)) {
+    throw new SeedRefusal(`wrangler.jsonc env.staging no longer points at the pinned ${STAGING_DATABASE} database, account and ${STAGING_ORIGIN}; refusing to write.`);
   }
 }
 

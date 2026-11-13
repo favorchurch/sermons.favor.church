@@ -19,14 +19,13 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertStagingConfig, STAGING_HOST, SeedRefusal } from './seed-staging.mjs';
+import { assertStagingConfig, isStagingOrigin, STAGING_ORIGIN, SeedRefusal } from './seed-staging.mjs';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
-const ORIGIN = (process.env.STAGING_ORIGIN || 'https://sermons-preview.favor.church').replace(/\/$/, '');
-const HOST = new URL(ORIGIN).host;
+const ORIGIN = (process.env.STAGING_ORIGIN || STAGING_ORIGIN).replace(/\/$/, '');
 const DOH = process.env.QA_DOH_URL || 'https://1.1.1.1/dns-query';
 const SESSION_COOKIE = '__Host-sb_session';
 const FLOW_COOKIE = '__Secure-sb_flow';
@@ -781,7 +780,10 @@ function printTable() {
 async function main({ readConfig = () => readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'), origin = ORIGIN } = {}) {
   // Same pinned staging identity guard as the seed, plus the origin the HTTP checks call: D1 and HTTP must both be staging.
   assertStagingConfig(await readConfig());
-  if (new URL(origin).host !== STAGING_HOST) throw new SeedRefusal(`STAGING_ORIGIN must be https://${STAGING_HOST} (got ${new URL(origin).host}); refusing to write.`);
+  // Requests go to ORIGIN, so it is checked as well as the argument: synthetic session cookies must only ever travel over https to staging.
+  for (const candidate of new Set([origin, ORIGIN])) {
+    if (!isStagingOrigin(candidate)) throw new SeedRefusal(`STAGING_ORIGIN must be exactly ${STAGING_ORIGIN} (got ${redact(String(candidate))}); refusing to write.`);
+  }
   await loadOwnerTriggers();
   const [migrated] = await d1Rows(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('sermon_scripture_refs', 'place_merges', 'import_review_rows', 'note_texts', 'note_reference_tokens')`);
   if (migrated.n !== 5) throw new Error('the staging D1 is missing migrations 0004-0006 (library, notes index, import review). Apply them and deploy the matching Worker first: pnpm exec wrangler d1 migrations apply DB --env staging --remote');

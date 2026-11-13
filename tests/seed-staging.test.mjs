@@ -53,6 +53,16 @@ test('config guard: wrangler.jsonc must still describe the staging database and 
   assert.throws(() => seed.assertStagingConfig(mutated(c => { c.env.staging.d1_databases[0].database_id += ' '; })), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace('sermons-preview.favor.church"', 'sermons.favor.church"')), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig('not json'), seed.SeedRefusal);
+  // Same host but not exactly https://<staging host>: plain http, another port, credentials or a path are refused.
+  for (const origin of ['http://sermons-preview.favor.church', 'https://sermons-preview.favor.church:8443', 'https://user@sermons-preview.favor.church', 'https://sermons-preview.favor.church/app', 'ftp://sermons-preview.favor.church', 'sermons-preview.favor.church']) {
+    assert.throws(() => seed.assertStagingConfig(mutated(c => { c.env.staging.vars.PUBLIC_ORIGIN = origin; })), seed.SeedRefusal, origin);
+  }
+  assert.throws(() => seed.assertStagingConfig(mutated(c => { delete c.env.staging.vars.PUBLIC_ORIGIN; })), seed.SeedRefusal);
+});
+
+test('isStagingOrigin accepts only the exact https staging origin', () => {
+  for (const ok of ['https://sermons-preview.favor.church', 'https://sermons-preview.favor.church/', 'HTTPS://Sermons-Preview.Favor.Church']) assert.equal(seed.isStagingOrigin(ok), true, ok);
+  for (const bad of ['http://sermons-preview.favor.church', 'http://sermons-preview.favor.church:443', 'https://sermons-preview.favor.church.evil.example', 'https://sermons.favor.church', '', undefined, null, 'not a url']) assert.equal(seed.isStagingOrigin(bad), false, String(bad));
 });
 
 test('workspace lookup: exact name or id, never ambiguous, needs an active Owner', async () => {

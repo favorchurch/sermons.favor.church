@@ -74,6 +74,10 @@ test('QA refuses before any request or write when the config or the origin is no
   await assert.rejects(qa.main({ readConfig: async () => JSON.stringify(other) }), /pinned/);
   await assert.rejects(qa.main({ origin: 'https://sermons.favor.church' }), /STAGING_ORIGIN must be/);
   await assert.rejects(qa.main({ origin: 'https://evil.example' }), /STAGING_ORIGIN must be/);
+  // Right host, wrong scheme or shape: synthetic session cookies must never travel over plain http.
+  for (const origin of ['http://sermons-preview.favor.church', 'http://sermons-preview.favor.church/', 'https://sermons-preview.favor.church:8443', 'https://user@sermons-preview.favor.church']) {
+    await assert.rejects(qa.main({ origin }), /STAGING_ORIGIN must be/, origin);
+  }
   assert.deepEqual(calls, []);
 });
 
