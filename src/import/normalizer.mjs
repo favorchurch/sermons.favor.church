@@ -50,7 +50,7 @@ export function normalizeDate(input) {
   };
 }
 
-function titleKey(title) {
+export function titleKey(title) {
   return String(title ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 

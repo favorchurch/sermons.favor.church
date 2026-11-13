@@ -1,6 +1,6 @@
 import { reply, isUuid } from '../auth/security.ts';
 import { Invalid, Conflict, notFound, auditStatement, changes, type Ctx } from '../api/http.ts';
-import { inspectHistory } from './normalizer.mjs';
+import { inspectHistory, titleKey } from './normalizer.mjs';
 
 type Row = { id: string; status: string; parse_outcome: string; proposed_title: string | null; proposed_date: string | null; proposed_place: string | null; review_flags_json: string; source_row: number; source_sheet: string; source_hash: string; sermon_id: string | null; event_id: string | null; place_id: string | null };
 const owner = (c: Ctx): Response | null => c.role === 'owner' ? null : reply(403, { error: 'forbidden' });
@@ -40,9 +40,10 @@ export async function upload(c: Ctx): Promise<Response> {
         if (named) placeKey = named.id;
       }
     }
-    const signature = JSON.stringify([item.proposed_title?.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' '), item.proposed_date, placeKey]);
+    const signature = JSON.stringify([titleKey(item.proposed_title), item.proposed_date, placeKey]);
     if (item.proposed_title && item.proposed_date && place) {
-      const duplicate = await c.env.DB.prepare(`SELECT e.id FROM preaching_events e JOIN sermons s ON s.workspace_id=e.workspace_id AND s.id=e.sermon_id JOIN places p ON p.workspace_id=e.workspace_id AND p.id=e.place_id WHERE e.workspace_id=? AND e.preached_on=? AND s.title=? COLLATE NOCASE AND (p.display_name=? COLLATE NOCASE OR EXISTS (SELECT 1 FROM place_aliases a WHERE a.workspace_id=p.workspace_id AND a.place_id=p.id AND a.alias=? COLLATE NOCASE)) LIMIT 1`).bind(c.workspaceId,item.proposed_date,item.proposed_title,place,place).first();
+      const candidates = await c.env.DB.prepare(`SELECT s.title FROM preaching_events e JOIN sermons s ON s.workspace_id=e.workspace_id AND s.id=e.sermon_id JOIN places p ON p.workspace_id=e.workspace_id AND p.id=e.place_id WHERE e.workspace_id=? AND e.preached_on=? AND (p.display_name=? COLLATE NOCASE OR EXISTS (SELECT 1 FROM place_aliases a WHERE a.workspace_id=p.workspace_id AND a.place_id=p.id AND a.alias=? COLLATE NOCASE))`).bind(c.workspaceId,item.proposed_date,place,place).all<{title:string}>();
+      const duplicate = candidates.results.some(e => titleKey(e.title) === titleKey(item.proposed_title));
       if (signatures.has(signature) || duplicate) flags.push('suspected_duplicate_event');
       signatures.add(signature);
     }

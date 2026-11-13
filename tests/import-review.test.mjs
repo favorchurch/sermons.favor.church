@@ -99,6 +99,20 @@ test('duplicate flags require title, date and place and alias matches are flagge
   } finally { f.db.close(); }
 });
 
+test('existing events match imported titles after NFKC, whitespace and case normalization', async () => {
+  const f = await fixture();
+  try {
+    f.db.execute('UPDATE sermons SET title=? WHERE id=?',['Alpha  Hope\u3000SERMON',ids.sermon1]);
+    const input = 'Date Preached,Sermon Title,Category,Tags,Stories Shared,Location\n3/9/2025,Alpha Hope Sermon,c,t,n,Harbor Chapel\n3/9/2025,Alpha Hope Sermon,c,t,n,Beta Chapel\n3/10/2025,Alpha Hope Sermon,c,t,n,Harbor Chapel\n';
+    const up = await f.call('POST',f.w('/imports'),'owner',{csv:input});
+    assert.equal(up.status,201,up.text);
+    const list = await f.call('GET',f.w(`/imports/${up.json.id}/rows`),'owner');
+    assert.ok(list.json.rows[0].flags.includes('suspected_duplicate_event'));
+    assert.ok(!list.json.rows[1].flags.includes('suspected_duplicate_event'));
+    assert.ok(!list.json.rows[2].flags.includes('suspected_duplicate_event'));
+  } finally { f.db.close(); }
+});
+
 test('attests a selection larger than the ordinary JSON body limit', async () => {
   const f = await fixture();
   try {
