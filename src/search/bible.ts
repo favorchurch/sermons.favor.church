@@ -278,7 +278,7 @@ const BOOK_PATTERN = aliasPatterns.join('|');
 // Matches book abbreviation with optional trailing period, whitespace,
 // chapter number, and either :verse[-verse] or bare chapter without colon
 const REF_REGEX = new RegExp(
-  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d{1,3})(?:\\s*[-–—]\\s*(?:(\\d{1,3}):)?(\\d{1,3}))?|(?!:))(?![A-Za-z0-9]|\\s*[-–—])`,
+  `(?<![A-Za-z0-9])(${BOOK_PATTERN})\\.?\\s+(\\d{1,3})(?::(\\d+)(?:\\s*[-–—]\\s*(?:(\\d+):)?(\\d+))?|(?!:))(?![A-Za-z0-9]|\\s*[-–—])`,
   'gi'
 );
 
@@ -347,11 +347,11 @@ export function extractReferences(text: string | null | undefined): ExtractedRef
 
     if (v1Str !== undefined) {
       verseStart = Number(v1Str);
-      if (verseStart <= 0) continue;
+      if (!Number.isSafeInteger(verseStart) || verseStart <= 0) continue;
 
       if (v2Str !== undefined) {
         verseEnd = Number(v2Str);
-        if (verseEnd <= 0) continue;
+        if (!Number.isSafeInteger(verseEnd) || verseEnd <= 0) continue;
 
         // If second chapter was explicitly provided (e.g. 8:1-8:5), must match first chapter
         if (ch2Str !== undefined && Number(ch2Str) !== chapter) {
