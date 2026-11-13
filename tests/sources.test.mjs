@@ -264,7 +264,9 @@ test('only the Owner can consent; everyone else is refused and nothing is indexe
 
 test('Owner consent indexes the held text, records the Owner and makes it searchable', async () => {
   await withFixture(async f => {
-    await uploadAndConsent(f);
+    assert.equal((await f.upload('editor')).status, 201);
+    const consented = await f.consent('owner', pdfVersion);
+    assert.equal(consented.status, 200);
     assert.equal(f.state().indexing_state, 'indexed');
     assert.equal(f.state().index_consent_by, ids.owner);
     assert.deepEqual(f.stored(), { texts: 1, tokens: 1, fts: 1 });
@@ -275,9 +277,41 @@ test('Owner consent indexes the held text, records the Owner and makes it search
     assert.equal((await f.search('John 3:16', 'viewer')).json.notesMatches[0].version_id, pdfVersion);
     assert.deepEqual(f.auditActions().filter(a => a.startsWith('version.')),
       ['version.pdf_upload', 'version.pdf_extracted', 'version.consent', 'version.index']);
+    assert.equal(consented.json.held_text_deleted, true);
+    // Repeating consent on an indexed version is a cleanup retry: no second index, no new audit rows.
     const again = await f.consent('owner', pdfVersion);
-    assert.equal(again.status, 409);
-    assert.equal(again.json.error, 'not_awaiting_consent');
+    assert.equal(again.status, 200);
+    assert.equal(again.json.held_text_deleted, true);
+    assert.deepEqual(f.stored(), { texts: 1, tokens: 1, fts: 1 });
+    assert.equal(f.auditActions().filter(a => a === 'version.index').length, 1);
+    assert.equal((await f.consent('editor', pdfVersion)).status, 403, 'cleanup retry is Owner only');
+  });
+});
+
+test('a failed delete of the held text after indexing keeps the index and can be retried', async () => {
+  await withFixture(async f => {
+    assert.equal((await f.upload('editor')).status, 201);
+    const del = f.bucket.delete.bind(f.bucket);
+    f.bucket.delete = async () => { throw new Error('r2 down'); };
+    const first = await f.consent('owner', pdfVersion);
+    assert.equal(first.status, 200);
+    assert.equal(first.json.indexing_state, 'indexed');
+    assert.equal(first.json.held_text_deleted, false);
+    assert.equal(f.state().indexing_state, 'indexed');
+    assert.deepEqual(f.stored(), { texts: 1, tokens: 1, fts: 1 });
+    assert.equal(f.bucket.keys('extracted').length, 1, 'held copy is still there');
+    assert.equal((await f.search('grace upon')).json.notesMatches.length, 1);
+
+    // Retry while storage is still down: still indexed, still reports the leftover copy.
+    assert.equal((await f.consent('owner', pdfVersion)).json.held_text_deleted, false);
+    f.bucket.delete = del;
+    const retry = await f.consent('owner', pdfVersion);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.json.held_text_deleted, true);
+    assert.deepEqual(f.bucket.keys('extracted'), []);
+    assert.deepEqual(f.stored(), { texts: 1, tokens: 1, fts: 1 });
+    assert.equal(f.state().indexing_state, 'indexed');
+    assert.equal(f.auditActions().filter(a => a === 'version.index').length, 1);
   });
 });
 
