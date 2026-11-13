@@ -26,7 +26,7 @@ jobs:
       - name: Verify toolchain
         run: |
           set -euo pipefail
-          node -e 'if (Number(process.versions.node.split(".")[0]) < 22) { console.error("Node >=22 required, found " + process.version); process.exit(1); }'
+          node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 6)) { console.error("Node >=22.6 required, found " + process.version); process.exit(1); }'
           python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else "Python >=3.12 required")'
       - name: Install pnpm
         run: |
