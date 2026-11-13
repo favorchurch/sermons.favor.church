@@ -4,13 +4,16 @@
 import { h, mount, field } from './dom.js';
 import { ApiError, describeError } from './api.js';
 import { createLibraryClient } from './data.js';
-import { parseRoute, hrefFor, sermonHref } from './router.js';
+import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
 import { summarise } from './library-model.js';
 import { indexEvents } from './calendar-model.js';
 import { header } from './views/shell.js';
 import { libraryPage } from './views/library.js';
 import { calendarPage } from './views/calendar.js';
 import { sermonPage } from './views/sermon.js';
+import { searchPage, notesPanel } from './views/search.js';
+import { settingsPage } from './views/settings.js';
+import { joinForm } from './views/join.js';
 import { loadingState, emptyState, errorState, deniedState } from './views/states.js';
 import { newDraftDialog, editSermonDialog, logPreachingDialog, confirmArchiveDialog } from './views/dialogs.js';
 
@@ -23,7 +26,10 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   };
   let client = null;
   let detail = null;
+  let search = null; // { key, phase, data?, error? } for the search page
+  let notes = null; // the same, for a sermon's Find in notes tab
   let lastSignature = null;
+  let headerSignature = null;
   let needsFocus = false;
   let toastTimer = null;
 
@@ -44,7 +50,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function renderHeader() {
-    mount(headerRoot, header({ state, switchWorkspace, signOut }));
+    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, signOut, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
   }
 
   async function signOut() {
@@ -99,6 +105,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     state.workspaceId = id;
     state.query = '';
     state.archive = 'active';
+    search = null;
+    notes = null;
     setHash(hrefFor({ name: 'library', view: 'covers' }));
     loadWorkspace();
   }
@@ -122,6 +130,57 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       detail = { id, phase: 'failed', error };
     }
     if (parseRoute(getHash()).id === id) render();
+  }
+
+  /** Redeem a one-time invitation code, then reload the list of archives. The server checks it against the signed-in email. */
+  async function joinWithCode(token) {
+    await api.post('/api/invitations/accept', { token });
+    toast('You have joined the archive.');
+    await start();
+  }
+
+  /** Go to `href`. The same address fires no hash change, so `reset` clears the cached result and it re-runs in place. */
+  function visit(href, reset) {
+    if (getHash() === href) { reset(); render(); } else setHash(href);
+  }
+
+  const runSearch = ({ q, scope, archived }) => visit(hrefFor({ name: 'search', q: cleanQuery(q), scope, archived }), () => { search = null; });
+
+  async function loadSearch(route, key) {
+    search = { key, phase: 'loading' };
+    try {
+      const data = await client.search(route.q, { archived: route.archived });
+      if (search?.key === key) search = { key, phase: 'ready', data };
+    } catch (error) {
+      if (search?.key === key) search = { key, phase: 'failed', error };
+    }
+    if (search?.key === key && parseRoute(getHash()).name === 'search') render();
+  }
+
+  function searchView(route) {
+    document.title = 'Search · My Sermons';
+    const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
+    if (route.q && search?.key !== key) loadSearch(route, key);
+    return searchPage({ route, result: route.q ? search : null, search: runSearch, retry: () => { search = null; render(); } });
+  }
+
+  async function loadNotes(route, key) {
+    notes = { key, phase: 'loading' };
+    try {
+      const data = await client.findInNotes(route.id, route.q);
+      if (notes?.key === key) notes = { key, phase: 'ready', data };
+    } catch (error) {
+      if (notes?.key === key) notes = { key, phase: 'failed', error };
+    }
+    const current = parseRoute(getHash());
+    if (notes?.key === key && current.name === 'sermon' && current.tab === 'notes') render();
+  }
+
+  function notesView(route, sermon) {
+    const key = JSON.stringify([state.workspaceId, route.id, route.q]);
+    if (route.q && notes?.key !== key) loadNotes(route, key);
+    const find = q => visit(notesHref(route.id, cleanQuery(q)), () => { notes = null; });
+    return notesPanel({ sermon, route, result: route.q ? notes : null, find, retry: () => { notes = null; render(); } });
   }
 
   const afterWrite = (message, id) => async () => {
@@ -164,7 +223,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     document.title = `${sermon.title} · My Sermons`;
     const done = message => afterWrite(message, sermon.id);
     return sermonPage({
-      sermon, role: state.role,
+      sermon, role: state.role, tab: route.tab || 'details', q: route.q,
+      notes: route.tab === 'notes' ? notesView(route, sermon) : null,
       edit: () => editSermonDialog({ client, sermon, onSaved: done('Changes saved.') }),
       logPreaching: () => logPreachingDialog({ client, sermon, onSaved: done('Preaching logged.') }),
       archive: () => confirmArchiveDialog({ client, sermon, restore: false, onDone: done('Sermon archived.') }),
@@ -193,13 +253,22 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     }, name.wrapper, message, h('button', { type: 'submit', class: 'btn btn-primary' }, 'Create archive'));
     return h('section', { class: 'state state-empty' },
       h('h2', null, 'You don’t have an archive yet'),
-      h('p', null, 'Create your own private archive, or ask an owner to invite you to theirs.'),
-      form);
+      h('p', null, 'Create your own private archive, or use the invitation code an owner gave you.'),
+      form,
+      joinForm({ join: joinWithCode }));
   }
 
   function readyView(route) {
+    // A result is only kept while its page is open, so coming back always shows what the server holds now.
+    if (route.name !== 'search') search = null;
+    if (!(route.name === 'sermon' && route.tab === 'notes')) notes = null;
     if (route.name === 'sermon') return sermonView(route);
     detail = null;
+    if (route.name === 'search') return searchView(route);
+    if (route.name === 'settings') {
+      document.title = 'Settings · My Sermons';
+      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
+    }
     if (route.name !== 'library') {
       return emptyState({
         title: 'That page doesn’t exist', body: 'Check the address, or head back to the library.',
@@ -215,6 +284,10 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
 
   function render() {
     const route = parseRoute(getHash());
+    const signature = `${route.name}|${route.view || ''}|${route.id || ''}|${route.section || ''}|${route.tab || ''}`;
+    // The header only shows which page is current, so it is rebuilt when the page changes. A result that
+    // arrives later re-renders the page but must not wipe what the person is typing in the header box.
+    if (signature !== headerSignature) { renderHeader(); headerSignature = signature; }
     const focusKey = document.activeElement?.getAttribute?.('data-focus-key');
     let view;
     if (state.phase === 'boot' || state.phase === 'loading') view = loadingState('Loading your library…');
@@ -240,13 +313,12 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     mount(root, view);
     // Move focus to the new page only after a route change (never on first load or data refresh).
     // Keep calendar controls focused across their own re-renders.
-    const signature = `${route.name}|${route.view || ''}|${route.id || ''}`;
     if (lastSignature !== null && signature !== lastSignature) needsFocus = true;
     lastSignature = signature;
     const target = focusKey && root.querySelector(`[data-focus-key="${focusKey}"]`);
     if (target) target.focus();
     else if (needsFocus) {
-      (root.querySelector('#sermon-title') || root).focus();
+      (root.querySelector('#sermon-title') || root.querySelector('#page-title') || root).focus();
       // A loading screen is replaced shortly; keep the request open until real content is shown.
       needsFocus = Boolean(root.querySelector('.state-loading'));
     }
