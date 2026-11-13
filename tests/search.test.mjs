@@ -304,6 +304,27 @@ test('find-in-notes reports matched, not_in_notes and not_searchable per version
   });
 });
 
+test('find-in-notes reports every version of a sermon with more than 200 versions', async () => {
+  await withFixture(async f => {
+    const total = 205;
+    for (let n = 0; n < total; n++) {
+      const id = uuid(1000 + n);
+      f.db.execute(`INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES (?,?,?,?,'pdf')`, [id, ids.w1, ids.sermon1, `Bulk ${n}`]);
+      if (n === total - 1) continue; // last version stays unindexed
+      consent(f.db, id);
+      await index(f, id, n === total - 2 ? 'Nothing relevant here.' : 'Notes about zebras crossing.');
+    }
+    const res = await findIn(f, 'zebras');
+    assert.equal(res.status, 200, res.text);
+    const by = Object.fromEntries(res.json.versions.map(v => [v.label, v]));
+    assert.equal(res.json.versions.length, total + 1, 'seeded version plus every bulk version');
+    assert.equal(res.json.versions.filter(v => v.status === 'matched').length, total - 2);
+    for (const n of [0, 199, 200, 201, total - 3]) assert.equal(by[`Bulk ${n}`].status, 'matched', `Bulk ${n}`);
+    assert.equal(by[`Bulk ${total - 2}`].status, 'not_in_notes');
+    assert.deepEqual([by[`Bulk ${total - 1}`].status, by[`Bulk ${total - 1}`].reason], ['not_searchable', 'unindexed']);
+  });
+});
+
 test('find-in-notes returns 404 for unknown, deleted and cross-workspace sermons', async () => {
   await withFixture(async f => {
     consent(f.db, ids.version2, { by: ids.owner2 });
