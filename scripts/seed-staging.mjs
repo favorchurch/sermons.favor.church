@@ -68,10 +68,11 @@ export function parseArgs(argv) {
 /** wrangler.jsonc must still describe staging as exactly the pinned staging account, database and origin, or nothing is written. */
 export function assertStagingConfig(text) {
   let config;
-  try { config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, '')); } catch { throw new SeedRefusal('Cannot read wrangler.jsonc; refusing to write.'); }
+  try { config = JSON.parse(text.replace(/^\s*\/\/.*$/gm, '')); } catch { throw new SeedRefusal('Cannot read wrangler.jsonc (only whole-line // comments and no trailing commas are understood here); refusing to write.'); }
   const staging = config?.env?.staging;
-  const database = staging?.d1_databases?.find(d => d.binding === 'DB');
-  if (database?.database_name !== STAGING_DATABASE || database.database_id !== STAGING_DATABASE_ID || staging?.account_id !== STAGING_ACCOUNT_ID ||
+  // Exactly one D1 entry: wrangler resolves `DB` by binding or name, so a second entry could be the one it picks.
+  const database = staging?.d1_databases?.length === 1 ? staging.d1_databases[0] : undefined;
+  if (database?.binding !== 'DB' || database.database_name !== STAGING_DATABASE || database.database_id !== STAGING_DATABASE_ID || staging?.account_id !== STAGING_ACCOUNT_ID ||
       new URL(staging?.vars?.PUBLIC_ORIGIN ?? 'https://invalid.invalid').host !== STAGING_HOST) {
     throw new SeedRefusal(`wrangler.jsonc env.staging no longer points at the pinned ${STAGING_DATABASE} database, account and ${STAGING_HOST}; refusing to write.`);
   }
@@ -289,7 +290,7 @@ export function buildSeedStatements(workspaceId, ownerAccountId, extractReferenc
 // ---------- D1 (staging only) ----------
 async function d1(sql) {
   try {
-    const { stdout } = await run(WRANGLER, ['d1', 'execute', 'DB', '--env', 'staging', '--remote', '--command', sql, '--json'],
+    const { stdout } = await run(WRANGLER, ['d1', 'execute', 'DB', '--config', join(ROOT, 'wrangler.jsonc'), '--env', 'staging', '--remote', '--command', sql, '--json'],
       { cwd: ROOT, maxBuffer: 16 << 20, env: { ...process.env, WRANGLER_SEND_METRICS: 'false', NO_COLOR: '1' } });
     return JSON.parse(stdout).flatMap(statement => statement.results || []);
   } catch (error) {
@@ -343,7 +344,7 @@ export async function main(argv = process.argv.slice(2), exec = d1) {
     console.log('Usage: pnpm seed:staging --workspace "<name or id>" [--dry-run]\nSeeds fictional demo sermons, versions, events, places and indexed notes into that one STAGING workspace. Idempotent.');
     return;
   }
-  assertStagingConfig(await readFile(join(ROOT, 'wrangler.jsonc'), 'utf8'));
+  assertStagingConfig(await readFile(join(ROOT, 'wrangler.jsonc'), 'utf8')); // the same file wrangler is told to use (--config)
   let extractReferences;
   try { ({ extractReferences } = await import('../src/search/bible.ts')); } catch (error) {
     if (error.code === 'ERR_UNKNOWN_FILE_EXTENSION') throw new SeedRefusal('This Node cannot load TypeScript. Run it as: pnpm seed:staging ... (adds --experimental-strip-types).');

@@ -63,6 +63,20 @@ test('QA against the real handler: every check passes and every synthetic row is
   assert.equal(db.connection.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'protect_owner_membership_%'`).get().n, 2);
 });
 
+test('QA refuses before any request or write when the config or the origin is not the pinned staging', async () => {
+  const qa = await import('../scripts/staging-qa.mjs');
+  const calls = [];
+  qa.transport.send = async () => { calls.push('send'); throw new Error('network is not allowed in tests'); };
+  qa.transport.sql = async () => { calls.push('sql'); throw new Error('remote D1 is not allowed in tests'); };
+  qa.transport.tail = () => { calls.push('tail'); throw new Error('tail is not allowed in tests'); };
+  const other = JSON.parse(await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+  other.env.staging.d1_databases[0].database_id = '11111111-2222-4333-8444-555555555555';
+  await assert.rejects(qa.main({ readConfig: async () => JSON.stringify(other) }), /pinned/);
+  await assert.rejects(qa.main({ origin: 'https://sermons.favor.church' }), /STAGING_ORIGIN must be/);
+  await assert.rejects(qa.main({ origin: 'https://evil.example' }), /STAGING_ORIGIN must be/);
+  assert.deepEqual(calls, []);
+});
+
 test('QA fails when the app shell is missing its assets binding (the checks can fail)', { timeout: 120_000 }, async t => {
   const { rows, exitCode } = await runQa(t, { env: { ASSETS: undefined } });
   assert.ok(rows.some(r => r.status === 'FAIL' && r.id === 'NEW-3'), 'NEW-3 should fail without ASSETS');

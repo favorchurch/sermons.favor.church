@@ -43,7 +43,14 @@ test('config guard: wrangler.jsonc must still describe the staging database and 
     assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(seed.STAGING_DATABASE_ID, other)), seed.SeedRefusal, other);
   }
   assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(seed.STAGING_ACCOUNT_ID, '7eeeea8eb48ea2c7c3f17f4a54a7d3ca')), seed.SeedRefusal);
-  assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace(/"account_id": "[^"]*",\s*/, '')), seed.SeedRefusal);
+  // Structural edits, made on the parsed config so they cannot silently no-op.
+  const mutated = change => { const config = JSON.parse(WRANGLER_JSONC); change(config); return JSON.stringify(config); };
+  assert.throws(() => seed.assertStagingConfig(mutated(c => delete c.env.staging.account_id)), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(mutated(c => delete c.env.staging)), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(mutated(c => c.env.staging.d1_databases.unshift({ binding: 'OTHER', database_name: 'DB', database_id: '11111111-2222-4333-8444-555555555555' }))), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(mutated(c => c.env.staging.d1_databases.push({ ...c.env.staging.d1_databases[0] }))), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(mutated(c => { c.env.staging.d1_databases[0].binding = 'OTHER'; })), seed.SeedRefusal);
+  assert.throws(() => seed.assertStagingConfig(mutated(c => { c.env.staging.d1_databases[0].database_id += ' '; })), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig(WRANGLER_JSONC.replace('sermons-preview.favor.church"', 'sermons.favor.church"')), seed.SeedRefusal);
   assert.throws(() => seed.assertStagingConfig('not json'), seed.SeedRefusal);
 });
