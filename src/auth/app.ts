@@ -3,15 +3,15 @@ import {
   SESSION_COOKIE, FLOW_COOKIE, randomToken, sha256, constantTimeEqual,
   getCookie, sessionCookie, clearSessionCookie, flowCookie, clearFlowCookie,
   noStoreHeaders, reply, readBinding, publicOrigin, requiresSameOrigin, parseEmail,
-  readJson, can, canInvite, canManageMember, isRole, type Role
+  readJson, can, canInvite, canManageMember, isRole, isUuid, type Role
 } from './security.ts';
+import { handleLibraryRoute } from '../api/index.ts';
 import { googleAuthorizationUrl, pkceChallenge, exchangeCode, verifyGoogleIdToken, type GoogleIdentity } from './google.ts';
 
 const NOW = () => Math.floor(Date.now() / 1000);
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const INVITE_SECONDS = 7 * 24 * 60 * 60;
 const LOGIN_SECONDS = 10 * 60;
-const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 
 type Account = { id: string; email_normalized: string; display_name: string };
 type Membership = { role: Role };
@@ -146,7 +146,7 @@ async function session(request: Request, env: Env): Promise<Account | null> {
 }
 
 async function membership(env: Env, workspaceId: string, actorId: string): Promise<Membership | null> {
-  if (!UUID.test(workspaceId)) return null;
+  if (!isUuid(workspaceId)) return null;
   return env.DB.prepare(`SELECT wm.role FROM workspace_memberships wm
     JOIN workspaces w ON w.id = wm.workspace_id
     WHERE wm.workspace_id = ? AND wm.account_id = ? AND wm.accepted_at IS NOT NULL
@@ -190,16 +190,6 @@ async function createWorkspace(request: Request, env: Env, actor: Account): Prom
     throw error;
   }
   return reply(201, { id, name, role: 'owner' });
-}
-
-async function listSermons(env: Env, workspaceId: string): Promise<Response> {
-  // Parameterized tenant filter is mandatory even after the membership check.
-  // No indexed note text, document URLs or attachments on this route.
-  const rows = await env.DB.prepare(`SELECT id, title, scripture_passage, series_name, created_at,
-    archived_at FROM sermons WHERE workspace_id = ? AND deleted_at IS NULL
-    ORDER BY created_at DESC, id DESC LIMIT 50`).bind(workspaceId)
-    .all<{ id: string; title: string; scripture_passage: string | null; series_name: string | null; created_at: string; archived_at: string | null }>();
-  return reply(200, { sermons: rows.results || [] });
 }
 
 async function inviteMember(request: Request, env: Env, workspaceId: string, actor: Account, actorRole: Role, origin: string): Promise<Response> {
@@ -267,7 +257,7 @@ async function acceptInvite(request: Request, env: Env, account: Account): Promi
 }
 
 async function manageMember(request: Request, env: Env, workspaceId: string, memberId: string, actor: Account, actorRole: Role): Promise<Response> {
-  if (!UUID.test(memberId)) return reply(404, { error: 'not_found' });
+  if (!isUuid(memberId)) return reply(404, { error: 'not_found' });
   const body = await readJson(request);
   if (!body || (body.revoke !== true && !isRole(body.role))) return reply(400, { error: 'invalid_membership_change' });
   const target = await env.DB.prepare(`SELECT role FROM workspace_memberships
@@ -328,7 +318,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (request.method === 'POST' && pathname === '/auth/logout') return await logout(request, env, origin);
     if (request.method === 'GET' && pathname === '/welcome') return redirect('/api/me');
     if (!pathname.startsWith('/api/')) return reply(404, { error: 'not_found' });
-    if (!['GET', 'POST', 'PATCH'].includes(request.method)) return reply(405, { error: 'method_not_allowed' });
+    if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) return reply(405, { error: 'method_not_allowed' });
     if (request.method !== 'GET') {
       const rejected = csrfRejected(request, origin);
       if (rejected) return rejected;
@@ -343,19 +333,21 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       if (request.method === 'POST') return await createWorkspace(request, env, actor);
     }
     if (pathname === '/api/invitations/accept' && request.method === 'POST') return await acceptInvite(request, env, actor);
-    const match = /^\/api\/workspaces\/([^/]+)(?:\/(sermons|invitations|members)(?:\/([^/]+))?)?$/.exec(pathname);
+    const match = /^\/api\/workspaces\/([^/]+)(\/.*)?$/.exec(pathname);
     if (!match) return reply(404, { error: 'not_found' });
     const workspaceId = match[1];
     const access = await membership(env, workspaceId, actor.id);
     if (!access) return reply(404, { error: 'not_found' });
-    if (match[2] === 'sermons' && !match[3] && request.method === 'GET') return await listSermons(env, workspaceId);
-    if (match[2] === 'invitations' && !match[3] && request.method === 'POST') {
+    const library = await handleLibraryRoute(request, env, { workspaceId, actorId: actor.id, role: access.role }, match[2] ?? '');
+    if (library) return library;
+    const rest = /^\/(invitations|members)(?:\/([^/]+))?$/.exec(match[2] ?? '');
+    if (rest?.[1] === 'invitations' && !rest[2] && request.method === 'POST') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
       return await inviteMember(request, env, workspaceId, actor, access.role, origin);
     }
-    if (match[2] === 'members' && match[3] && request.method === 'PATCH') {
+    if (rest?.[1] === 'members' && rest[2] && request.method === 'PATCH') {
       if (!can(access.role, 'invite')) return reply(403, { error: 'forbidden' });
-      return await manageMember(request, env, workspaceId, match[3], actor, access.role);
+      return await manageMember(request, env, workspaceId, rest[2], actor, access.role);
     }
     return reply(404, { error: 'not_found' });
   } catch {

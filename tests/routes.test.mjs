@@ -1,32 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
 import { handleRequest } from '../src/auth/app.ts';
 import { sha256, randomToken, SESSION_COOKIE } from '../src/auth/security.ts';
+import { DatabaseMock } from './helpers/d1.mjs';
 
 const origin='https://sermons.example.org';
 const ids={owner:'a0000000-0000-4000-8000-000000000001',admin:'a0000000-0000-4000-8000-000000000002',viewer:'a0000000-0000-4000-8000-000000000003',invitee:'a0000000-0000-4000-8000-000000000004',
   w1:'b0000000-0000-4000-8000-000000000001',w2:'b0000000-0000-4000-8000-000000000002',sermon1:'c0000000-0000-4000-8000-000000000001',sermon2:'c0000000-0000-4000-8000-000000000002'};
-class DatabaseMock {
-  constructor(){
-    this.connection=new DatabaseSync(':memory:');
-    this.connection.exec('PRAGMA foreign_keys=ON');
-    for(const file of ['0001_initial.sql','0002_auth.sql','0003_single_personal_workspace.sql'])this.connection.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
-  }
-  prepare(sql){const db=this.connection;
-    return {bind(...args){
-      return {
-        async first(){return db.prepare(sql).get(...args)??null},
-        async all(){return {results:db.prepare(sql).all(...args)}},
-        async run(){return {meta:{changes:Number(db.prepare(sql).run(...args).changes)}}}
-      };
-    }};
-  }
-  async batch(statements){this.connection.exec('BEGIN');try{const responses=[];for(const s of statements)responses.push(await s.run());this.connection.exec('COMMIT');return responses}catch(e){this.connection.exec('ROLLBACK');throw e}}
-  execute(sql,args=[]){return this.connection.prepare(sql).run(...args)}
-  close(){this.connection.close()}
-}
 async function fixture(){
   const db=new DatabaseMock();
   const accounts=[[ids.owner,'owner@example.test'],[ids.admin,'admin@example.test'],[ids.viewer,'viewer@example.test'],[ids.invitee,'invitee@example.test']];
