@@ -39,3 +39,7 @@ Version responses never include storage keys or consent identities. Version crea
 ## Local use without Google sign-in
 
 `node scripts/dev-session.mjs --email dev@example.test --workspace "Dev Archive"` inserts a normal hashed session row into the local wrangler D1 (`sermon-bank-local`) and prints how to call the API. It refuses `--remote`, `--env`, any other database and unknown flags, and the Worker has no bypass.
+
+## Adding routes
+
+Routes are registered in `src/api/routes.ts` (`ROUTES`, append below the marker). Paths are relative to the workspace, `:params` must be UUIDs, non-GET routes are refused for Viewers before the handler runs, and handlers may throw `Invalid` (400) or `Conflict` (409) from `src/api/http.ts`.
