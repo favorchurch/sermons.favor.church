@@ -1296,20 +1296,22 @@ test('settings pages move focus to the heading and set the document title', asyn
 /** An API wrapper that holds every GET whose path matches `hold` until `release()` is called. */
 function gatedApi(f, actor, hold) {
   const base = realApi(f, actor);
+  const calls = [];
   let release;
   const gate = new Promise(resolve => { release = resolve; });
-  return { api: { ...base, get: async path => { if (hold.test(path)) await gate; return base.get(path); } }, release };
+  return { calls, api: { ...base, get: async path => { calls.push(path); if (hold.test(path)) await gate; return base.get(path); } }, release };
 }
 const searchText = dom => textOf(one(dom.root, e => e.getAttribute('id') === 'search-results'));
 
 test('a slow search for an earlier query cannot overwrite the newer one', async () => {
   await withLibrary(async f => {
-    const { api, release } = gatedApi(f, 'owner', /search\?q=closes\+the\+sermon/);
+    const { api, release, calls } = gatedApi(f, 'owner', /search\?q=closes\+the\+sermon/);
     const dom = await mountApp(f, 'owner', { api, hash: '#/search?q=closes+the+sermon&scope=everything' });
     dom.go('#/search?q=speaks+about+harbors&scope=everything');
     await until(() => /Beta Light Sermon/.test(searchText(dom)), 'newer results');
     release();
     await settle(); await settle();
+    assert.equal(calls.filter(c => c.includes('/search?')).length, 2, 'the late answer is dropped, not turned into another request');
     assert.match(searchText(dom), /Beta Light Sermon/);
     assert.ok(!searchText(dom).includes('Alpha Hope Sermon'), 'the late answer to the first query was dropped');
     assert.match(searchText(dom), /for “speaks about harbors”/);
@@ -1318,12 +1320,14 @@ test('a slow search for an earlier query cannot overwrite the newer one', async 
 
 test('a slow Find in notes answer for an earlier query cannot overwrite the newer one', async () => {
   await withLibrary(async f => {
-    const { api, release } = gatedApi(f, 'owner', /find-in-notes\?q=closes\+the\+sermon/);
+    const { api, release, calls } = gatedApi(f, 'owner', /find-in-notes\?q=closes\+the\+sermon/);
     const dom = await mountApp(f, 'owner', { api, hash: notesHref(ids.sermon1, 'closes the sermon') });
+    await until(() => calls.some(c => c.includes('find-in-notes')), 'the first question is in flight');
     dom.go(notesHref(ids.sermon1, 'nothing like this'));
     await until(() => /Found in 0 versions of 5/.test(textOf(dom.root)), 'newer results');
     release();
     await settle(); await settle();
+    assert.equal(calls.filter(c => c.includes('find-in-notes')).length, 2, 'the late answer is dropped, not turned into another request');
     assert.match(textOf(dom.root), /Found in 0 versions of 5/);
     assert.equal(all(dom.root, e => e.tag === 'mark').length, 0);
   });
