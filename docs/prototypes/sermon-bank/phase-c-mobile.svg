@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="880" viewBox="0 0 420 880" role="img" aria-labelledby="title desc">
+<title id="title">Sermon Bank — Phase C mobile Quiet Workspace, neutral</title>
+<desc id="desc">Fictional mobile archive design reference, not a screenshot or live data. Sidebar becomes top navigation, search and filters wrap, cards prioritize sermon title and last preaching, and editing opens a bottom sheet.</desc>
+<rect width="420" height="880" fill="#f7f7f3"/>
+<rect width="420" height="90" fill="#f0f3f0"/>
+<text x="22" y="39" fill="#22352a" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700" letter-spacing="-1">Sermon Bank</text>
+<rect x="324" y="17" width="73" height="35" rx="7" fill="#fff" stroke="#dfe5dd"/>
+<text x="338" y="39" fill="#46634d" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700">Owner ▾</text>
+<text x="23" y="80" fill="#415b48" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700">Archive</text>
+<text x="96" y="80" fill="#738177" font-family="Arial,Helvetica,sans-serif" font-size="12">History</text>
+<text x="161" y="80" fill="#738177" font-family="Arial,Helvetica,sans-serif" font-size="12">Places</text>
+<text x="219" y="80" fill="#738177" font-family="Arial,Helvetica,sans-serif" font-size="12">Settings</text>
+<line x1="19" y1="88" x2="75" y2="88" stroke="#4d7057" stroke-width="3"/>
+<text x="22" y="125" fill="#617e68" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700" letter-spacing="1.4">PASTOR MORGAN / PRIVATE WORKSPACE</text>
+<text x="22" y="168" fill="#1d2824" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700" letter-spacing="-1">Your sermon library</text>
+<text x="22" y="191" fill="#6c7a70" font-family="Arial,Helvetica,sans-serif" font-size="12">Find your messages and preaching history.</text>
+<rect x="22" y="209" width="376" height="45" rx="8" fill="#4e715b"/>
+<text x="148" y="237" fill="white" font-family="Arial,Helvetica,sans-serif" font-size="14" font-weight="700">+ Add sermon</text>
+<rect x="22" y="270" width="376" height="48" rx="9" fill="white" stroke="#dfe5dd"/>
+<circle cx="44" cy="293" r="7" fill="none" stroke="#607a67" stroke-width="1.7"/>
+<line x1="49" y1="299" x2="54" y2="305" stroke="#607a67" stroke-width="1.7"/>
+<text x="68" y="298" fill="#849286" font-family="Arial,Helvetica,sans-serif" font-size="12">Search title, scripture, notes, places…</text>
+<rect x="22" y="329" width="169" height="40" rx="6" fill="#fff" stroke="#dfe5dd"/><text x="36" y="354" fill="#58705e" font-family="Arial,Helvetica,sans-serif" font-size="12">All churches   ▾</text>
+<rect x="201" y="329" width="123" height="40" rx="6" fill="#fff" stroke="#dfe5dd"/><text x="216" y="354" fill="#58705e" font-family="Arial,Helvetica,sans-serif" font-size="12">All years  ▾</text>
+<text x="22" y="403" fill="#273b2c" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700">6</text><text x="44" y="402" fill="#77867b" font-family="Arial,Helvetica,sans-serif" font-size="10">SERMONS</text>
+<text x="145" y="403" fill="#273b2c" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700">8</text><text x="167" y="402" fill="#77867b" font-family="Arial,Helvetica,sans-serif" font-size="10">PREACHINGS</text>
+<text x="292" y="403" fill="#273b2c" font-family="Arial,Helvetica,sans-serif" font-size="23" font-weight="700">3</text><text x="314" y="402" fill="#77867b" font-family="Arial,Helvetica,sans-serif" font-size="10">PLACES</text>
+<line x1="22" y1="426" x2="398" y2="426" stroke="#dce5dc"/>
+<text x="22" y="461" fill="#26392b" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="700">Sermon collection</text>
+<text x="300" y="461" fill="#6d8174" font-family="Arial,Helvetica,sans-serif" font-size="11">6 matching</text>
+<rect x="22" y="478" width="376" height="131" rx="9" fill="white" stroke="#dfe5dd"/>
+<text x="38" y="507" fill="#26392b" font-family="Arial,Helvetica,sans-serif" font-size="16" font-weight="700">The Courage to Begin</text>
+<text x="38" y="531" fill="#748277" font-family="Arial,Helvetica,sans-serif" font-size="12">Joshua 1:1–9 · Brave Faith</text>
+<rect x="38" y="546" width="62" height="21" rx="4" fill="#e8f2e8"/>
+<text x="47" y="560" fill="#3d6747" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700">Indexed</text>
+<text x="38" y="591" fill="#748277" font-family="Arial,Helvetica,sans-serif" font-size="11">Last: Oct 4, 2026</text>
+<text x="320" y="591" fill="#395b41" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700">Open ↗</text>
+<rect x="22" y="620" width="376" height="131" rx="9" fill="white" stroke="#dfe5dd"/>
+<text x="38" y="649" fill="#26392b" font-family="Arial,Helvetica,sans-serif" font-size="16" font-weight="700">Holding Fast</text>
+<text x="38" y="673" fill="#748277" font-family="Arial,Helvetica,sans-serif" font-size="12">Hebrews 10:23–25 · Steady Hearts</text>
+<rect x="38" y="688" width="111" height="21" rx="4" fill="#f8e6e2"/>
+<text x="46" y="702" fill="#94574a" font-family="Arial,Helvetica,sans-serif" font-size="10" font-weight="700">Access revoked</text>
+<text x="38" y="733" fill="#748277" font-family="Arial,Helvetica,sans-serif" font-size="11">Last: Jul 12, 2026</text>
+<text x="320" y="733" fill="#395b41" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="700">Open ↗</text>
+<rect x="22" y="771" width="376" height="76" rx="8" fill="#edf3ee" stroke="#d7e5d9"/>
+<text x="38" y="798" fill="#35563e" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700">DESIGN REFERENCE — NO LIVE DATA</text>
+<text x="38" y="818" fill="#668071" font-family="Arial,Helvetica,sans-serif" font-size="11">Forms open as scrollable bottom sheets.</text>
+<text x="38" y="836" fill="#668071" font-family="Arial,Helvetica,sans-serif" font-size="11">Sources are read-only; edits are to archive records.</text>
+<text x="22" y="868" fill="#829084" font-family="Arial,Helvetica,sans-serif" font-size="10">Phase C · C-neutral Quiet Workspace · fictional examples</text>
+</svg>
