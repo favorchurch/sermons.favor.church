@@ -91,7 +91,7 @@ export async function uploadPdf(c: Ctx): Promise<Response> {
   }
   if (!held) {
     await dropHeldText(c, version.id);
-    const state = await loadVersion(c);
+    const state = await loadVersion(c).catch(() => null);
     if (state?.indexing_state === 'revoked') return reply(409, { error: 'revoked' });
     await transition(c, version.id, 'not_indexed', 'failed', 'version.pdf_extract_failed', { reason: 'storage' }).catch(() => false);
     return reply(201, { version_id: version.id, indexing_state: 'failed', reason: 'storage', bytes: bytes.byteLength });

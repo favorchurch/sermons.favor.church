@@ -266,6 +266,20 @@ test('a failed state transition after holding the text deletes the held text', a
   });
 });
 
+test('a revoke that lands before the upload finishes leaves the version revoked and no held text', async () => {
+  await withFixture(async f => {
+    const batch = f.env.DB.batch.bind(f.env.DB);
+    let calls = 0;
+    f.env.DB.batch = async statements => {
+      if (++calls === 2) f.db.execute("UPDATE sermon_versions SET indexing_state='revoked' WHERE id=?", [pdfVersion]);
+      return batch(statements);
+    };
+    assert.equal((await f.upload('editor')).status, 409);
+    assert.equal(f.state().indexing_state, 'revoked');
+    assert.deepEqual(f.bucket.keys('extracted'), []);
+  });
+});
+
 test('when the database stays down the held text is still deleted, and revoke recovers a stuck upload', async () => {
   await withFixture(async f => {
     const batch = f.env.DB.batch.bind(f.env.DB);
