@@ -13,6 +13,7 @@ import { calendarPage } from './views/calendar.js';
 import { sermonPage } from './views/sermon.js';
 import { searchPage, notesPanel } from './views/search.js';
 import { settingsPage } from './views/settings.js';
+import { joinForm } from './views/join.js';
 import { loadingState, emptyState, errorState, deniedState } from './views/states.js';
 import { newDraftDialog, editSermonDialog, logPreachingDialog, confirmArchiveDialog } from './views/dialogs.js';
 
@@ -128,6 +129,13 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       detail = { id, phase: 'failed', error };
     }
     if (parseRoute(getHash()).id === id) render();
+  }
+
+  /** Redeem a one-time invitation code, then reload the list of archives. The server checks it against the signed-in email. */
+  async function joinWithCode(token) {
+    await api.post('/api/invitations/accept', { token });
+    toast('You have joined the archive.');
+    await start();
   }
 
   /** Go to `href`. The same address fires no hash change, so `reset` clears the cached result and it re-runs in place. */
@@ -246,38 +254,19 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       h('h2', null, 'You don’t have an archive yet'),
       h('p', null, 'Create your own private archive, or use the invitation code an owner gave you.'),
       form,
-      acceptInvitationForm());
-  }
-
-  /** Redeem the one-time code from People & Access. The server checks it against the signed-in email. */
-  function acceptInvitationForm() {
-    const code = field({ label: 'Invitation code', name: 'token', required: true, maxlength: 80, hint: 'Sign in with the Google account the invitation was made for.' });
-    const message = h('p', { class: 'form-error', role: 'alert', hidden: true });
-    return h('form', {
-      class: 'state-form', novalidate: true,
-      onsubmit: async event => {
-        event.preventDefault();
-        message.setAttribute('hidden', '');
-        try {
-          await api.post('/api/invitations/accept', { token: code.control.value.trim() });
-          await start();
-        } catch (error) {
-          message.textContent = error instanceof ApiError && (error.status === 404 || error.status === 400 || error.status === 409)
-            ? 'That code does not work. It may be mistyped, expired, already used, or made for a different email address.'
-            : describeError(error);
-          message.removeAttribute('hidden');
-        }
-      }
-    }, code.wrapper, message, h('button', { type: 'submit', class: 'btn' }, 'Join with code'));
+      joinForm({ join: joinWithCode }));
   }
 
   function readyView(route) {
+    // A result is only kept while its page is open, so coming back always shows what the server holds now.
+    if (route.name !== 'search') search = null;
+    if (!(route.name === 'sermon' && route.tab === 'notes')) notes = null;
     if (route.name === 'sermon') return sermonView(route);
     detail = null;
     if (route.name === 'search') return searchView(route);
     if (route.name === 'settings') {
       document.title = 'Settings · My Sermons';
-      return settingsPage({ route, state, client, toast, setHash, refreshLibrary, switchWorkspace });
+      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
     }
     if (route.name !== 'library') {
       return emptyState({

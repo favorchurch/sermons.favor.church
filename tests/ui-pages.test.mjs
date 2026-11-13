@@ -102,7 +102,7 @@ const textOf = node => node?.textContent ?? '';
 
 // ---------------------------------------------------------------- modules under test
 
-const { highlightParts, shapeResults, noteReason } = await import(J('search-model.js'));
+const { highlightParts, shapeResults, noteReason, truncated } = await import(J('search-model.js'));
 const { parseRoute, hrefFor, notesHref } = await import(J('router.js'));
 const { rowActions, filterRows, pageOf, flagLabel, statusInfo, PAGE_SIZE } = await import(J('import-model.js'));
 const perms = await import(J('permissions.js'));
@@ -900,7 +900,7 @@ test('import review: upload, summary counts and a row table with flags', async (
     assert.match(textOf(dom.root), /Choose the history CSV first/);
     chooseFile(dom, e => e.getAttribute('id') === 'import-file', csvFile('not,the,right\nfile'));
     byAction(dom.root, 'stage')[0].dispatch('click');
-    await until(() => /could not be read as the history export/.test(textOf(dom.root)), 'bad csv message');
+    await until(() => /could not be staged\. It may be too large, or not the unedited history CSV/.test(textOf(dom.root)), 'bad csv message');
     assert.equal(f.db.query('SELECT COUNT(*) AS n FROM import_review_batches')[0].n, 0);
 
     chooseFile(dom, e => e.getAttribute('id') === 'import-file', csvFile());
@@ -1287,5 +1287,210 @@ test('settings pages move focus to the heading and set the document title', asyn
     dom.go('#/search');
     assert.equal(dom.document.title, 'Search · My Sermons');
     assert.equal(all(dom.root, e => e.tag === 'h1').length, 1);
+  });
+});
+
+
+// ================================================================= review follow-ups
+
+/** An API wrapper that holds every GET whose path matches `hold` until `release()` is called. */
+function gatedApi(f, actor, hold) {
+  const base = realApi(f, actor);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  return { api: { ...base, get: async path => { if (hold.test(path)) await gate; return base.get(path); } }, release };
+}
+const searchText = dom => textOf(one(dom.root, e => e.getAttribute('id') === 'search-results'));
+
+test('a slow search for an earlier query cannot overwrite the newer one', async () => {
+  await withLibrary(async f => {
+    const { api, release } = gatedApi(f, 'owner', /search\?q=closes\+the\+sermon/);
+    const dom = await mountApp(f, 'owner', { api, hash: '#/search?q=closes+the+sermon&scope=everything' });
+    dom.go('#/search?q=speaks+about+harbors&scope=everything');
+    await until(() => /Beta Light Sermon/.test(searchText(dom)), 'newer results');
+    release();
+    await settle(); await settle();
+    assert.match(searchText(dom), /Beta Light Sermon/);
+    assert.ok(!searchText(dom).includes('Alpha Hope Sermon'), 'the late answer to the first query was dropped');
+    assert.match(searchText(dom), /for “speaks about harbors”/);
+  });
+});
+
+test('a slow Find in notes answer for an earlier query cannot overwrite the newer one', async () => {
+  await withLibrary(async f => {
+    const { api, release } = gatedApi(f, 'owner', /find-in-notes\?q=closes\+the\+sermon/);
+    const dom = await mountApp(f, 'owner', { api, hash: notesHref(ids.sermon1, 'closes the sermon') });
+    dom.go(notesHref(ids.sermon1, 'nothing like this'));
+    await until(() => /Found in 0 versions of 5/.test(textOf(dom.root)), 'newer results');
+    release();
+    await settle(); await settle();
+    assert.match(textOf(dom.root), /Found in 0 versions of 5/);
+    assert.equal(all(dom.root, e => e.tag === 'mark').length, 0);
+  });
+});
+
+test('coming back to a search shows what the server holds now, not an old answer', async () => {
+  await withLibrary(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/search?q=lanterns&scope=everything' });
+    await until(() => /Alpha Hope Sermon/.test(searchText(dom)), 'first answer');
+    const searches = () => dom.calls.filter(c => c.includes('/search?')).length;
+    assert.equal(searches(), 1);
+    dom.go('#/library/covers');
+    f.db.execute("UPDATE sermon_versions SET indexing_state='revoked' WHERE id=?", [vid(10)]); // its text stops being searchable
+    dom.go('#/search?q=lanterns&scope=everything');
+    await until(() => searches() === 2, 'searched again');
+    await until(() => /Beta Light Sermon/.test(searchText(dom)), 'new answer');
+    assert.ok(!searchText(dom).includes('Alpha Hope Sermon'), 'revoked text is not shown from a cache');
+    // The same goes for the notes tab.
+    dom.go(notesHref(ids.sermon1, 'lanterns'));
+    await until(() => /Found in 0 versions of 5/.test(textOf(dom.root)), 'notes miss');
+    dom.go(`#/sermons/${ids.sermon1}`);
+    f.db.execute("UPDATE sermon_versions SET indexing_state='indexed' WHERE id=?", [vid(10)]);
+    dom.go(notesHref(ids.sermon1, 'lanterns'));
+    await until(() => /Found in 1 version of 5/.test(textOf(dom.root)), 'notes refetched');
+  });
+});
+
+test('Find in notes run again with the same text asks the server again', async () => {
+  await withLibrary(async f => {
+    const dom = await mountApp(f, 'owner', { hash: notesHref(ids.sermon1, 'romans 8') });
+    await until(() => /Found in 1 version of 5/.test(textOf(dom.root)), 'first run');
+    const count = () => dom.calls.filter(c => c.includes('find-in-notes')).length;
+    assert.equal(count(), 1);
+    one(dom.root, e => e.getAttribute('id') === 'notes-title').parent.querySelector('form').dispatch('submit');
+    await until(() => count() === 2, 'second request');
+  });
+});
+
+test('search says when a group hit the server cap', async () => {
+  assert.equal(truncated({ limit: 50, metadataMatches: [], notesMatches: new Array(50).fill({}) }), true);
+  assert.equal(truncated({ limit: 50, metadataMatches: new Array(50).fill({}), notesMatches: [] }), true);
+  assert.equal(truncated({ limit: 50, metadataMatches: [], notesMatches: new Array(49).fill({}) }), false);
+  assert.equal(truncated({ metadataMatches: [], notesMatches: [] }), false);
+  assert.equal(truncated(null), false);
+  await withLibrary(async f => {
+    const base = realApi(f, 'owner');
+    const capped = { ...base, get: async path => {
+      const data = await base.get(path);
+      return path.includes('/search?') ? { ...data, limit: 1 } : data;
+    } };
+    const dom = await mountApp(f, 'owner', { api: capped, hash: '#/search?q=lanterns' });
+    await until(() => /Showing the first 1 in each group/.test(textOf(dom.root)), 'cap hint');
+    const roomy = await mountApp(f, 'owner', { hash: '#/search?q=lanterns' });
+    await until(() => all(roomy.root, e => e.hasClass('result-group')).length === 1, 'results');
+    assert.ok(!/Showing the first/.test(textOf(roomy.root)));
+  });
+});
+
+test('import review: selection never reaches rows that are filtered out or on another page', async () => {
+  await withFixture(async f => {
+    const dom = await openImport(f);
+    const parsedRows = f.db.query("SELECT source_row FROM import_review_rows WHERE parse_outcome='parsed' ORDER BY source_row").map(r => Number(r.source_row));
+    const pick = number => { const box = one(importRow(dom, number), e => e.tag === 'input'); box.checked = true; box.dispatch('change'); };
+    pick(parsedRows[0]); pick(parsedRows[1]);
+    assert.match(textOf(dom.root), /2 rows selected/);
+    const filter = one(dom.root, e => e.getAttribute('id') === 'import-filter');
+    filter.value = 'approved';
+    filter.dispatch('change');
+    assert.match(textOf(dom.root), /0 rows selected/, 'changing the filter clears the selection');
+    assert.ok(byAction(dom.root, 'attest-selected')[0].hasAttribute('disabled'));
+    filter.value = 'all';
+    filter.dispatch('change');
+    assert.equal(rowStatus(f, parsedRows[0]), 'unreviewed');
+    assert.ok(all(dom.root, e => e.tag === 'input' && e.getAttribute('data-row')).every(box => !box.checked), 'no box is ticked after the change');
+  });
+});
+
+test('import review: attesting one row keeps the other selections, and a bulk approve that stops says how far it got', async () => {
+  await withFixture(async f => {
+    const dom = await openImport(f);
+    const rows = f.db.query("SELECT source_row FROM import_review_rows WHERE parse_outcome='parsed' ORDER BY source_row").map(r => Number(r.source_row));
+    const pick = number => { const box = one(importRow(dom, number), e => e.tag === 'input'); box.checked = true; box.dispatch('change'); };
+    // Select two rows, then attest a third on its own: the two stay selected.
+    pick(rows[0]); pick(rows[1]);
+    byAction(importRow(dom, rows[2]), 'attest')[0].dispatch('click');
+    one(openDialog(dom), e => e.tag === 'form').dispatch('submit');
+    await until(() => rowStatus(f, rows[2]) === 'attested' && noDialog(dom), 'third attested');
+    await until(() => /2 rows selected/.test(textOf(dom.root)), 'selection kept');
+    // Attest the two, select all three, then make the middle one un-approvable behind the page's back.
+    byAction(dom.root, 'attest-selected')[0].dispatch('click');
+    one(openDialog(dom), e => e.tag === 'form').dispatch('submit');
+    await until(() => rowStatus(f, rows[0]) === 'attested' && rowStatus(f, rows[1]) === 'attested' && noDialog(dom), 'all attested');
+    for (const number of rows) pick(number);
+    f.db.execute("UPDATE import_review_rows SET status='ignored' WHERE source_row=?", [rows[1]]);
+    byAction(dom.root, 'approve-selected')[0].dispatch('click');
+    await until(() => rowStatus(f, rows[0]) === 'approved', 'first approved');
+    await until(() => /Approved 1 of 3\./.test(textOf(one(dom.root, e => e.hasClass('review-status')))), 'partial message');
+    assert.match(textOf(one(dom.root, e => e.hasClass('review-status'))), /row changed while you were working/);
+    assert.equal(rowStatus(f, rows[1]), 'ignored');
+    assert.equal(rowStatus(f, rows[2]), 'attested', 'the loop stopped at the first failure');
+    assert.match(textOf(dom.root), /2 rows selected/, 'the rows that were not approved stay selected');
+  });
+});
+
+test('import review: the pager keeps keyboard focus on the button that was used', async () => {
+  await withFixture(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/settings/import' });
+    const header = 'Date Preached,Sermon Title,Category,Tags,Stories Shared,Location\nPlease insert rows below this row\n';
+    const body = Array.from({ length: 120 }, (_, i) => `2024-01-${String(2 + (i % 20)).padStart(2, '0')},Sermon number ${i},,,,Hall`).join('\n');
+    await settle();
+    chooseFile(dom, e => e.getAttribute('id') === 'import-file', csvFile(header + body + '\n'));
+    byAction(dom.root, 'stage')[0].dispatch('click');
+    await until(() => byAction(dom.root, 'next').length === 1, 'pager');
+    byAction(dom.root, 'next')[0].dispatch('click');
+    assert.equal(dom.document.activeElement, byAction(dom.root, 'next')[0]);
+    byAction(dom.root, 'next')[0].dispatch('click'); // last page: Next is now disabled
+    assert.equal(dom.document.activeElement, byAction(dom.root, 'prev')[0], 'focus falls back to the enabled button');
+  });
+});
+
+test('docs: an Admin sees the document states but cannot consent or revoke', async () => {
+  await withDocs(async f => {
+    f.db.execute("UPDATE sermon_versions SET indexing_state='awaiting_consent' WHERE id=?", [PDF_VERSION]);
+    f.db.execute(`INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type,indexing_state) VALUES (?,?,?,?,?,?)`, [vid(51), ids.w1, ids.sermon1, 'Live copy', 'pdf', 'indexed']);
+    const admin = await mountApp(f, 'admin', { hash: docsHash });
+    await until(() => all(admin.root, e => e.hasClass('version-card')).length === 3, 'versions');
+    assert.equal(byAction(admin.root, 'consent').length + byAction(admin.root, 'revoke').length, 0);
+    assert.match(textOf(versionCard(admin, 'Printed notes')), /Waiting for an Owner to decide/);
+    const owner = await mountApp(f, 'owner', { hash: docsHash });
+    await until(() => all(owner.root, e => e.hasClass('version-card')).length === 3, 'owner versions');
+    assert.equal(byAction(owner.root, 'consent').length, 1);
+    assert.equal(byAction(owner.root, 'revoke').length, 2);
+  });
+});
+
+test('the invitation token leaves the page entirely when its dialog closes', async () => {
+  await withFixture(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/settings/people' });
+    await until(() => byAction(dom.root, 'invite').length === 1, 'ready');
+    byAction(dom.root, 'invite')[0].dispatch('click');
+    const dialog = openDialog(dom);
+    one(dialog, e => e.getAttribute('name') === 'email').value = 'outsider@example.test';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => all(dom.document.body, e => e.getAttribute('id') === 'invite-token').length === 1, 'token shown');
+    const token = one(dom.document.body, e => e.getAttribute('id') === 'invite-token').value;
+    buttons(openDialog(dom), 'Done')[0].dispatch('click');
+    assert.equal(all(dom.document.body, e => e.getAttribute('id') === 'invite-token').length, 0, 'the input is removed');
+    assert.equal(all(dom.document.body, e => e.getAttribute('value') === token || e.value === token).length, 0, 'no element still holds it');
+  });
+});
+
+test('someone who already has an archive can join another with a code from Workspace settings', async () => {
+  await withFixture(async f => {
+    const invite = await f.call('POST', f.w('/invitations'), 'owner', { email: 'owner2@example.test', role: 'viewer' });
+    const dom = await mountApp(f, 'owner2', { hash: '#/settings/workspace' });
+    await settle();
+    assert.equal(dom.app.state.workspaces.length, 1);
+    const form = one(dom.root, e => e.hasClass('join-form'));
+    one(form, e => e.getAttribute('name') === 'token').value = 'wrong';
+    form.dispatch('submit');
+    await until(() => !one(form, e => e.hasClass('form-error')).hasAttribute('hidden'), 'bad code refused');
+    assert.equal(dom.app.state.workspaces.length, 1);
+    one(form, e => e.getAttribute('name') === 'token').value = invite.json.token;
+    form.dispatch('submit');
+    await until(() => dom.app.state.workspaces.length === 2, 'joined');
+    await until(() => buttons(dom.root, 'Open Private Alpha').length === 1, 'the new archive is offered');
+    assert.match(textOf(dom.toast), /joined the archive/);
+    assert.deepEqual(f.db.query('SELECT role FROM workspace_memberships WHERE account_id=? AND workspace_id=?', [ids.owner2, ids.w1]).map(r => r.role), ['viewer']);
   });
 });

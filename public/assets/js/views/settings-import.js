@@ -28,7 +28,7 @@ function uploadCard(ctx) {
       ctx.setHash(hrefFor({ name: 'settings', section: 'import', batch: result.id }));
     } catch (error) {
       show(error instanceof ApiError && (error.field === 'csv' || error.field === 'body') && error.status === 400
-        ? 'That file could not be read as the history export. Check that it is the unedited CSV.'
+        ? 'That file could not be staged. It may be too large, or not the unedited history CSV.'
         : describeError(error));
     } finally { button.removeAttribute('disabled'); }
   });
@@ -105,7 +105,7 @@ function reviewPanel(ctx, batchId) {
     ],
     confirmLabel: `Attest ${plural(ids.length, 'row')}`,
     save: () => client.attestRows(batchId, ids),
-    onDone: async () => { view.selected.clear(); say(`${plural(ids.length, 'row')} attested.`); await refresh(); status.focus?.(); }
+    onDone: async () => { ids.forEach(id => view.selected.delete(id)); say(`${plural(ids.length, 'row')} attested.`); await refresh(); status.focus?.(); }
   });
 
   const rollbackDialog = row => {
@@ -167,6 +167,12 @@ function reviewPanel(ctx, batchId) {
       h('td', { 'data-label': 'Actions' }, actionButtons(row)));
   }
 
+  /** The pager is rebuilt on every page change, so put keyboard focus back on the button that was used. */
+  function focusPager(action) {
+    const enabled = ['prev', 'next'].map(name => tableBox.querySelector(`[data-action="${name}"]`)).filter(button => button && !button.hasAttribute('disabled'));
+    (enabled.find(button => button.getAttribute('data-action') === action) || enabled[0])?.focus();
+  }
+
   function drawTable() {
     checkboxes.clear();
     const shown = filterRows(rows, view.filter);
@@ -189,12 +195,12 @@ function reviewPanel(ctx, batchId) {
           h('tbody', null, ...body)))
         : h('p', { class: 'muted' }, 'No rows to show.'),
       page.pages > 1 ? h('div', { class: 'pager' },
-        h('button', { type: 'button', class: 'btn', 'data-action': 'prev', disabled: page.page === 0, onclick: () => { view.page -= 1; drawTable(); } }, 'Previous'),
+        h('button', { type: 'button', class: 'btn', 'data-action': 'prev', disabled: page.page === 0, onclick: () => { view.page -= 1; view.selected.clear(); drawTable(); drawBar(); focusPager('prev'); } }, 'Previous'),
         h('span', { class: 'muted' }, `Page ${page.page + 1} of ${page.pages}`),
-        h('button', { type: 'button', class: 'btn', 'data-action': 'next', disabled: page.page >= page.pages - 1, onclick: () => { view.page += 1; drawTable(); } }, 'Next')) : null);
+        h('button', { type: 'button', class: 'btn', 'data-action': 'next', disabled: page.page >= page.pages - 1, onclick: () => { view.page += 1; view.selected.clear(); drawTable(); drawBar(); focusPager('next'); } }, 'Next')) : null);
   }
 
-  const filter = h('select', { id: 'import-filter', onchange: event => { view.filter = event.target.value; view.page = 0; drawTable(); } },
+  const filter = h('select', { id: 'import-filter', onchange: event => { view.filter = event.target.value; view.page = 0; view.selected.clear(); drawTable(); drawBar(); } },
     ...FILTERS.map(([value, label]) => h('option', { value }, label)));
 
   const { node } = panel({

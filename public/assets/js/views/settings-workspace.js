@@ -4,6 +4,7 @@ import { ROLE_ABILITIES, ROLE_LABELS, ROLE_ORDER } from '../permissions.js';
 import { libraryTotals } from '../library-model.js';
 import { plural } from '../format.js';
 import { sectionBox } from './panel.js';
+import { joinForm } from './join.js';
 
 export function workspaceSection(ctx) {
   const { state } = ctx;
@@ -24,5 +25,7 @@ export function workspaceSection(ctx) {
         ...ROLE_ORDER.map(role => h('td', { 'data-label': ROLE_LABELS[role] }, roles.includes(role) ? 'Yes' : '—'))))))),
     others.length ? h('div', { class: 'switch-list' },
       h('h3', null, 'Other archives'),
-      h('div', { class: 'row-actions' }, ...others.map(w => h('button', { type: 'button', class: 'btn', onclick: () => ctx.switchWorkspace(w.id) }, `Open ${w.name}`)))) : null);
+      h('div', { class: 'row-actions' }, ...others.map(w => h('button', { type: 'button', class: 'btn', onclick: () => ctx.switchWorkspace(w.id) }, `Open ${w.name}`)))) : null,
+    h('div', { class: 'join-box' }, h('h3', null, 'Join another archive'),
+      h('p', { class: 'muted' }, 'Have an invitation code? Enter it here to add that archive to your list.'), joinForm({ join: ctx.join })));
 }

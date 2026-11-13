@@ -3,7 +3,7 @@
 import { h } from '../dom.js';
 import { describeError } from '../api.js';
 import { SCOPES, notesHref } from '../router.js';
-import { highlightParts, shapeResults, noteReason, VERSION_STATUS } from '../search-model.js';
+import { highlightParts, shapeResults, noteReason, truncated, VERSION_STATUS } from '../search-model.js';
 import { SOURCE_LABELS, plural } from '../format.js';
 import { loadingLine } from './states.js';
 
@@ -89,6 +89,7 @@ function resultsView(data, route) {
     'No indexed notes contain this.'));
   return h('div', null,
     h('p', { class: 'result-count', role: 'status' }, `${plural(total, 'result')} for ${label}`),
+    truncated(data) ? h('p', { class: 'hint' }, `Showing the first ${data.limit} in each group. Narrow your search to see the rest.`) : null,
     ...sections);
 }
 

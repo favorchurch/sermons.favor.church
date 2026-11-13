@@ -53,3 +53,9 @@ export const VERSION_STATUS = {
   not_in_notes: ['Not in notes', 'neutral'],
   not_searchable: ['Not searchable', 'warn']
 };
+
+/** True when a group hit the server's cap, so there may be more than is shown. */
+export function truncated(data) {
+  const limit = Number.isInteger(data?.limit) ? data.limit : Infinity;
+  return (data?.metadataMatches?.length ?? 0) >= limit || (data?.notesMatches?.length ?? 0) >= limit;
+}
