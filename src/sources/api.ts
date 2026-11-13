@@ -105,15 +105,17 @@ export async function consentToIndex(c: Ctx): Promise<Response> {
   if (changes(granted[0]) !== 1) throw new Conflict('not_awaiting_consent');
 
   const bucket = c.env.PRIVATE_PDFS, key = textKey(c.workspaceId, version.id);
-  const stored = await bucket.get(key);
-  const text = stored ? await stored.text() : '';
+  let result: { characters: number; references: number };
   try {
+    const stored = await bucket.get(key);
     if (!stored) throw new IndexRefused('empty_text');
-    const result = await indexVersion(c.env.DB, { workspaceId: c.workspaceId, versionId: version.id, text, actorId: c.actorId });
-    await bucket.delete(key);
-    return reply(200, { version_id: version.id, indexing_state: 'indexed', ...result });
+    result = await indexVersion(c.env.DB, { workspaceId: c.workspaceId, versionId: version.id, text: await stored.text(), actorId: c.actorId });
   } catch (error) {
-    if (!(error instanceof IndexRefused)) throw error;
+    if (!(error instanceof IndexRefused)) {
+      // Storage or database trouble: hand the decision back to the Owner so consent can be retried.
+      await transition(c, version.id, 'queued', 'awaiting_consent', 'version.consent_reset', {}, true);
+      throw error;
+    }
     // Consent lost to a concurrent revoke changes nothing here; otherwise the text is unusable.
     if (error.code !== 'consent_required') {
       await transition(c, version.id, 'queued', 'failed', 'version.index_failed', { reason: error.code }, true);
@@ -121,6 +123,8 @@ export async function consentToIndex(c: Ctx): Promise<Response> {
     }
     throw new Conflict(error.code);
   }
+  await bucket.delete(key);
+  return reply(200, { version_id: version.id, indexing_state: 'indexed', ...result });
 }
 
 /**

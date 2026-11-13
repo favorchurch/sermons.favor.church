@@ -43,7 +43,8 @@ Only an Owner can consent (`can(role, "consent")`). It requires `awaiting_consen
 otherwise). In order: the version moves to `queued` with `index_consent_by` and `index_consent_at` set, the held
 text is read and passed to `indexVersion` (see [search.md](search.md)), then the held copy is deleted. If the held
 text is missing or unusable the version becomes `failed` and the consent fields are cleared. A revoke that lands
-in between wins: indexing refuses and the version stays `revoked`.
+in between wins: indexing refuses and the version stays `revoked`. A storage or database error (not a refusal) puts
+the version back to `awaiting_consent` with consent cleared (`version.consent_reset`) so the Owner can retry.
 
 ## Revoke
 
@@ -62,5 +63,5 @@ R2 with `Content-Type: application/pdf`, `Content-Disposition: attachment; filen
 ## Audit
 
 `version.pdf_upload` (bytes), `version.pdf_extracted` (characters), `version.pdf_extract_failed` (reason),
-`version.consent`, `version.index` (counts, written by the index), `version.index_failed` (reason),
+`version.consent`, `version.consent_reset`, `version.index` (counts, written by the index), `version.index_failed` (reason),
 `version.revoke` (previous state). Details hold ids, counts and reason codes only.

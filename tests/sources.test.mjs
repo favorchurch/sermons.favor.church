@@ -295,6 +295,21 @@ test('consent is refused for a version with no extracted text to index', async (
   });
 });
 
+test('a storage error during consent hands the decision back so it can be retried', async () => {
+  await withFixture(async f => {
+    assert.equal((await f.upload('editor')).status, 201);
+    const get = f.bucket.get.bind(f.bucket);
+    f.bucket.get = async () => { throw new Error('r2 down'); };
+    assert.equal((await f.consent('owner', pdfVersion)).status, 503);
+    assert.equal(f.state().indexing_state, 'awaiting_consent');
+    assert.equal(f.state().index_consent_by, null);
+    assert.deepEqual(f.stored(), { texts: 0, tokens: 0, fts: 0 });
+    f.bucket.get = get;
+    assert.equal((await f.consent('owner', pdfVersion)).status, 200);
+    assert.equal(f.state().indexing_state, 'indexed');
+  });
+});
+
 // ---------------------------------------------------------------------------------------
 // Revoke
 // ---------------------------------------------------------------------------------------
