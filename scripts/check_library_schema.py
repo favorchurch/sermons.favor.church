@@ -26,6 +26,8 @@ c.execute(R, ('w1', 's1', 0, 'John 3:16'))
 expect_block(R, ('w2', 's1', 0, 'John 3:16'))   # cross-workspace FK
 expect_block(R, ('w1', 's1', 0, 'Dup'))          # position unique
 expect_block(R, ('w1', 's1', 1, '  '))           # blank
+c.execute(R, ('w1', 's1', 1, 'x' * 500))         # legacy text is never truncated
+assert c.execute('SELECT length(reference_text) FROM sermon_scripture_refs WHERE position=1').fetchone()[0] == 500
 A = "INSERT INTO place_aliases(workspace_id,place_id,alias) VALUES(?,?,?)"
 c.execute(A, ('w1', 'p1', 'The Harbor'))
 expect_block(A, ('w1', 'p2', 'the harbor'))      # alias unique ignoring case

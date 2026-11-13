@@ -290,12 +290,12 @@ export async function findInSermonNotes(
 ): Promise<VersionReport[]> {
   const versions = await db.prepare(`SELECT v.id, v.label, v.source_type, v.indexing_state,
       EXISTS (SELECT 1 FROM note_texts t WHERE t.workspace_id = v.workspace_id AND t.version_id = v.id AND t.consent_at IS NOT NULL) AS has_text
-    FROM sermon_versions v WHERE v.workspace_id = ? AND v.sermon_id = ? ORDER BY v.created_at, v.id LIMIT 200`)
+    FROM sermon_versions v WHERE v.workspace_id = ? AND v.sermon_id = ? ORDER BY v.created_at, v.id`)
     .bind(workspaceId, sermonId).all<{ id: string; label: string; source_type: string; indexing_state: string; has_text: number }>();
   const rows = versions.results || [];
   const hits = new Map<string, NoteHit>();
   if (rows.some(row => unsearchableReason(row.indexing_state, !!row.has_text) === null)) {
-    for (const hit of await searchNotes(db, workspaceId, query, { sermonId, includeArchived: true, limit: 200, maxExcerpts }))
+    for (const hit of await searchNotes(db, workspaceId, query, { sermonId, includeArchived: true, limit: rows.length, maxExcerpts }))
       hits.set(hit.version_id, hit);
   }
   return rows.map(row => {
