@@ -86,6 +86,11 @@ export async function listEvents(c: Ctx): Promise<Response> {
   if (month !== null && year === null) throw new Invalid('year');
   const sermonId = uuidParam(c.url, 'sermon_id'), placeId = uuidParam(c.url, 'place_id');
   const limit = intParam(c.url, 'limit', 500, 1, 1000), offset = intParam(c.url, 'offset', 0, 0, 100000);
+  // A filter id must resolve inside this workspace; missing and foreign ids both give the bare 404.
+  if (sermonId && !(await c.env.DB.prepare(`SELECT 1 AS found FROM sermons WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`)
+    .bind(c.workspaceId, sermonId).first())) return notFound();
+  if (placeId && !(await c.env.DB.prepare(`SELECT 1 AS found FROM places WHERE workspace_id = ? AND id = ?`)
+    .bind(c.workspaceId, placeId).first())) return notFound();
   const where = ['e.workspace_id = ?'], args: unknown[] = [c.workspaceId];
   if (year !== null) {
     const from = month === null ? `${year}-01-01` : `${year}-${String(month).padStart(2, '0')}-01`;
@@ -114,18 +119,23 @@ export async function getEvent(c: Ctx): Promise<Response> {
   return row ? reply(200, eventDto(row)) : notFound();
 }
 
-/** Version and place references must live in this workspace (and the version in this sermon). */
-async function checkReferences(c: Ctx, sermonId: string, versionId: string | null, placeId: string | null): Promise<void> {
+/**
+ * Version and place references must live in this workspace. A missing or foreign id gives the
+ * bare 404 (null return means all good). A version of another sermon in this workspace is a 400.
+ */
+async function checkReferences(c: Ctx, sermonId: string, versionId: string | null, placeId: string | null): Promise<Response | null> {
   if (versionId) {
-    const version = await c.env.DB.prepare(`SELECT 1 AS found FROM sermon_versions WHERE workspace_id = ? AND sermon_id = ? AND id = ?`)
-      .bind(c.workspaceId, sermonId, versionId).first();
-    if (!version) throw new Invalid('version_id', 'invalid_reference');
+    const version = await c.env.DB.prepare(`SELECT sermon_id FROM sermon_versions WHERE workspace_id = ? AND id = ?`)
+      .bind(c.workspaceId, versionId).first<{ sermon_id: string }>();
+    if (!version) return notFound();
+    if (version.sermon_id !== sermonId) throw new Invalid('version_id', 'invalid_reference');
   }
   if (placeId) {
     const place = await c.env.DB.prepare(`SELECT 1 AS found FROM places WHERE workspace_id = ? AND id = ?`)
       .bind(c.workspaceId, placeId).first();
-    if (!place) throw new Invalid('place_id', 'invalid_reference');
+    if (!place) return notFound();
   }
+  return null;
 }
 
 const EVENT_FIELDS = ['version_id', 'place_id', 'preached_on', 'raw_date', 'date_precision', 'occasion'] as const;
@@ -138,7 +148,8 @@ export async function createEvent(c: Ctx): Promise<Response> {
   const sermon = await c.env.DB.prepare(`SELECT id FROM sermons WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`)
     .bind(c.workspaceId, c.params.sermonId).first<{ id: string }>();
   if (!sermon) return notFound();
-  await checkReferences(c, sermon.id, versionId, placeId);
+  const badReference = await checkReferences(c, sermon.id, versionId, placeId);
+  if (badReference) return badReference;
   const id = crypto.randomUUID();
   await c.env.DB.batch([
     c.env.DB.prepare(`INSERT INTO preaching_events
@@ -168,7 +179,8 @@ export async function updateEvent(c: Ctx): Promise<Response> {
   if ('raw_date' in body) { sets.push('raw_date = ?'); args.push(optionalLine(body.raw_date, 'raw_date', 100)); }
   if ('occasion' in body) { sets.push('occasion = ?'); args.push(optionalLine(body.occasion, 'occasion', 200)); }
   if (!sets.length) throw new Invalid('body', 'empty_update');
-  await checkReferences(c, existing.sermon_id, 'version_id' in body ? versionId : null, 'place_id' in body ? placeId : null);
+  const badReference = await checkReferences(c, existing.sermon_id, 'version_id' in body ? versionId : null, 'place_id' in body ? placeId : null);
+  if (badReference) return badReference;
   const results = await c.env.DB.batch([
     c.env.DB.prepare(`UPDATE preaching_events SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP
       WHERE workspace_id = ? AND id = ?`).bind(...args, c.workspaceId, existing.id),
