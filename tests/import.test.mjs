@@ -50,6 +50,8 @@ test('rejects other tab exports and malformed CSV', () => {
   assert.throws(() => inspectHistory('DATE,SERMON\n1/1/2025,Test'), /Unexpected source headers/);
   assert.throws(() => inspectHistory('Date Preached,Sermon Title\n1/1/2025,Test', { tab: 'Dashboard' }), /Only canonical/);
   assert.throws(() => parseCsv('header\n"unfinished'), /Unterminated quoted/);
+  assert.throws(() => parseCsv('a\n"abc"def\n'), /after closing quote/);
+  assert.deepEqual(parseCsv('"a","b"\r\n"c"'), [['a', 'b'], ['c']]);
 });
 
 test('idempotent row keys are stable for identical source exports', async () => {

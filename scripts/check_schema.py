@@ -16,21 +16,26 @@ connection.execute("INSERT INTO preaching_events(id,workspace_id,sermon_id,versi
 
 failed = 0
 
-def expect_block(sql, args):
+def expect_block(sql, args, kind):
     global failed
     try:
         connection.execute(sql, args)
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as error:
+        if not str(error).startswith(kind + " constraint failed"):
+            raise AssertionError(f"Expected {kind} constraint failure, got: {error}") from error
         failed += 1
     else:
         raise AssertionError("Cross-tenant or invalid write unexpectedly succeeded")
 
-expect_block("INSERT INTO preaching_events(id,workspace_id,sermon_id,version_id,place_id) VALUES(?,?,?,?,?)", ('bad1','w2','s1',None,None))
-expect_block("INSERT INTO preaching_events(id,workspace_id,sermon_id,version_id,place_id) VALUES(?,?,?,?,?)", ('bad2','w2','s2','v1','p2'))
-expect_block("INSERT INTO preaching_events(id,workspace_id,sermon_id,version_id,place_id) VALUES(?,?,?,?,?)", ('bad3','w1','s1','v1','p2'))
-expect_block("INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)", ('bad4','w2','s1','Other','pdf'))
-expect_block("INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)", ('bad5','w1','s1','original','pdf'))
-expect_block("INSERT INTO import_rows(id,batch_id,source_row_number,original_values_json,review_status) VALUES(?,?,?,?,?)", ('bad6','missing',42,'[]','verified'))
+PE = "INSERT INTO preaching_events(id,workspace_id,sermon_id,version_id,place_id) VALUES(?,?,?,?,?)"
+SV = "INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)"
+expect_block(PE, ('bad1','w2','s1',None,None), "FOREIGN KEY")
+expect_block(PE, ('bad2','w2','s2','v1','p2'), "FOREIGN KEY")
+expect_block(PE, ('bad3','w1','s1','v1','p2'), "FOREIGN KEY")
+expect_block(SV, ('bad4','w2','s1','Other','pdf'), "FOREIGN KEY")
+expect_block(SV, ('bad5','w1','s1','original','pdf'), "UNIQUE")
+expect_block("INSERT INTO import_rows(id,batch_id,source_row_number,original_values_json,review_status) VALUES(?,?,?,?,?)", ('bad6','missing',42,'[]','verified'), "CHECK")
+assert failed == 6, f"Expected 6 blocked writes, got {failed}"
 
 print("Schema created. Cross-workspace and invalid insert guards verified:", failed)
 connection.close()

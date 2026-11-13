@@ -20,8 +20,13 @@ export function parseCsv(text) {
     const ch = text[i];
     if (quote) {
       if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
-      else if (ch === '"') quote = false;
-      else field += ch;
+      else if (ch === '"') {
+        quote = false;
+        const next = text[i + 1];
+        if (next !== undefined && next !== ',' && next !== '\r' && next !== '\n') {
+          throw new Error('Unexpected character after closing quote in CSV field');
+        }
+      } else field += ch;
     } else if (ch === '"') {
       if (field !== '') throw new Error('Unexpected quote in CSV field');
       quote = true;
