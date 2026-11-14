@@ -8,12 +8,13 @@ import { eventsForSermon } from './events.ts';
 
 type SermonRow = {
   id: string; title: string; series_name: string | null; description?: string | null;
-  tags_json: string; refs_json: string; created_at: string; updated_at: string | null; archived_at: string | null;
+  tags_json: string; refs_json: string; version_count?: number; created_at: string; updated_at: string | null; archived_at: string | null;
 };
 
 const LIST_COLUMNS = `s.id, s.title, s.series_name, s.tags_json, s.created_at, s.updated_at, s.archived_at,
   (SELECT json_group_array(reference_text) FROM (SELECT r.reference_text FROM sermon_scripture_refs r
-    WHERE r.workspace_id = s.workspace_id AND r.sermon_id = s.id ORDER BY r.position)) AS refs_json`;
+    WHERE r.workspace_id = s.workspace_id AND r.sermon_id = s.id ORDER BY r.position)) AS refs_json,
+  (SELECT COUNT(*) FROM sermon_versions v WHERE v.workspace_id = s.workspace_id AND v.sermon_id = s.id) AS version_count`;
 const DETAIL_COLUMNS = LIST_COLUMNS + ', s.description';
 
 function sermonDto(row: SermonRow) {

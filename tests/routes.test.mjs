@@ -292,3 +292,14 @@ test('GET members returns accepted_at for each active member, Owner/Admin only',
   assert.equal((await handleRequest(f.request('GET','/api/workspaces/'+ids.w2+'/members',ids.viewer),f.env)).status,404);
  }finally{f.db.close()}
 });
+
+test('sermon list reports a version count per sermon, scoped to its workspace',async()=>{
+ const f=await fixture();try{
+  f.db.execute('INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)',['d0000000-0000-4000-8000-000000000001',ids.w1,ids.sermon1,'Manuscript','external']);
+  f.db.execute('INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)',['d0000000-0000-4000-8000-000000000002',ids.w1,ids.sermon1,'Slides','external']);
+  f.db.execute('INSERT INTO sermon_versions(id,workspace_id,sermon_id,label,source_type) VALUES(?,?,?,?,?)',['d0000000-0000-4000-8000-000000000003',ids.w2,ids.sermon2,'Other','external']);
+  const res=await handleRequest(f.request('GET','/api/workspaces/'+ids.w1+'/sermons',ids.viewer),f.env);
+  assert.equal(res.status,200);const data=await res.json();
+  assert.equal(data.sermons.length,1);assert.equal(data.sermons[0].version_count,2);
+ }finally{f.db.close()}
+});
