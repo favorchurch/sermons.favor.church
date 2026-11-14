@@ -10,6 +10,8 @@ import { emptyState } from './states.js';
 
 const lastPreachedText = item => item.last ? `Last preached ${formatWhenShort(item.last.date, item.last.precision)}` : 'Not yet preached';
 
+const versionText = item => plural(item.version_count ?? 0, 'version');
+
 function statusChip(item) {
   return item.archived_at ? h('span', { class: 'pill pill-warn' }, 'Archived') : null;
 }
@@ -20,7 +22,7 @@ function card(item, order) {
     h('div', { class: 'card-body' },
       h('h3', null, h('a', { class: 'card-link', href: sermonHref(item.id) }, item.title)),
       item.scripture_references?.length ? h('p', { class: 'card-scripture' }, item.scripture_references.join(' · ')) : null,
-      h('p', { class: 'card-meta' }, lastPreachedText(item), item.preachCount ? ` · ${item.preachCount}×` : ''),
+      h('p', { class: 'card-meta' }, lastPreachedText(item), item.preachCount ? ` · ${item.preachCount}×` : '', ` · ${versionText(item)}`),
       statusChip(item)));
 }
 
@@ -34,11 +36,12 @@ function quickRow(item) {
         h('span', { class: 'row-sub' }, [item.scripture_references?.join(' · '), item.series_name].filter(Boolean).join(' · ') || 'No Scripture or series')),
       h('span', { class: 'row-last' }, item.last ? formatWhenShort(item.last.date, item.last.precision) : 'Not yet preached'),
       h('span', { class: 'row-count' }, plural(item.preachCount, 'time')),
+      h('span', { class: 'row-versions' }, versionText(item)),
       statusChip(item)));
 }
 
 function table(items) {
-  const head = ['Title', 'Series', 'Scripture', 'Tags', 'Last preached', 'Times', 'Added'];
+  const head = ['Title', 'Series', 'Scripture', 'Tags', 'Last preached', 'Times', 'Versions', 'Added'];
   return h('div', { class: 'table-wrap' },
     h('table', { class: 'sermon-table' },
       h('caption', { class: 'sr-only' }, 'Sermons'),
@@ -50,6 +53,7 @@ function table(items) {
         h('td', { 'data-label': 'Tags' }, item.tags?.join(', ') || '—'),
         h('td', { 'data-label': 'Last preached' }, item.last ? formatWhenShort(item.last.date, item.last.precision) : 'Not yet'),
         h('td', { 'data-label': 'Times' }, String(item.preachCount)),
+        h('td', { 'data-label': 'Versions' }, String(item.version_count ?? 0)),
         h('td', { 'data-label': 'Added' }, item.created_at ? formatDay(item.created_at.slice(0, 10)) : '—'))))));
 }
 
