@@ -1222,3 +1222,71 @@ test('QA7: restoring focus copes with ids that are not valid in a #selector, and
   restoreFocus(main, gone);
   assert.equal(document.activeElement, second.heading);
 });
+
+test('QA15: after a saved Settings dialog the section reloads and focus lands on the re-rendered button, not <body>', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'owner', { hash: '#/settings/places' });
+    await settle(); await settle();
+    const opener = buttons(dom.root, 'Rename')[0];
+    assert.ok(opener, 'the place list has a Rename button');
+    opener.focus();
+    opener.dispatch('click');
+    const dialog = one(dom.document.body, e => e.tag === 'dialog');
+    await settle();
+    one(dialog, e => e.getAttribute('name') === 'display_name').value = 'Harbor Chapel East';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await settle(); await settle(); await settle();
+    assert.ok(!dialog.open, 'saved');
+    assert.ok(textOf(dom.root).includes('Harbor Chapel East'), 'the list was reloaded');
+    const active = dom.document.activeElement;
+    assert.notEqual(active, dom.document.body, 'focus is not dropped on <body>');
+    assert.ok(active.isConnected, 'focus is on something still in the page');
+    assert.equal(textOf(active).trim(), 'Rename');
+    assert.notEqual(active, opener, 'the re-rendered button, not the stale one');
+  } finally { f.db.close(); }
+});
+
+test('QA15: focus restoration returns to the same one of several identical buttons, and to the last one if the list shrank', async () => {
+  const { rememberFocus, restoreFocus } = await import(J('dom.js'));
+  const document = new FakeDocument();
+  globalThis.document = document;
+  const main = document.make('main');
+  document.body.append(main);
+  const build = count => {
+    const buttonsMade = Array.from({ length: count }, () => { const b = document.make('button'); b.append('Rename'); return b; });
+    main.replaceChildren(...buttonsMade);
+    return buttonsMade;
+  };
+  const first = build(3);
+  first[1].focus();
+  const saved = rememberFocus();
+  assert.equal(saved.nth, 1);
+  const second = build(3);
+  restoreFocus(main, saved);
+  assert.equal(document.activeElement, second[1], 'the second Rename, not the first');
+  second[2].focus();
+  const last = rememberFocus();
+  const third = build(2);
+  restoreFocus(main, last);
+  assert.equal(document.activeElement, third[1], 'the list got shorter, so the last button gets focus');
+});
+
+test('QA15: a dialog whose opener was replaced while it was open still returns focus to the replacement on close', async () => {
+  const { h, openDialog } = await import(J('dom.js'));
+  const document = new FakeDocument();
+  globalThis.document = document;
+  const main = document.make('main');
+  document.body.append(main);
+  const makeButton = () => { const b = document.make('button'); b.append('Log preaching'); return b; };
+  const opener = makeButton();
+  main.append(opener);
+  opener.focus();
+  const { close, dialog } = openDialog({ title: 'Log a preaching', body: h('p', null, 'Body') });
+  assert.ok(dialog.open);
+  const replacement = makeButton();
+  main.replaceChildren(replacement);
+  document.activeElement = document.body; // the browser has nothing to give focus back to
+  close();
+  assert.equal(document.activeElement, replacement);
+});
