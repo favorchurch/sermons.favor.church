@@ -420,9 +420,55 @@ mark { background: #f6e3a1; color: var(--ink); border-radius: 3px; padding: 0 2p
   .main-nav { order: 3; width: 100%; }
 }
 @media (max-width: 720px) {
-  .header-search input { width: 100%; }
-  .header-search { flex: 1 1 100%; }
   .sermon-table td:empty::before { content: none; }
+  /* Phone header: brand and Sign out share row 1, search is row 2, the main nav is row 3. */
+  .header-inner { gap: 6px 10px; padding: 6px 12px; min-height: 0; }
+  .header-right { display: contents; }
+  .brand { order: 1; flex: 1 1 0; }
+  .switcher { order: 2; }
+  .header-right > .btn { order: 3; min-height: 36px; padding: 6px 12px; }
+  .header-search { order: 4; flex: 1 1 100%; }
+  .header-search input { width: 100%; flex: 1 1 0; height: 38px; }
+  .header-search .btn { min-height: 38px; }
+  .main-nav { order: 5; }
+  .main-nav a { min-height: 34px; padding: 5px 12px; }
+  .who { display: none; }
+  /* Data-heavy views (Quick rows, Table, Search): one-line title, one stats line, then the data. */
+  .hero-compact { display: block; padding: 8px 0 4px; }
+  .hero-compact .books-figure, .hero-compact .eyebrow { display: none; }
+  .hero-compact h1 { font-size: 21px; letter-spacing: -.6px; line-height: 1.2; margin: 0; }
+  .hero-compact h1 em { letter-spacing: -.4px; display: inline; }
+  .hero-compact .hero-lede { font-size: 13px; line-height: 1.3; }
+  .hero-compact .hero-actions { margin-top: 6px; gap: 8px; }
+  .hero-compact .btn { min-height: 34px; padding: 5px 12px; font-size: 13px; }
+  .hero-compact .hint { display: none; }
+  .library-rows .toolbar, .library-table .toolbar { gap: 6px; padding: 0 0 8px; margin-bottom: 6px; }
+  .library-rows .view-tabs a, .library-table .view-tabs a { min-height: 34px; padding: 5px 10px; }
+  .library-rows .toolbar-controls, .library-table .toolbar-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+  .library-rows .search, .library-table .search { grid-column: 1 / -1; }
+  .library-rows .search label, .library-table .search label, .library-rows .sort label, .library-table .sort label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .library-rows .search input, .library-table .search input, .library-rows .sort select, .library-table .sort select, .library-rows .segmented button, .library-table .segmented button { height: 38px; }
+  .library-rows .result-count, .library-table .result-count { margin: 0 0 6px; }
+  .search-page { padding-top: 8px; gap: 8px; }
+  .search-page h1 { font-size: 24px; letter-spacing: -.5px; line-height: 1.15; }
+  .search-form { gap: 8px; }
+  .search-row { flex-wrap: nowrap; }
+  .search-row .field { flex: 1 1 0; }
+  .search-row .field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .search-row .btn { min-height: 44px; }
+  .search-options { gap: 4px 12px; }
+  .search-options .segmented button { height: 36px; padding: 0 10px; }
+  .search-options .check { min-height: 32px; }
+  .search-page .result-group { margin-top: 8px; gap: 8px; }
+  .search-page .result-count { margin: 0; }
+  .library-rows .sort select, .library-table .sort select { width: 100%; }
+}
+/* Very narrow screens and 200% zoom: let the controls wrap instead of overflowing. */
+@media (max-width: 360px) {
+  .library-rows .toolbar-controls, .library-table .toolbar-controls { grid-template-columns: minmax(0, 1fr); }
+  .search-row { flex-wrap: wrap; }
+  .segmented { display: flex; flex-wrap: wrap; max-width: 100%; }
+  .segmented button { flex: 1 1 auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

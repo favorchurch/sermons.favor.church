@@ -105,7 +105,7 @@ export function libraryPage(ctx) {
   }
 
   const page = h('div', { class: `library library-${view}` },
-    h('section', { class: 'hero' },
+    h('section', { class: `hero${view === 'rows' || view === 'table' ? ' hero-compact' : ''}` },
       h('div', { class: 'hero-copy' },
         h('p', { class: 'eyebrow' }, 'THE LIVING LIBRARY'),
         h('h1', null, 'Every message, ', h('em', null, 'kept and found.')),
