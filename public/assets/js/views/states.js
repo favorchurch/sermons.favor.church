@@ -10,7 +10,7 @@ export function loadingState(label = 'Loading…') {
 
 function stateBox(kind, { title, body, actions = [], role }) {
   return h('section', { class: `state state-${kind}`, role },
-    h('div', { class: 'state-mark', 'aria-hidden': 'true' }, kind === 'empty' ? '✳' : kind === 'denied' ? '◌' : '!'),
+    h('div', { class: 'state-mark', 'aria-hidden': 'true' }, kind === 'empty' ? h('img', { src: '/assets/icon.svg', alt: '', width: 30, height: 30 }) : kind === 'denied' ? '◌' : '!'),
     h('h2', null, title),
     body ? h('p', null, body) : null,
     actions.length ? h('div', { class: 'state-actions' }, ...actions) : null);

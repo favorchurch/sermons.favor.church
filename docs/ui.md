@@ -11,6 +11,15 @@ A private, signed-in single-page app on top of the [library API](library-api.md)
 - The Google sign-in callback now redirects to `/` (the app) instead of `/welcome`. `/welcome` itself is unchanged.
 - The UI hides write controls from Viewers, but that is presentation only. Every write is checked by the server (`403 forbidden` for Viewers before the body is read).
 
+## Icon
+
+The Sermon Bank mark is three shelf spines with a ribbon (`public/assets/icon.svg`, the source of truth). No asterisk or sparkle glyph ships in `public/`; a test enforces it.
+
+- Generated from the SVG: `public/favicon.ico` (16, 32, 48), `assets/icon-32.png`, `icon-180.png` (apple-touch-icon), `icon-192.png`, `icon-512.png`. The 16px favicon frame comes from `assets/icon-16.svg`, a pixel-snapped variant (whole-pixel shapes, no ribbon, no lean) because the three spines blur together when the full mark is scaled to 16px.
+- The header, empty state and calendar header use the SVG as a decorative `<img alt="">`. The visible "My Sermons" text stays the accessible name.
+- Signed-out visitors cannot fetch `/assets/*`, so the sign-in page inlines its favicon (SVG) and apple-touch-icon (PNG) as `data:` URIs and its CSP allows `img-src data:` only. A test checks the inlined SVG matches `icon.svg` and that no asset is public when signed out.
+- `/favicon.ico` is not routed by the Worker (only `/` and `/assets/*` are), so browsers use the `<link>` tags. The file is committed for tooling and a future route.
+
 ## Routes (hash based, so the Worker only serves `/`)
 
 | Hash | View |
