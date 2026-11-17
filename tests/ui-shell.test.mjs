@@ -192,20 +192,36 @@ test('icon assets are committed at the documented sizes, and the favicon has 16,
 // so three bars of different heights on a baseline read as a bar-chart icon.
 const rectsOf = svg => [...svg.matchAll(/<rect ([^>]*)\/>/g)].map(m =>
   Object.fromEntries([...m[1].matchAll(/([a-zA-Z-]+)="([^"]*)"/g)].map(a => [a[1], a[2]])))
-  .map(r => ({ x: +r.x, y: +r.y, w: +r.width, h: +r.height, fill: r.fill?.toLowerCase(), rx: r.rx !== undefined }));
+  .map(r => ({ x: +(r.x ?? 0), y: +(r.y ?? 0), w: +r.width, h: +r.height, fill: r.fill?.toLowerCase(), rx: r.rx === undefined ? null : +r.rx }));
+const assertEveryRectParsed = (svg, rects) => {
+  assert.equal(rects.length, (svg.match(/<rect[\s/>]/g) || []).length, 'every <rect> in the SVG parsed into a rect');
+  for (const r of rects) {
+    assert.ok([r.x, r.y, r.w, r.h].every(Number.isFinite), `rect ${JSON.stringify(r)} has finite geometry`);
+    assert.equal(typeof r.fill, 'string', `rect ${JSON.stringify(r)} names a fill`);
+  }
+};
 
 test('QA14: the 16px variant still reads as shelf spines, not a bar chart', () => {
+  const svg = readFileSync(join(publicDir, 'assets/icon-16.svg'), 'utf8');
   const full = readFileSync(join(publicDir, 'assets/icon.svg'), 'utf8');
   const palette = new Set([...full.matchAll(/fill="#([0-9a-fA-F]{6})"/g)].map(m => '#' + m[1].toLowerCase()));
-  const rects = rectsOf(readFileSync(join(publicDir, 'assets/icon-16.svg'), 'utf8'));
+  const rects = rectsOf(svg);
+  assertEveryRectParsed(svg, rects);
   for (const r of rects) assert.ok(palette.has(r.fill), `fill ${r.fill} is not a colour from icon.svg`);
   const bg = rects.find(r => r.rx && r.w === 16 && r.h === 16);
   assert.ok(bg, 'the rounded 16x16 background tile is there');
   assert.equal(bg.fill, '#476b51');
 
-  // Two upright spines: full-height bars standing on the same row, near-equal heights.
-  const uprights = rects.filter(r => r !== bg && r.w === 2 && r.h >= 7).sort((a, b) => a.x - b.x);
-  assert.equal(uprights.length, 2, 'exactly two upright spines');
+  // Every other rect is a spine block, the 1px brass ribbon cap or the shelf: nothing unclassified.
+  const ribbon = rects.filter(r => r !== bg && r.fill === '#c8a45c');
+  assert.equal(ribbon.length, 1, 'exactly one brass ribbon rect');
+  const shelf = rects.filter(r => r !== bg && r.fill === '#24382a');
+  assert.equal(shelf.length, 1, 'exactly one shelf rect');
+  const spines = rects.filter(r => r !== bg && r !== ribbon[0] && r !== shelf[0]);
+  assert.ok(spines.every(r => r.w === 2), 'every spine block is 2px wide');
+  const uprights = spines.filter(r => r.h >= 7).sort((a, b) => a.x - b.x);
+  const lean = spines.filter(r => r.h < 7);
+  assert.equal(uprights.length, 2, `exactly two upright spines (got ${uprights.length}: ${JSON.stringify(uprights)})`);
   assert.equal(uprights[0].y + uprights[0].h, uprights[1].y + uprights[1].h, 'both uprights stand on the same baseline');
   assert.ok(Math.abs(uprights[0].h - uprights[1].h) <= 1, `upright heights are near-equal (${uprights[0].h} vs ${uprights[1].h} px)`);
   assert.deepEqual(uprights.map(r => r.fill), ['#eef4ea', '#cfe0cc'], 'the uprights keep the icon.svg spine colours, middle lighter');
@@ -213,18 +229,15 @@ test('QA14: the 16px variant still reads as shelf spines, not a bar chart', () =
   const baseline = uprights[0].y + uprights[0].h;
 
   // The middle spine keeps its 1px brass ribbon at its top.
-  const ribbon = rects.find(r => r !== bg && r.fill === '#c8a45c');
-  assert.ok(ribbon, 'the brass ribbon is there');
-  assert.deepEqual({ w: ribbon.w, h: ribbon.h }, { w: middle.w, h: 1 }, 'the ribbon is a 1px cap');
-  assert.equal(ribbon.x, middle.x, 'the ribbon sits on the middle spine');
-  assert.equal(ribbon.y + ribbon.h, middle.y, 'the ribbon caps the middle spine top');
+  assert.deepEqual({ w: ribbon[0].w, h: ribbon[0].h }, { w: middle.w, h: 1 }, 'the ribbon is a 1px cap');
+  assert.equal(ribbon[0].x, middle.x, 'the ribbon sits on the middle spine');
+  assert.equal(ribbon[0].y + ribbon[0].h, middle.y, 'the ribbon caps the middle spine top');
 
-  // The third spine visibly leans: stepped blocks, each shifting one pixel, at least 2px offset top vs base.
-  const shelf = rects.find(r => r !== bg && r.fill === '#24382a');
-  const lean = rects.filter(r => r !== bg && r !== ribbon && !uprights.includes(r) && r.w === 2);
-  assert.ok(lean.length >= 3, `the leaning spine is drawn as stepped blocks (${lean.length})`);
-  assert.deepEqual([...new Set(lean.map(r => r.fill))], ['#eef4ea'], 'the leaning spine keeps the icon.svg spine colour');
+  // The third spine visibly leans: stepped blocks stacking without gaps, each shifting one pixel,
+  // with its top at least 2px right of its base and its feet on the shared baseline.
   const steps = lean.slice().sort((a, b) => a.y - b.y);
+  assert.ok(steps.length > 0, 'a third (leaning) spine is present');
+  assert.deepEqual([...new Set(lean.map(r => r.fill))], ['#eef4ea'], 'the leaning spine keeps the icon.svg spine colour');
   for (let i = 1; i < steps.length; i++) {
     assert.equal(steps[i].y, steps[i - 1].y + steps[i - 1].h, 'lean steps stack without vertical gaps');
     assert.equal(steps[i].x, steps[i - 1].x - 1, 'each lean step shifts one pixel');
@@ -232,35 +245,55 @@ test('QA14: the 16px variant still reads as shelf spines, not a bar chart', () =
   assert.equal(steps.at(-1).y + steps.at(-1).h, baseline, 'the leaning spine stands on the same baseline');
   assert.ok(steps[0].x - steps.at(-1).x >= 2, `the top leans at least 2px off the base (${steps[0].x - steps.at(-1).x} px)`);
 
-  assert.ok(shelf, 'the shelf is there');
-  assert.ok(shelf.y >= baseline, 'the shelf sits below the spines');
-  assert.ok(shelf.w >= 10, 'the shelf spans the row');
+  assert.equal(shelf[0].y, baseline, 'the shelf top is flush with the spine feet');
+  assert.equal(shelf[0].w, 12, 'the shelf spans the spine row');
+  assert.ok(shelf[0].y + shelf[0].h <= 16, 'the shelf fits the tile');
 });
 
 test('QA14: the favicon 16px frame is regenerated from icon-16.svg pixel for pixel', () => {
-  const rects = rectsOf(readFileSync(join(publicDir, 'assets/icon-16.svg'), 'utf8'));
+  const svg = readFileSync(join(publicDir, 'assets/icon-16.svg'), 'utf8');
+  const rects = rectsOf(svg);
+  assertEveryRectParsed(svg, rects);
+  const bg = rects.find(r => r.rx && r.w === 16 && r.h === 16);
+  assert.ok(bg, 'the background tile is there to paint');
+
   const ico = readFileSync(join(publicDir, 'favicon.ico'));
+  assert.equal(ico.readUInt16LE(4), 3, 'the ico still carries exactly 3 frames');
   assert.equal(ico[6], 16, 'frame 0 is the 16px frame');
-  const off = ico.readUInt32LE(6 + 12), size = ico.readUInt32LE(6 + 8);
-  const f = ico.subarray(off, off + size);
+  assert.equal(ico[7], 16, 'frame 0 is 16px tall');
+  const off0 = ico.readUInt32LE(6 + 12), size0 = ico.readUInt32LE(6 + 8);
+  assert.equal(off0, 6 + 3 * 16, 'frame 0 data starts after the header and directory');
+  const f = ico.subarray(off0, off0 + size0);
   assert.equal(f.readUInt16LE(14), 4, 'the 16px frame is 4bpp palettized');
-  const clrUsed = f.readUInt32LE(32);
+  const clrUsed = f.readUInt32LE(32) || 16;
   const rowBytes = (16 * 4 + 31) >> 5 << 2;
+  const maskRow = (16 + 31) >> 5 << 2;
+  assert.equal(clrUsed, 16, 'the 16px frame declares its 16-entry palette');
+  assert.equal(size0, 40 + clrUsed * 4 + rowBytes * 16 + maskRow * 16, 'frame 0 size covers header, palette, pixels and mask');
+  assert.equal(off0 + size0, ico.readUInt32LE(6 + 16 + 12), 'frame 0 ends where frame 1 begins');
+  assert.equal(ico[22], 32, 'frame 1 is the 32px frame');
+  assert.equal(ico.readUInt16LE(22 + 6), 8, 'frame 1 is 8bpp');
+  assert.equal(ico.readUInt32LE(22 + 12) + ico.readUInt32LE(22 + 8), ico.readUInt32LE(6 + 32 + 12), 'frame 1 ends where frame 2 begins');
+  assert.equal(ico[38], 48, 'frame 2 is the 48px frame');
+  assert.equal(ico.readUInt16LE(38 + 6), 32, 'frame 2 is 32bpp');
+  assert.equal(ico.readUInt32LE(38 + 12) + ico.readUInt32LE(38 + 8), ico.length, 'frame 2 ends the file');
+
   const xor = f.subarray(40 + clrUsed * 4, 40 + clrUsed * 4 + rowBytes * 16);
-  const mask = f.subarray(40 + clrUsed * 4 + rowBytes * 16, 40 + clrUsed * 4 + rowBytes * 16 + ((16 + 31) >> 5 << 2) * 16);
+  const mask = f.subarray(40 + clrUsed * 4 + rowBytes * 16, 40 + clrUsed * 4 + rowBytes * 16 + maskRow * 16);
   // A pixel's colour is the last icon-16.svg rect whose area covers its centre; pixels whose centre
   // falls outside the rounded background tile are transparent in the frame.
+  const radius = bg.rx;
   const insideTile = (x, y) => {
-    const dx = x + 0.5 < 4 ? 4 - (x + 0.5) : x + 0.5 > 12 ? x + 0.5 - 12 : 0;
-    const dy = y + 0.5 < 4 ? 4 - (y + 0.5) : y + 0.5 > 12 ? y + 0.5 - 12 : 0;
-    return dx * dx + dy * dy <= 16;
+    const cx = x + 0.5, cy = y + 0.5;
+    const dx = Math.max(0, radius - cx, cx - (16 - radius));
+    const dy = Math.max(0, radius - cy, cy - (16 - radius));
+    return dx * dx + dy * dy <= radius * radius;
   };
   const hex = n => n.toString(16).padStart(2, '0');
-  const bg = rects.find(q => q.rx);
   for (let row = 0; row < 16; row++) {
     for (let x = 0; x < 16; x++) {
       const y = 15 - row;                    // BMP rows are stored bottom-up
-      const masked = (mask[row * 4 + (x >> 3)] >> (7 - (x & 7))) & 1;
+      const masked = (mask[row * maskRow + (x >> 3)] >> (7 - (x & 7))) & 1;
       if (!insideTile(x, y)) { assert.equal(masked, 1, `pixel ${x},${y} lies outside the tile and must be masked transparent`); continue; }
       assert.equal(masked, 0, `pixel ${x},${y} lies inside the tile and must be opaque`);
       let fill = null;
@@ -275,7 +308,6 @@ test('QA14: the favicon 16px frame is regenerated from icon-16.svg pixel for pix
     }
   }
 });
-
 
 test('the app shell links the icons and every decorative use is hidden from assistive tech', () => {
   const html = readFileSync(join(publicDir, 'index.html'), 'utf8');
