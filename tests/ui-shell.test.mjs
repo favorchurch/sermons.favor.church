@@ -206,7 +206,7 @@ test('QA14: the 16px variant still reads as shelf spines, not a bar chart', () =
   // Two upright spines: full-height bars standing on the same row, near-equal heights.
   const uprights = rects.filter(r => r !== bg && r.w === 2 && r.h >= 7).sort((a, b) => a.x - b.x);
   assert.equal(uprights.length, 2, 'exactly two upright spines');
-  assert.deepEqual(uprights.map(r => r.y + r.h), [uprights[0].y + uprights[0].h, uprights[0].y + uprights[0].h], 'both uprights stand on the same baseline');
+  assert.equal(uprights[0].y + uprights[0].h, uprights[1].y + uprights[1].h, 'both uprights stand on the same baseline');
   assert.ok(Math.abs(uprights[0].h - uprights[1].h) <= 1, `upright heights are near-equal (${uprights[0].h} vs ${uprights[1].h} px)`);
   assert.deepEqual(uprights.map(r => r.fill), ['#eef4ea', '#cfe0cc'], 'the uprights keep the icon.svg spine colours, middle lighter');
   const middle = uprights[1];
