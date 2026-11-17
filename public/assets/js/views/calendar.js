@@ -64,17 +64,17 @@ export function calendarPage(ctx) {
 
   return h('div', { class: 'library' },
     h('div', { class: 'toolbar' }, libraryTabs('calendar')),
-    h('section', { class: 'hybrid-calendar', 'aria-labelledby': 'calendar-title' },
+    h('section', { class: 'hybrid-calendar', 'aria-labelledby': 'page-title' },
       h('div', { class: 'calendar-story' },
         h('div', null,
           h('p', { class: 'eyebrow' }, 'THE CHRONICLE'),
-          h('h2', { id: 'calendar-title' }, 'Preaching calendar'),
+          h('h1', { id: 'page-title', tabindex: '-1' }, 'Preaching calendar'),
           h('p', null, 'Every day a message was preached, linked back to its sermon record.')),
         h('div', { class: 'calendar-spark', 'aria-hidden': 'true' }, '✳')),
       h('div', { class: 'hybrid-yearmap' },
         h('div', { class: 'mosaic-head' },
           navLink(`Previous year, ${y - 1}`, calendarHref(y - 1, m), 'prev-year', y <= MIN_YEAR, '‹'),
-          h('h3', null, String(y)),
+          h('h2', null, String(y)),
           navLink(`Next year, ${y + 1}`, calendarHref(y + 1, m), 'next-year', y >= MAX_YEAR, '›'),
           h('span', null, `${plural(year.total, 'preaching')} in ${y}`)),
         h('ol', { class: 'mosaic' }, ...year.months.map(tile => h('li', null, h('a', {
@@ -86,21 +86,21 @@ export function calendarPage(ctx) {
         h('div', { class: 'calendar-main' },
           h('div', { class: 'month-head' },
             navLink(`Previous month, ${formatMonth(prev.y, prev.m)}`, calendarHref(prev.y, prev.m), 'prev-month', atStart, '‹'),
-            h('h3', { 'aria-live': 'polite' }, formatMonth(y, m)),
+            h('h2', { 'aria-live': 'polite' }, formatMonth(y, m)),
             navLink(`Next month, ${formatMonth(next.y, next.m)}`, calendarHref(next.y, next.m), 'next-month', atEnd, '›'),
             h('span', { class: 'month-count' }, plural(month.count, 'preaching'))),
           grid),
         h('aside', { class: 'day-inspector', 'aria-label': 'Selected day' },
           selected
-            ? [h('h3', null, formatLongDay(selected)),
+            ? [h('h2', null, formatLongDay(selected)),
               selectedEvents.length
                 ? h('ul', { class: 'event-list' }, ...selectedEvents.map(event => eventItem(event)))
                 : h('p', { class: 'muted' }, 'No preachings recorded on this day.')]
-            : [h('h3', null, 'Select a day'),
+            : [h('h2', null, 'Select a day'),
               h('p', { class: 'muted' }, month.count ? 'Choose a marked day to see what was preached.' : `Nothing recorded for ${formatMonth(y, m)}.`)])),
       undatedGroups.length || index.undated.length
         ? h('div', { class: 'undated-block' },
-          ...undatedGroups.map(([title, events]) => h('section', null, h('h4', null, title), h('ul', { class: 'event-list' }, ...events.map(event => eventItem(event, true))))),
+          ...undatedGroups.map(([title, events]) => h('section', null, h('h3', null, title), h('ul', { class: 'event-list' }, ...events.map(event => eventItem(event, true))))),
           index.undated.length ? h('p', { class: 'muted' }, `${plural(index.undated.length, 'preaching')} in this archive ${index.undated.length === 1 ? 'has' : 'have'} no date. Open the sermon to review ${index.undated.length === 1 ? 'it' : 'them'}.`) : null)
         : null));
 }

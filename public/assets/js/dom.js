@@ -66,6 +66,32 @@ export function openDialog({ title, body }) {
   return { close, dialog };
 }
 
+const tagOf = el => (el.tagName ? el.tagName.toLowerCase() : el.tag);
+const nameOf = el => (el.getAttribute('aria-label') || el.textContent || '').trim();
+
+/** What has keyboard focus inside the page (<main>), or null. Taken before a re-render replaces that element. */
+export function rememberFocus() {
+  const el = document.activeElement;
+  if (!el || el === document.body || !el.closest || !el.closest('main')) return null;
+  return { id: el.getAttribute('id'), tag: tagOf(el), name: el.getAttribute('name'), text: nameOf(el) };
+}
+
+/**
+ * After a re-render replaced the focused element, put focus on its replacement: same id, else the same
+ * tag with the same name or label. Failing that, the page heading, so focus is never dropped on <body>.
+ */
+export function restoreFocus(root, saved) {
+  const active = document.activeElement;
+  if (!saved || (active && active !== document.body && active.isConnected)) return false;
+  const byId = saved.id ? root.querySelector(`[id="${saved.id.replace(/(["\\])/g, '\\$1')}"]`) : null;
+  const target = byId
+    || [...root.querySelectorAll(saved.tag)].find(el => (saved.name && el.getAttribute('name') === saved.name) || (saved.text && nameOf(el) === saved.text))
+    || root.querySelector('#sermon-title') || root.querySelector('#page-title');
+  if (!target) return false;
+  target.focus();
+  return true;
+}
+
 /** Labelled form control with a hint and an error slot wired up through aria-describedby. */
 export function field({ label, name, type = 'text', value = '', hint = '', required = false, maxlength, multiline = false, rows = 4, children = null, autofocus = false }) {
   const id = uid('f-' + name);

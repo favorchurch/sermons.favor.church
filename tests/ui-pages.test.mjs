@@ -564,8 +564,7 @@ test('Find in notes: no query, new query, miss and unknown sermon', async () => 
     await until(() => /Found in 0 versions of 5/.test(textOf(dom.root)), 'miss');
     // A sermon from another workspace is a not-found state, and the query never reaches it.
     const other = await mountApp(f, 'owner', { hash: notesHref(ids.sermon2, 'secret') });
-    await settle();
-    assert.match(textOf(other.root), /Sermon not found/);
+    await until(() => /Sermon not found/.test(textOf(other.root)), 'a sermon from another workspace is not found');
     assert.equal(other.calls.filter(c => c.includes('find-in-notes')).length, 0);
   });
 });
@@ -963,7 +962,7 @@ test('import review: attest needs confirmation, approve is separate, ignore and 
     assert.equal(f.db.query("SELECT COUNT(*) AS n FROM sermons WHERE title='A New Beginning, Again'")[0].n, 1);
     assert.match(textOf(dom.root), /Row 5 approved/);
     // The library the app holds is refreshed.
-    assert.ok(dom.app.state.items.some(item => item.title === 'A New Beginning, Again'));
+    await until(() => dom.app.state.items.some(item => item.title === 'A New Beginning, Again'), 'the library the app holds is refreshed');
 
     // Rollback asks first, and succeeds when nothing was edited.
     byAction(importRow(dom, 5), 'rollback')[0].dispatch('click');
@@ -974,7 +973,7 @@ test('import review: attest needs confirmation, approve is separate, ignore and 
     await until(() => rowStatus(f, 5) === 'rolled_back' && noDialog(dom), 'rolled back');
     assert.equal(f.db.query("SELECT COUNT(*) AS n FROM sermons WHERE title='A New Beginning, Again'")[0].n, 0);
     await until(() => /Row rolled back/.test(textOf(dom.root)), 'message');
-    assert.equal(byAction(importRow(dom, 5), 'attest').length, 1, 'a rolled-back row can be reviewed again');
+    await until(() => byAction(importRow(dom, 5), 'attest').length === 1, 'a rolled-back row can be reviewed again');
     assert.equal(textOf(byAction(importRow(dom, 5), 'attest')[0]), 'Review again');
 
     // Ignore needs no dialog and is reversible through Review again.
@@ -999,7 +998,7 @@ test('import review: an edited sermon blocks rollback and the row says so', asyn
     one(openDialog(dom), e => e.tag === 'form').dispatch('submit');
     await until(() => rowStatus(f, 5) === 'rollback_conflict' && noDialog(dom), 'conflict');
     await until(() => /edited or is in use/.test(textOf(dom.root)), 'conflict message');
-    assert.match(textOf(importRow(dom, 5)), /Rollback blocked/);
+    await until(() => /Rollback blocked/.test(textOf(importRow(dom, 5))), 'the row says the rollback is blocked');
     assert.match(textOf(importRow(dom, 5)), /Resolve it by hand/);
     assert.equal(f.db.query("SELECT COUNT(*) AS n FROM sermons WHERE title='A New Beginning, Again'")[0].n, 1, 'the edited sermon is kept');
     assert.equal(textOf(byAction(importRow(dom, 5), 'rollback')[0]), 'Try rollback again');
@@ -1033,7 +1032,7 @@ test('import review: bulk attest and approve, filters, and unreadable rows', asy
     one(dialog, e => e.tag === 'form').dispatch('submit');
     await until(() => parsedRows.slice(0, 2).every(n => rowStatus(f, n) === 'attested') && noDialog(dom), 'two attested');
     assert.equal(rowStatus(f, parsedRows[2]), 'unreviewed');
-    assert.match(textOf(dom.root), /0 rows selected/, 'selection clears after attesting');
+    await until(() => /0 rows selected/.test(textOf(dom.root)), 'selection clears after attesting');
 
     // Select all on the page selects only rows that can take a bulk action, then approve the attested ones.
     const header = one(dom.root, e => e.tag === 'thead');
@@ -1421,6 +1420,8 @@ test('import review: attesting one row keeps the other selections, and a bulk ap
     byAction(dom.root, 'attest-selected')[0].dispatch('click');
     one(openDialog(dom), e => e.tag === 'form').dispatch('submit');
     await until(() => rowStatus(f, rows[0]) === 'attested' && rowStatus(f, rows[1]) === 'attested' && noDialog(dom), 'all attested');
+    // The page re-renders after the server answers and clears the selection: wait for that before selecting again.
+    await until(() => textOf(one(dom.root, e => e.hasClass('tile') && e.getAttribute('data-count') === 'attested').children[0]) === '3', 'the summary shows all three attested');
     for (const number of rows) pick(number);
     f.db.execute("UPDATE import_review_rows SET status='ignored' WHERE source_row=?", [rows[1]]);
     byAction(dom.root, 'approve-selected')[0].dispatch('click');
@@ -1515,5 +1516,37 @@ test('text typed in the header search box survives a result arriving', async () 
     // Going to another page still refreshes the header's current-page marker.
     dom.go('#/settings/places');
     assert.equal(textOf(one(dom.header, e => e.tag === 'a' && e.getAttribute('aria-current') === 'page')), 'Settings');
+  });
+});
+
+// ---------------------------------------------------------------- browser QA regressions (docs/qa/issue-2-browser-a11y.md)
+
+test('QA6/QA7: search results are spoken through the page live region and the search box keeps focus', async () => {
+  await withLibrary(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/search?q=lanterns&scope=everything' });
+    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'first run');
+    assert.match(textOf(dom.announcer), /^\d+ results? for “lanterns”/, 'the count reaches the persistent #announcer');
+    assert.equal(all(dom.root, e => e.getAttribute('role') === 'status').length, 0, 'no live region is created and destroyed with the results');
+    // Search again from the keyboard: the form re-renders, and focus must stay in the search box.
+    const box = one(dom.root, e => e.getAttribute('id') === 'search-q');
+    box.focus();
+    one(dom.root, e => e.tag === 'form').dispatch('submit');
+    await until(() => dom.calls.filter(c => c.includes('/search?')).length === 2, 'second request');
+    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'second result');
+    const active = dom.document.activeElement;
+    assert.ok(active.isConnected, 'focus is not left on the removed search box');
+    assert.equal(active.getAttribute('id'), 'search-q');
+    // Not a reference in the reference-only scope is announced too.
+    dom.go('#/search?q=lanterns&scope=bible');
+    await until(() => /not a Bible reference/.test(textOf(dom.announcer)), 'needs-a-reference message announced');
+  });
+});
+
+test('QA6: Find in notes announces how many versions matched, and the loading state', async () => {
+  await withLibrary(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/sermons/' + ids.sermon1 + '?tab=notes&q=John%203:16' });
+    await until(() => /Found in \d+ versions? of \d+/.test(textOf(dom.announcer)), 'count announced');
+    assert.equal(all(dom.root, e => e.getAttribute('role') === 'status').length, 0);
+    assert.match(textOf(one(dom.root, e => e.hasClass('result-count'))), /^Found in 1 version of/);
   });
 });
