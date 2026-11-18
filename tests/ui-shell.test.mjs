@@ -1141,6 +1141,38 @@ test('QA5/QA8/QA9: phones get a static header, a shelf-free Rows and Table, and 
   } finally { f.db.close(); }
 });
 
+test('QA13: Quick rows and Table get a compact hero, a two-row phone header and a visible 24px+ Sign out', async () => {
+  const css = read(join(publicDir, 'assets/app.css'));
+  const phone = css.slice(css.lastIndexOf('@media (max-width: 720px)'), css.indexOf('@media (prefers-reduced-motion'));
+  assert.match(phone, /\.hero-compact\s*\{[^}]*display:\s*block;[^}]*padding:\s*8px 0 4px/, 'compact hero has tight vertical padding');
+  assert.match(phone, /\.hero-compact \.books-figure,\s*\.hero-compact \.eyebrow\s*\{\s*display:\s*none;/);
+  assert.match(phone, /\.hero-compact h1\s*\{[^}]*font-size:\s*21px/);
+  assert.doesNotMatch(phone, /\.hero-compact \.btn\s*\{[^}]*display:\s*none/, 'the hero actions stay reachable');
+  assert.match(phone, /\.header-right\s*\{\s*display:\s*contents;/, 'Sign out joins the brand row');
+  const signOut = /\.header-right > \.btn\s*\{[^}]*min-height:\s*(\d+)px/.exec(phone);
+  assert.ok(signOut && Number(signOut[1]) >= 24, 'Sign out stays a 24px+ target');
+  assert.doesNotMatch(phone, /\.who\s*\{[^}]*display:\s*inline/, 'the who label does not return on a phone');
+  const f = await fixture();
+  try {
+    for (const actor of ['owner', 'viewer']) {
+      for (const view of ['rows', 'table']) {
+        const dom = await mountApp(f, actor, { hash: `#/library/${view}` });
+        const hero = one(dom.root, e => e.hasClass('hero'));
+        assert.ok(hero.hasClass('hero-compact'), `${view} hero is compact`);
+        assert.equal(all(dom.root, e => e.tag === 'h1').length, 1, 'one h1 per page');
+        assert.equal(all(hero, e => e.tag === 'h1').length, 1, 'the compact hero keeps the page title');
+        assert.ok(all(hero, e => e.hasClass('hero-lede')).length === 1, 'and its stats line');
+        assert.ok(all(hero, e => e.tag === 'a' && /Open the calendar/.test(e.textContent)).length === 1, 'calendar action stays in the hero');
+        assert.equal(buttons(hero, 'New draft').length, actor === 'owner' ? 1 : 0);
+      }
+    }
+    const covers = await mountApp(f, 'owner', { hash: '#/library/covers' });
+    assert.ok(!one(covers.root, e => e.hasClass('hero')).hasClass('hero-compact'), 'Covers keeps the full hero');
+    const signOutButtons = buttons(covers.header, 'Sign out');
+    assert.equal(signOutButtons.length, 1, 'Sign out is a labelled control in the header');
+  } finally { f.db.close(); }
+});
+
 test('QA7: after a saved dialog the page is re-rendered and focus returns to the control that opened it', async () => {
   const f = await fixture();
   try {
