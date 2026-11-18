@@ -41,6 +41,7 @@ export function wrapFocus(index, count, shift) {
  */
 export function openDialog({ title, body }) {
   const opener = document.activeElement;
+  const saved = rememberFocus();
   const titleId = uid('dialog-title');
   let dialog;
   const close = () => { if (dialog.open) dialog.close(); };
@@ -58,12 +59,51 @@ export function openDialog({ title, body }) {
   dialog.addEventListener('close', () => {
     dialog.remove();
     if (opener && typeof opener.focus === 'function' && opener.isConnected !== false) opener.focus();
+    // The page behind the dialog was re-rendered while it was open, so the opener is gone: focus its replacement.
+    else if (saved) restoreFocus(document.body.querySelector('main') || document.body, saved);
   });
   document.body.append(dialog);
   dialog.showModal();
   const first = dialog.querySelector('[data-autofocus]') || dialog.querySelector(FOCUSABLE);
   first?.focus();
   return { close, dialog };
+}
+
+const tagOf = el => (el.tagName ? el.tagName.toLowerCase() : el.tag);
+const nameOf = el => (el.getAttribute('aria-label') || el.textContent || '').trim();
+
+const sameControl = (el, saved) => (saved.name && el.getAttribute('name') === saved.name) || (saved.text && nameOf(el) === saved.text);
+
+/**
+ * What has keyboard focus inside the page (<main>), or null. Taken before a re-render replaces that element.
+ * `nth` is its position among the controls that look the same (the third "Rename" button), so a list of
+ * identical buttons gives focus back to the same row, not the first.
+ */
+export function rememberFocus() {
+  const el = document.activeElement;
+  if (!el || el === document.body || !el.closest) return null;
+  const main = el.closest('main');
+  if (!main) return null;
+  const saved = { id: el.getAttribute('id'), tag: tagOf(el), name: el.getAttribute('name'), text: nameOf(el) };
+  saved.nth = Math.max(0, [...main.querySelectorAll(saved.tag)].filter(item => sameControl(item, saved)).indexOf(el));
+  return saved;
+}
+
+/**
+ * After a re-render replaced the focused element, put focus on its replacement: same id, else the same
+ * tag with the same name or label (the same position among identical ones, or the last one left if the
+ * list got shorter). Failing that, the page heading, so focus is never dropped on <body>.
+ */
+export function restoreFocus(root, saved) {
+  const active = document.activeElement;
+  if (!saved || (active && active !== document.body && active.isConnected)) return false;
+  const byId = saved.id ? root.querySelector(`[id="${saved.id.replace(/(["\\])/g, '\\$1')}"]`) : null;
+  const same = byId ? [] : [...root.querySelectorAll(saved.tag)].filter(el => sameControl(el, saved));
+  const target = byId || same[Math.min(saved.nth ?? 0, same.length - 1)]
+    || root.querySelector('#sermon-title') || root.querySelector('#page-title');
+  if (!target) return false;
+  target.focus();
+  return true;
 }
 
 /** Labelled form control with a hint and an error slot wired up through aria-describedby. */

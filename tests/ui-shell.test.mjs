@@ -7,6 +7,7 @@ import { join, dirname, resolve, extname } from 'node:path';
 import { handleRequest } from '../src/auth/app.ts';
 import { sha256, SESSION_COOKIE } from '../src/auth/security.ts';
 import { fixture, ids, origin } from './helpers/library-fixture.mjs';
+import { contrast, hex, over, rule, variables } from './helpers/contrast.mjs';
 
 const root = new URL('../', import.meta.url).pathname;
 const publicDir = join(root, 'public');
@@ -562,18 +563,15 @@ test('editor creates a title-only draft through the dialog and lands on its reco
     assert.equal(dom.document.activeElement, title, 'first field is focused');
     // Empty title: the API rejects it and the error is shown on the field, dialog stays open.
     one(dialog, e => e.tag === 'form').dispatch('submit');
-    await settle();
+    await until(() => title.getAttribute('aria-invalid') === 'true', 'the error is shown on the field');
     assert.ok(dialog.open);
-    assert.equal(title.getAttribute('aria-invalid'), 'true');
     assert.match(textOf(dialog), /Check the title/);
     title.value = '  Grace in the Gaps  ';
     one(dialog, e => e.tag === 'form').dispatch('submit');
-    await settle(); await settle();
-    assert.ok(!dialog.open);
+    await until(() => !dialog.open, 'dialog closed');
     const row = f.db.query("SELECT title, workspace_id FROM sermons WHERE title = 'Grace in the Gaps'")[0];
     assert.equal(row.workspace_id, ids.w1);
-    await settle();
-    assert.match(textOf(dom.root), /Grace in the Gaps/);
+    await until(() => /Grace in the Gaps/.test(textOf(dom.root)), 'the new record is shown');
     assert.ok(buttons(dom.root, 'Edit').length === 1 && buttons(dom.root, 'Archive').length === 1);
     assert.equal(dom.document.activeElement.getAttribute('id'), 'sermon-title', 'focus lands on the new record heading');
   } finally { f.db.close(); }
@@ -888,8 +886,7 @@ test('unknown sermon ids and bad routes show a not-found state, not a crash', as
   const f = await fixture();
   try {
     const dom = await mountApp(f, 'owner', { hash: '#/sermons/' + ids.sermon2 }); // belongs to the other workspace
-    await settle();
-    assert.match(textOf(dom.root), /Sermon not found/);
+    await until(() => /Sermon not found/.test(textOf(dom.root)), 'not-found state');
     assert.ok(!textOf(dom.root).includes('Beta Secret'));
     dom.go('#/nowhere');
     assert.match(textOf(dom.root), /That page doesn’t exist/);
@@ -983,4 +980,201 @@ test('a bad date is reported on the input that is visible for the chosen precisi
     assert.ok(dialog.open);
     assert.equal(f.db.query('SELECT COUNT(*) AS n FROM preaching_events WHERE sermon_id = ?', [ids.sermon1])[0].n, 1);
   } finally { f.db.close(); }
+});
+
+// ---------------------------------------------------------------- browser QA regressions (docs/qa/issue-2-browser-a11y.md)
+
+const headings = node => all(node, e => /^h[1-6]$/.test(e.tag)).map(e => ({ level: Number(e.tag[1]), text: textOf(e).trim(), id: e.getAttribute('id') }));
+function assertHeadingOutline(root, where) {
+  const list = headings(root);
+  assert.equal(list.filter(item => item.level === 1).length, 1, `${where}: exactly one h1 (${JSON.stringify(list)})`);
+  assert.equal(list[0].level, 1, `${where}: the h1 comes first`);
+  list.forEach((item, i) => assert.ok(i === 0 || item.level <= list[i - 1].level + 1, `${where}: "${item.text}" skips from h${list[i - 1]?.level} to h${item.level}`));
+}
+
+test('QA1/QA2: every library view and the sermon page have one h1 and never skip a heading level', async () => {
+  const f = await fixture();
+  try {
+    for (const hash of ['#/library/covers', '#/library/rows', '#/library/table', '#/library/calendar?y=2025&m=3&d=2025-03-09', '#/library/calendar?y=2025&m=3', '#/sermons/' + ids.sermon1]) {
+      const dom = await mountApp(f, 'owner', { hash });
+      await settle();
+      assertHeadingOutline(dom.root, hash);
+    }
+    // The calendar's h1 is the page heading that route changes focus.
+    const dom = await mountApp(f, 'owner', { hash: '#/library/covers' });
+    dom.go('#/library/calendar?y=2025&m=3');
+    const title = one(dom.root, e => e.tag === 'h1');
+    assert.equal(title.getAttribute('id'), 'page-title');
+    assert.equal(title.getAttribute('tabindex'), '-1');
+    assert.equal(dom.document.activeElement, title, 'arriving on the calendar moves focus to its heading');
+  } finally { f.db.close(); }
+});
+
+test('QA3/QA4: calendar numbers, sermon tag chips and every cover palette meet WCAG AA text contrast', () => {
+  const css = read(join(publicDir, 'assets/app.css'));
+  const vars = variables(css);
+  const colour = value => hex(value.replace(/var\((--[\w-]+)\)/, (_, name) => vars[name]));
+  // Day numbers on a calendar day without events.
+  const day = rule(css, '.day-cell');
+  assert.ok(contrast(colour(day.color), colour(day.background)) >= 4.5, `day numbers: ${contrast(colour(day.color), colour(day.background)).toFixed(2)}`);
+  const dayHasEvent = rule(css, '.day-cell.has-event');
+  assert.ok(contrast(colour(dayHasEvent.color), colour(dayHasEvent.background)) >= 4.5);
+  const chip = rule(css, '.chip');
+  assert.ok(!('opacity' in rule(css, '.detail-head .eyebrow')), 'the eyebrow is not faded below AA');
+  for (const palette of ['moss', 'linen', 'night', 'sage', 'clay', 'pine', 'paper']) {
+    const { background, color } = rule(css, `.cover-${palette}`);
+    const bg = hex(background);
+    assert.ok(contrast(hex(color), bg) >= 4.5, `${palette} text: ${contrast(hex(color), bg).toFixed(2)}`);
+    // Tag and passage chips sit on the sermon header whatever its palette.
+    const chipBg = over(hex(chip.background), bg);
+    assert.ok(contrast(hex(chip.color), chipBg) >= 4.5, `${palette} chip: ${contrast(hex(chip.color), chipBg).toFixed(2)}`);
+  }
+});
+
+test('QA10: text inputs, selects and textareas have a 3:1 border on every surface they sit on', () => {
+  const css = read(join(publicDir, 'assets/app.css'));
+  const vars = variables(css);
+  const edge = hex(vars['--control-edge']);
+  for (const surface of ['--paper', '--panel', '--background']) {
+    assert.ok(contrast(edge, hex(vars[surface])) >= 3, `${surface}: ${contrast(edge, hex(vars[surface])).toFixed(2)}`);
+  }
+  for (const selector of ['.search input, .sort select', '.header-search input', '.review-controls select', '.field input, .field select, .field textarea']) {
+    const line = css.split('\n').find(l => l.startsWith(selector + ' {'));
+    assert.ok(line, selector);
+    assert.match(line, /border:\s*1px solid var\(--control-edge\)/, `${selector} uses the control edge colour`);
+  }
+});
+
+test('QA5/QA8/QA9: phones get a static header, a shelf-free Rows and Table, and 24px targets', async () => {
+  const css = read(join(publicDir, 'assets/app.css'));
+  const phone = css.slice(css.indexOf('@media (max-width: 720px)'));
+  assert.match(phone, /\.app-header\s*\{\s*position:\s*static;/, 'the header scrolls away on a phone instead of covering a quarter of the screen');
+  assert.match(phone, /\.library-rows \.books-figure,\s*\.library-table \.books-figure\s*\{\s*display:\s*none;/);
+  assert.match(css, /\.check input\s*\{\s*width:\s*24px;\s*height:\s*24px;/);
+  assert.match(css, /\.event-item a\s*\{[^}]*min-height:\s*24px/);
+  const f = await fixture();
+  try {
+    for (const view of ['covers', 'rows', 'table']) {
+      const dom = await mountApp(f, 'owner', { hash: `#/library/${view}` });
+      assert.ok(one(dom.root, e => e.hasClass('library')).hasClass(`library-${view}`), `${view} marks its page`);
+    }
+  } finally { f.db.close(); }
+});
+
+test('QA7: after a saved dialog the page is re-rendered and focus returns to the control that opened it', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'editor', { hash: '#/sermons/' + ids.sermon1 });
+    await settle();
+    const opener = buttons(dom.root, 'Log preaching')[0];
+    opener.focus();
+    opener.dispatch('click');
+    const dialog = one(dom.document.body, e => e.tag === 'dialog');
+    await settle();
+    const precision = one(dialog, e => e.getAttribute('name') === 'date_precision');
+    precision.value = 'unknown'; precision.dispatch('change');
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await settle(); await settle(); await settle();
+    assert.ok(!dialog.open, 'saved');
+    const active = dom.document.activeElement;
+    assert.ok(active.isConnected, 'focus is on something still in the page, not on a removed button');
+    assert.equal(textOf(active).trim(), 'Log preaching');
+    assert.notEqual(active, opener, 'the re-rendered button, not the stale one');
+  } finally { f.db.close(); }
+});
+
+test('QA7: restoring focus copes with ids that are not valid in a #selector, and falls back to the page heading', async () => {
+  const { rememberFocus, restoreFocus } = await import(J('dom.js'));
+  const document = new FakeDocument();
+  globalThis.document = document;
+  const main = document.make('main');
+  document.body.append(main);
+  const build = () => {
+    const heading = document.make('h1'); heading.setAttribute('id', 'page-title');
+    const odd = document.make('button'); odd.setAttribute('id', 'row:1.a'); odd.append('Open');
+    const prefix = document.make('div'); prefix.setAttribute('id', 'row'); // `#row:1.a` would parse as id "row" plus junk
+    main.replaceChildren(heading, prefix, odd);
+    return { heading, odd };
+  };
+  const first = build();
+  first.odd.focus();
+  const saved = rememberFocus();
+  assert.equal(saved.id, 'row:1.a');
+  const second = build();
+  assert.doesNotThrow(() => restoreFocus(main, saved));
+  assert.equal(document.activeElement, second.odd, 'the re-rendered control with the same id');
+  // Gone entirely: the heading gets focus instead of <body>.
+  second.odd.focus();
+  const gone = rememberFocus();
+  main.replaceChildren(second.heading);
+  restoreFocus(main, gone);
+  assert.equal(document.activeElement, second.heading);
+});
+
+test('QA15: after a saved Settings dialog the section reloads and focus lands on the re-rendered button, not <body>', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'owner', { hash: '#/settings/places' });
+    await settle(); await settle();
+    const opener = buttons(dom.root, 'Rename')[0];
+    assert.ok(opener, 'the place list has a Rename button');
+    opener.focus();
+    opener.dispatch('click');
+    const dialog = one(dom.document.body, e => e.tag === 'dialog');
+    await settle();
+    one(dialog, e => e.getAttribute('name') === 'display_name').value = 'Harbor Chapel East';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await settle(); await settle(); await settle();
+    assert.ok(!dialog.open, 'saved');
+    assert.ok(textOf(dom.root).includes('Harbor Chapel East'), 'the list was reloaded');
+    const active = dom.document.activeElement;
+    assert.notEqual(active, dom.document.body, 'focus is not dropped on <body>');
+    assert.ok(active.isConnected, 'focus is on something still in the page');
+    assert.equal(textOf(active).trim(), 'Rename');
+    assert.notEqual(active, opener, 'the re-rendered button, not the stale one');
+  } finally { f.db.close(); }
+});
+
+test('QA15: focus restoration returns to the same one of several identical buttons, and to the last one if the list shrank', async () => {
+  const { rememberFocus, restoreFocus } = await import(J('dom.js'));
+  const document = new FakeDocument();
+  globalThis.document = document;
+  const main = document.make('main');
+  document.body.append(main);
+  const build = count => {
+    const buttonsMade = Array.from({ length: count }, () => { const b = document.make('button'); b.append('Rename'); return b; });
+    main.replaceChildren(...buttonsMade);
+    return buttonsMade;
+  };
+  const first = build(3);
+  first[1].focus();
+  const saved = rememberFocus();
+  assert.equal(saved.nth, 1);
+  const second = build(3);
+  restoreFocus(main, saved);
+  assert.equal(document.activeElement, second[1], 'the second Rename, not the first');
+  second[2].focus();
+  const last = rememberFocus();
+  const third = build(2);
+  restoreFocus(main, last);
+  assert.equal(document.activeElement, third[1], 'the list got shorter, so the last button gets focus');
+});
+
+test('QA15: a dialog whose opener was replaced while it was open still returns focus to the replacement on close', async () => {
+  const { h, openDialog } = await import(J('dom.js'));
+  const document = new FakeDocument();
+  globalThis.document = document;
+  const main = document.make('main');
+  document.body.append(main);
+  const makeButton = () => { const b = document.make('button'); b.append('Log preaching'); return b; };
+  const opener = makeButton();
+  main.append(opener);
+  opener.focus();
+  const { close, dialog } = openDialog({ title: 'Log a preaching', body: h('p', null, 'Body') });
+  assert.ok(dialog.open);
+  const replacement = makeButton();
+  main.replaceChildren(replacement);
+  document.activeElement = document.body; // the browser has nothing to give focus back to
+  close();
+  assert.equal(document.activeElement, replacement);
 });

@@ -1,7 +1,7 @@
 // App controller: owns state, loads data through the API, picks the view for the current
 // hash route and wires the write actions. Everything environment-specific (location,
 // storage, clock) is injected so the whole flow can run under a fake DOM in tests.
-import { h, mount, field } from './dom.js';
+import { h, mount, rememberFocus, restoreFocus, field } from './dom.js';
 import { ApiError, describeError } from './api.js';
 import { createLibraryClient } from './data.js';
 import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
@@ -33,7 +33,11 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   let needsFocus = false;
   let toastTimer = null;
 
-  const announce = message => { if (announcer) announcer.textContent = message; };
+  // The same message twice in a row is still a change for a screen reader, so a repeated search is announced again.
+  const announce = message => {
+    if (!announcer) return;
+    announcer.textContent = announcer.textContent === message ? message + '\u00a0' : message;
+  };
   function toast(message) {
     if (!toastRoot) return;
     toastRoot.textContent = message;
@@ -161,7 +165,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     document.title = 'Search · My Sermons';
     const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
     if (route.q && search?.key !== key) loadSearch(route, key);
-    return searchPage({ route, result: route.q ? search : null, search: runSearch, retry: () => { search = null; render(); } });
+    return searchPage({ route, result: route.q ? search : null, announce, search: runSearch, retry: () => { search = null; render(); } });
   }
 
   async function loadNotes(route, key) {
@@ -180,7 +184,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     const key = JSON.stringify([state.workspaceId, route.id, route.q]);
     if (route.q && notes?.key !== key) loadNotes(route, key);
     const find = q => visit(notesHref(route.id, cleanQuery(q)), () => { notes = null; });
-    return notesPanel({ sermon, route, result: route.q ? notes : null, find, retry: () => { notes = null; render(); } });
+    return notesPanel({ sermon, route, result: route.q ? notes : null, announce, find, retry: () => { notes = null; render(); } });
   }
 
   const afterWrite = (message, id) => async () => {
@@ -289,6 +293,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     // arrives later re-renders the page but must not wipe what the person is typing in the header box.
     if (signature !== headerSignature) { renderHeader(); headerSignature = signature; }
     const focusKey = document.activeElement?.getAttribute?.('data-focus-key');
+    const focused = rememberFocus();
     let view;
     if (state.phase === 'boot' || state.phase === 'loading') view = loadingState('Loading your library…');
     else if (state.phase === 'signedout') {
@@ -321,7 +326,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       (root.querySelector('#sermon-title') || root.querySelector('#page-title') || root).focus();
       // A loading screen is replaced shortly; keep the request open until real content is shown.
       needsFocus = Boolean(root.querySelector('.state-loading'));
-    }
+    } else restoreFocus(root, focused);
   }
 
   return { start, render, state };

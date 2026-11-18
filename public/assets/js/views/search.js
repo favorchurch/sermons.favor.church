@@ -5,12 +5,17 @@ import { describeError } from '../api.js';
 import { SCOPES, notesHref } from '../router.js';
 import { highlightParts, shapeResults, noteReason, truncated, VERSION_STATUS } from '../search-model.js';
 import { SOURCE_LABELS, plural } from '../format.js';
-import { loadingLine } from './states.js';
 
 /** Excerpt text with matches wrapped in <mark>. Text goes in as text nodes only. */
 export function excerptNode(excerpt) {
   return h('p', { class: 'excerpt' }, ...highlightParts(excerpt?.text, excerpt?.highlights)
     .map(part => part.mark ? h('mark', null, part.text) : part.text));
+}
+
+/** A one-line "in progress" message. It is spoken through the page's one live region, not a region of its own. */
+function pendingLine(label, announce) {
+  announce(label);
+  return h('p', { class: 'muted', 'aria-busy': 'true' }, label);
 }
 
 const errorBox = (error, retry) => h('div', { class: 'inline-error', role: 'alert' },
@@ -55,11 +60,11 @@ export function searchPage(ctx) {
   if (!route.q) {
     body = h('p', { class: 'muted' }, 'Search sermon titles’ Scripture passages and the text of indexed notes. Words are matched as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.');
   } else if (!result || result.phase === 'loading') {
-    body = loadingLine('Searching…');
+    body = pendingLine('Searching…', ctx.announce);
   } else if (result.phase === 'failed') {
     body = errorBox(result.error, ctx.retry);
   } else {
-    body = resultsView(result.data, route);
+    body = resultsView(result.data, route, ctx.announce);
   }
   return h('section', { class: 'search-page', 'aria-labelledby': 'page-title' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Search'),
@@ -73,11 +78,13 @@ function group(title, id, items, empty) {
     items.length ? h('ul', { class: 'result-list' }, ...items) : h('p', { class: 'muted' }, empty));
 }
 
-function resultsView(data, route) {
+function resultsView(data, route, announce) {
   const shaped = shapeResults(data, route.scope);
   const label = data?.query?.kind === 'reference' ? `Bible reference ${data.query.label}` : `“${route.q}”`;
   if (shaped.needsReference) {
-    return h('p', { class: 'notice', role: 'status' }, `“${route.q}” is not a Bible reference. Try a reference like John 3:16, or switch to Everything.`);
+    const message = `“${route.q}” is not a Bible reference. Try a reference like John 3:16, or switch to Everything.`;
+    announce(message);
+    return h('p', { class: 'notice' }, message);
   }
   const total = shaped.metadata.length + shaped.notes.length;
   const sections = [];
@@ -87,8 +94,10 @@ function resultsView(data, route) {
   }
   sections.push(group('Found in notes', 'group-notes', shaped.notes.map(hit => noteItem(hit, route.q)),
     'No indexed notes contain this.'));
+  const summary = `${plural(total, 'result')} for ${label}`;
+  announce(summary);
   return h('div', null,
-    h('p', { class: 'result-count', role: 'status' }, `${plural(total, 'result')} for ${label}`),
+    h('p', { class: 'result-count' }, summary),
     truncated(data) ? h('p', { class: 'hint' }, `Showing the first ${data.limit} in each group. Narrow your search to see the rest.`) : null,
     ...sections);
 }
@@ -105,19 +114,21 @@ export function notesPanel(ctx) {
       h('button', { type: 'submit', class: 'btn btn-primary' }, 'Find')));
   let body;
   if (!route.q) body = h('p', { class: 'muted' }, `Type something to see which versions of “${sermon.title}” contain it.`);
-  else if (!result || result.phase === 'loading') body = loadingLine('Searching this sermon…');
+  else if (!result || result.phase === 'loading') body = pendingLine('Searching this sermon…', ctx.announce);
   else if (result.phase === 'failed') body = errorBox(result.error, ctx.retry);
-  else body = versionList(result.data);
+  else body = versionList(result.data, ctx.announce);
   return h('section', { class: 'notes-panel', 'aria-labelledby': 'notes-title' },
     h('h2', { id: 'notes-title' }, 'Find in notes'), form, h('div', { class: 'notes-results', id: 'notes-results' }, body));
 }
 
-function versionList(data) {
+function versionList(data, announce) {
   const versions = Array.isArray(data?.versions) ? data.versions : [];
   if (!versions.length) return h('p', { class: 'muted' }, 'This sermon has no versions yet, so there are no notes to search.');
   const matched = versions.filter(v => v.status === 'matched').length;
+  const summary = `Found in ${plural(matched, 'version')} of ${versions.length}`;
+  announce(summary);
   return h('div', null,
-    h('p', { class: 'result-count', role: 'status' }, `Found in ${plural(matched, 'version')} of ${versions.length}`),
+    h('p', { class: 'result-count' }, summary),
     h('ul', { class: 'version-results' }, ...versions.map(version => {
       const [label, tone] = VERSION_STATUS[version.status] || ['Unknown', 'neutral'];
       return h('li', { class: 'version-result', 'data-status': version.status },

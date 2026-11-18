@@ -20,7 +20,7 @@ function card(item, order) {
   return h('article', { class: 'sermon-card', style: { '--order': Math.min(order, 24) } },
     coverArt(item),
     h('div', { class: 'card-body' },
-      h('h3', null, h('a', { class: 'card-link', href: sermonHref(item.id) }, item.title)),
+      h('h2', null, h('a', { class: 'card-link', href: sermonHref(item.id) }, item.title)),
       item.scripture_references?.length ? h('p', { class: 'card-scripture' }, item.scripture_references.join(' · ')) : null,
       h('p', { class: 'card-meta' }, lastPreachedText(item), item.preachCount ? ` · ${item.preachCount}×` : '', ` · ${versionText(item)}`),
       statusChip(item)));
@@ -104,7 +104,7 @@ export function libraryPage(ctx) {
     else results.replaceChildren(h('div', { class: 'cards-grid' }, ...shown.map(card)));
   }
 
-  const page = h('div', { class: 'library' },
+  const page = h('div', { class: `library library-${view}` },
     h('section', { class: 'hero' },
       h('div', { class: 'hero-copy' },
         h('p', { class: 'eyebrow' }, 'THE LIVING LIBRARY'),

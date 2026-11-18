@@ -59,6 +59,11 @@ Sections are shown by role. A hidden section that is opened by address says it i
 
 - Loading (`role=status`, `aria-busy`), empty, error (`role=alert`, retry), access denied (404/403 from the workspace) and signed out (401, link back to sign-in). A signed-in account with no workspace gets a create-archive form (pilot owners only, the server decides).
 - Errors shown to people come from fixed text keyed on HTTP status and error code. Server text is never displayed.
+- Search and Find in notes results, their loading line and the "not a Bible reference" notice are spoken through the one persistent `#announcer` live region (the page re-renders, so a region created with its text would not be reliably announced). The Library count uses it too.
+- When a re-render replaces the focused control (a search run, a saved dialog) focus goes to its replacement (same id, name or label, and the same position among identical controls such as the Rename button of one row), else to the page heading, never to `<body>`. This holds for Settings sections too: a section reloads after a save, and focus follows the button that opened the dialog. A dialog whose opener was replaced while it was open does the same when it closes.
+- Headings: one `<h1>` per view (the Calendar's is "Preaching calendar"), cards, month, year and day headings are `<h2>`, with no skipped level.
+- Contrast: body text, chips and every cover palette are at least 4.5:1, form borders use `--control-edge` (at least 3:1). `tests/ui-shell.test.mjs` reads the colours from `app.css`.
+- On a phone (720px and below) the header scrolls with the page, and Quick rows and Table drop the decorative shelf so data starts higher.
 - Dialogs use native `<dialog>.showModal()` (page behind is inert, Escape closes), wrap Tab and Shift+Tab, label themselves from their title and return focus to the opener.
 - Visible `:focus-visible` outline, skip link, one `<h1>` per page, labelled controls, `aria-current` for the current view, month and day.
 - All API text is inserted as text nodes. The code base has no `innerHTML`, inline styles or inline scripts (a test enforces this).
@@ -70,5 +75,5 @@ Sections are shown by role. A hidden section that is opened by address says it i
 
 ## Not covered yet
 
-- Real-browser verification. The checks above use a fake DOM, so layout, phone-width overflow and real focus behaviour need a manual pass in a browser (`pnpm run dev` needs macOS 13.5+ for workerd).
+- Screen reader, Safari and Firefox passes. The Chrome pass at 1440, 820, 390 px and 200% zoom is in [qa/issue-2-browser-a11y.md](qa/issue-2-browser-a11y.md). Follow-ups there: QA11 (invitation email error is not tied to its field) and QA12 (loading screens still use a region created with its text).
 - Version editing, deleting a preaching, creating Google Doc versions, renaming an archive and listing pending invitations. There is no API for the last two, and Google Doc ingest is not built.
