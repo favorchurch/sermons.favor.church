@@ -103,7 +103,7 @@ const textOf = node => node?.textContent ?? '';
 
 // ---------------------------------------------------------------- Worker gating
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 function withAssets(env) {
   const calls = [];
   env.ASSETS = {
@@ -162,6 +162,86 @@ test('signed-in users get a static shell with no data in it and a strict CSP', a
     assert.equal(js.status, 200);
     assert.match(js.headers.get('content-type'), /javascript/);
     assert.deepEqual(calls, ['/', '/assets/js/main.js']);
+  } finally { f.db.close(); }
+});
+
+// ---------------------------------------------------------------- Sermon Bank icon
+
+const ICON_FILES = { 'icon.svg': null, 'icon-32.png': 32, 'icon-180.png': 180, 'icon-192.png': 192, 'icon-512.png': 512 };
+const pngSize = buffer => {
+  assert.deepEqual([...buffer.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], 'not a PNG');
+  return [buffer.readUInt32BE(16), buffer.readUInt32BE(20)];
+};
+
+test('icon assets are committed at the documented sizes, and the favicon has 16, 32 and 48 frames', () => {
+  const svg = readFileSync(join(publicDir, 'assets/icon.svg'), 'utf8');
+  assert.match(svg, /viewBox="0 0 32 32"/);
+  assert.match(svg, /fill="#476b51"/);
+  for (const [name, size] of Object.entries(ICON_FILES)) {
+    if (size) assert.deepEqual(pngSize(readFileSync(join(publicDir, 'assets', name))), [size, size], name);
+  }
+  const ico = readFileSync(join(publicDir, 'favicon.ico'));
+  assert.equal(ico.readUInt16LE(0), 0);
+  assert.equal(ico.readUInt16LE(2), 1);
+  const frames = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + i * 16] || 256);
+  assert.deepEqual(frames, [16, 32, 48]);
+  assert.match(readFileSync(join(publicDir, 'assets/icon-16.svg'), 'utf8'), /viewBox="0 0 16 16"/);
+});
+
+test('the app shell links the icons and every decorative use is hidden from assistive tech', () => {
+  const html = readFileSync(join(publicDir, 'index.html'), 'utf8');
+  assert.ok(!html.includes('href="data:,"'), 'blank favicon placeholder is gone');
+  assert.match(html, /<link rel="icon" href="\/assets\/icon\.svg"/);
+  assert.match(html, /<link rel="icon" href="\/assets\/icon-32\.png"/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\/assets\/icon-180\.png"/);
+  for (const file of ['views/shell.js', 'views/states.js', 'views/calendar.js']) {
+    const uses = readFileSync(J(file), 'utf8').split('\n').filter(line => line.includes('/assets/icon.svg'));
+    assert.ok(uses.length >= 1, `${file} uses the icon`);
+    for (const line of uses) assert.match(line, /alt: ''/, `${file} icon must be decorative`);
+  }
+});
+
+test('no asterisk, sparkle or starburst glyph ships under public/', () => {
+  const banned = /[✳✱✲✴✻✼❊❋✦✧❇]/u;
+  const files = walk(publicDir).filter(path => /\.(html|css|js|svg|json|txt|webmanifest)$/.test(path));
+  assert.ok(files.length > 10);
+  for (const file of files) assert.ok(!banned.test(readFileSync(file, 'utf8')), `${file} contains a banned glyph`);
+});
+
+test('signed-out visitors get the icon inline and still cannot fetch any asset', async () => {
+  const f = await fixture();
+  try {
+    const calls = withAssets(f.env);
+    const page = await f.call('GET', '/', null);
+    assert.equal(page.status, 200);
+    assert.ok(!page.text.includes('/assets/'));
+    const icon = page.text.match(/<link rel="icon" href="data:image\/svg\+xml,([^"]+)" type="image\/svg\+xml">/);
+    assert.ok(icon, 'sign-in page inlines its favicon');
+    assert.equal(decodeURIComponent(icon[1]), readFileSync(join(publicDir, 'assets/icon.svg'), 'utf8').trim());
+    const touch = page.text.match(/<link rel="apple-touch-icon" href="data:image\/png;base64,([^"]+)">/);
+    assert.ok(touch, 'sign-in page inlines its apple-touch-icon');
+    assert.deepEqual(pngSize(Buffer.from(touch[1], 'base64')), [180, 180]);
+    assert.match(page.headers.get('content-security-policy'), /img-src data:(;|$)/);
+    assert.ok(!/img-src[^;]*(https?:|'self'|\*)/.test(page.headers.get('content-security-policy')));
+    for (const path of ['/favicon.ico', ...Object.keys(ICON_FILES).map(name => `/assets/${name}`), '/assets/icon-16.svg']) {
+      const res = await f.call('GET', path, null);
+      assert.equal(res.status, 404, path);
+      assert.deepEqual(res.json, { error: 'not_found' }, path);
+    }
+    assert.deepEqual(calls, [], 'signed-out requests never reach ASSETS');
+  } finally { f.db.close(); }
+});
+
+test('signed-in users get the icon files with private caching', async () => {
+  const f = await fixture();
+  try {
+    withAssets(f.env);
+    for (const [name, type] of [['icon.svg', /image\/svg\+xml/], ['icon-32.png', /image\/png/], ['icon-180.png', /image\/png/]]) {
+      const res = await f.call('GET', `/assets/${name}`, 'viewer');
+      assert.equal(res.status, 200, name);
+      assert.match(res.headers.get('content-type'), type);
+      assert.equal(res.headers.get('cache-control'), 'private, no-cache');
+    }
   } finally { f.db.close(); }
 });
 
@@ -252,7 +332,7 @@ test('public/ is static, self-contained and free of unsafe patterns', () => {
         assert.equal(url, 'https://docs.google.com/document/d/', `${rel} references ${url}`);
       }
     } else {
-      assert.ok(!/https?:\/\//.test(text.replace(/<!doctype[^>]*>/i, '')), `${rel} references an external URL`);
+      assert.ok(!/https?:\/\//.test(text.replace(/<!doctype[^>]*>/i, '').replace(' xmlns="http://www.w3.org/2000/svg"', '')), `${rel} references an external URL`);
     }
     if (file.endsWith('.css')) {
       assert.ok(!/@import|@font-face/.test(text), `${rel} loads fonts or imports`);

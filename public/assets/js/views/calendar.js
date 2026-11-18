@@ -70,7 +70,7 @@ export function calendarPage(ctx) {
           h('p', { class: 'eyebrow' }, 'THE CHRONICLE'),
           h('h1', { id: 'page-title', tabindex: '-1' }, 'Preaching calendar'),
           h('p', null, 'Every day a message was preached, linked back to its sermon record.')),
-        h('div', { class: 'calendar-spark', 'aria-hidden': 'true' }, '✳')),
+        h('img', { class: 'calendar-spark', src: '/assets/icon.svg', alt: '', width: 96, height: 96 })),
       h('div', { class: 'hybrid-yearmap' },
         h('div', { class: 'mosaic-head' },
           navLink(`Previous year, ${y - 1}`, calendarHref(y - 1, m), 'prev-year', y <= MIN_YEAR, '‹'),

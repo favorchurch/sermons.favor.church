@@ -23,7 +23,7 @@ export function header(ctx) {
   const current = state.workspaces.find(w => w.id === state.workspaceId);
   const menuId = uid('workspace-menu');
   const brand = h('div', { class: 'brand' },
-    h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, '✳'),
+    h('img', { class: 'brand-mark', src: '/assets/icon.svg', alt: '', width: 38, height: 38 }),
     h('div', { class: 'brand-text' },
       h('span', { class: 'brand-name' }, 'My Sermons'),
       current ? h('span', { class: 'brand-workspace' }, current.name) : null));
