@@ -100,7 +100,7 @@ function reviewPanel(ctx, batchId) {
   const attestDialog = ids => confirmDialog({
     title: `Attest ${plural(ids.length, 'row')}?`,
     body: [
-      `By attesting, you confirm that you, as Owner of this archive, are responsible for importing ${ids.length === 1 ? 'this sermon record' : 'these sermon records'}.`,
+      `By attesting, you confirm that you, as Owner of this workspace, are responsible for importing ${ids.length === 1 ? 'this sermon record' : 'these sermon records'}.`,
       'Nothing is created yet. Approving is a separate step, and no owner is assumed from the file.'
     ],
     confirmLabel: `Attest ${plural(ids.length, 'row')}`,
@@ -219,7 +219,7 @@ function reviewPanel(ctx, batchId) {
 export function importSection(ctx) {
   const { route } = ctx;
   return sectionBox('import-title', 'Import Review',
-    'Only Owners see this. Review the staged history row by row. Attest that you are responsible for it, then approve the rows you want in the archive.',
+    'Only Owners see this. Review the staged history row by row. Attest that you are responsible for it, then approve the rows you want in the workspace.',
     uploadCard(ctx),
     route.batch ? reviewPanel(ctx, route.batch) : h('p', { class: 'muted' }, 'No file is open. Stage a CSV above to start a review.'));
 }

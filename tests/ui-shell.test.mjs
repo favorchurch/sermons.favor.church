@@ -378,11 +378,11 @@ test('sign-in page is variant A: name, one sentence, the Google button and one n
     assert.match(page.text, /<title>Sermon Bank<\/title>/);
     assert.match(main, /<h1>Sermon Bank<\/h1>/);
     assert.equal((main.match(/<p /g) || []).length, 2, 'one sentence and one note');
-    assert.match(main, /<p class="what">Sign in to open your sermon archive\.<\/p>/);
+    assert.match(main, /<p class="what">Sign in to open your workspace\.<\/p>/);
     assert.equal((main.match(/<a /g) || []).length, 1);
     assert.match(main, /<a class="go" href="\/auth\/google\/start">/);
     assert.match(main, /Continue with Google<\/a>/);
-    assert.match(main, /<p class="note">Invite only\./);
+    assert.match(main, /<p class="note">Any Google account can sign in\./);
     assert.ok(!/My Sermons|<small|<img/.test(page.text));
   } finally { f.db.close(); }
 });
@@ -995,6 +995,146 @@ test('dialog Tab key wraps focus and Escape-style close restores focus to the op
   } finally { f.db.close(); }
 });
 
+// ---------------------------------------------------------------- New workspace
+
+const openNewWorkspace = dom => {
+  buttons(dom.header, 'Switch workspace ▾')[0].dispatch('click');
+  buttons(dom.header, 'New workspace')[0].dispatch('click');
+  return one(dom.document.body, e => e.tag === 'dialog' && e.open);
+};
+
+test('New workspace is offered in the header switcher even with one workspace, and opens a labelled dialog', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'owner');
+    dom.document.body.append(dom.header); // the harness leaves it detached, and a detached opener cannot take focus back
+    assert.equal(dom.app.state.workspaces.length, 1);
+    const toggle = buttons(dom.header, 'Switch workspace ▾')[0];
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    toggle.dispatch('click');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(buttons(dom.header, 'New workspace').length, 1);
+    buttons(dom.header, 'New workspace')[0].dispatch('click');
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'the menu closes when the dialog opens');
+    const dialog = one(dom.document.body, e => e.tag === 'dialog' && e.open);
+    assert.equal(textOf(one(dialog, e => e.getAttribute('id') === dialog.getAttribute('aria-labelledby'))), 'New workspace');
+    const name = one(dialog, e => e.getAttribute('name') === 'name');
+    assert.equal(dom.document.activeElement, name, 'the name field is focused');
+    assert.match(textOf(dialog), /Workspace name/);
+    buttons(dialog, 'Cancel')[0].dispatch('click');
+    assert.equal(all(dom.document.body, e => e.tag === 'dialog').length, 0);
+    assert.equal(dom.document.activeElement, toggle, 'focus returns to the switcher');
+    assert.equal(f.db.query('SELECT COUNT(*) AS n FROM workspaces')[0].n, 2, 'cancel creates nothing');
+  } finally { f.db.close(); }
+});
+
+test('New workspace checks the name like the server (3 to 120 characters, trimmed) before posting', async () => {
+  const f = await fixture();
+  try {
+    const posts = [];
+    const base = realApi(f, 'owner');
+    const dom = await mountApp(f, 'owner', { api: { ...base, post: (path, body) => { posts.push(path); return base.post(path, body); } } });
+    const dialog = openNewWorkspace(dom);
+    const name = one(dialog, e => e.getAttribute('name') === 'name');
+    for (const bad of ['', '  ab  ', 'x'.repeat(121)]) {
+      name.setAttribute('aria-invalid', 'false');
+      name.value = bad;
+      one(dialog, e => e.tag === 'form').dispatch('submit');
+      await settle();
+      assert.equal(name.getAttribute('aria-invalid'), 'true', JSON.stringify(bad.slice(0, 5)));
+      assert.match(textOf(dialog), /The name must be 3 to 120 characters\./);
+      assert.equal(dom.document.activeElement, name);
+      assert.ok(dialog.open);
+    }
+    assert.deepEqual(posts.filter(p => p === '/api/workspaces'), [], 'nothing was sent');
+    name.value = 'x'.repeat(120);
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => !dialog.open, 'a name of exactly 120 characters is accepted');
+  } finally { f.db.close(); }
+});
+
+test('New workspace creates it, reloads the list and switches to it', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'owner');
+    const dialog = openNewWorkspace(dom);
+    one(dialog, e => e.getAttribute('name') === 'name').value = '  Youth Ministry  ';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => !dialog.open, 'dialog closed');
+    const row = f.db.query("SELECT id, name, owner_account_id FROM workspaces WHERE name = 'Youth Ministry'")[0];
+    assert.equal(row.owner_account_id, ids.owner, 'the name is stored trimmed, owned by the signed-in account');
+    await until(() => dom.app.state.workspaceId === row.id && dom.app.state.phase === 'ready', 'switched to the new workspace');
+    assert.equal(dom.app.state.workspaces.length, 2);
+    assert.equal(dom.app.state.role, 'owner');
+    assert.match(textOf(dom.toast), /Workspace created/);
+    assert.equal(textOf(one(dom.header, e => e.hasClass('brand-workspace'))), 'Youth Ministry');
+    assert.match(textOf(dom.root), /No sermons yet/, 'the new workspace is empty');
+    assert.ok(!textOf(dom.root).includes('Alpha'), 'the previous workspace is not shown');
+    buttons(dom.header, 'Switch workspace ▾')[0].dispatch('click');
+    assert.equal(all(dom.header, e => e.tag === 'button' && e.getAttribute('aria-pressed') === 'true').map(textOf).join('|'), 'Youth Ministry · Owner');
+  } finally { f.db.close(); }
+});
+
+test('New workspace still opens the new workspace when the list reload fails', async () => {
+  const f = await fixture();
+  try {
+    const base = realApi(f, 'owner');
+    let created = false;
+    const api = { ...base,
+      post: async (path, body) => { const r = await base.post(path, body); if (path === '/api/workspaces') created = true; return r; },
+      get: (path) => (created && path === '/api/workspaces' ? Promise.reject(new ApiError(503, 'x')) : base.get(path)) };
+    const dom = await mountApp(f, 'owner', { api });
+    const dialog = openNewWorkspace(dom);
+    one(dialog, e => e.getAttribute('name') === 'name').value = 'Youth Ministry';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => dom.app.state.workspaces.length === 2 && dom.app.state.phase === 'ready', 'opened from the create response');
+    assert.equal(dom.app.state.workspaceId, dom.app.state.workspaces[1].id);
+    assert.match(textOf(dom.toast), /could not be refreshed/);
+  } finally { f.db.close(); }
+});
+
+test('New workspace shows a server error inside the dialog and changes nothing', async () => {
+  const f = await fixture();
+  try {
+    const base = realApi(f, 'owner');
+    let failure = new ApiError(500, 'boom');
+    const dom = await mountApp(f, 'owner', { api: { ...base, post: (path, body) => { if (path === '/api/workspaces') return Promise.reject(failure); return base.post(path, body); } } });
+    const dialog = openNewWorkspace(dom);
+    one(dialog, e => e.getAttribute('name') === 'name').value = 'Youth Ministry';
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => !one(dialog, e => e.hasClass('form-error')).hasAttribute('hidden'), 'error shown');
+    assert.ok(dialog.open, 'the dialog stays open so the name can be fixed or retried');
+    assert.match(textOf(dialog), /Something went wrong on our side/);
+    assert.equal(one(dialog, e => e.tag === 'button' && textOf(e) === 'Create workspace').hasAttribute('disabled'), false, 'can retry');
+    assert.equal(dom.app.state.workspaceId, ids.w1);
+    assert.equal(dom.app.state.workspaces.length, 1);
+    failure = new ApiError(400, 'invalid_workspace_name');
+    one(dialog, e => e.tag === 'form').dispatch('submit');
+    await until(() => /3 to 120 characters/.test(textOf(one(dialog, e => e.hasClass('form-error')))), 'the server name rule is explained');
+    assert.equal(f.db.query('SELECT COUNT(*) AS n FROM workspaces')[0].n, 2);
+  } finally { f.db.close(); }
+});
+
+test('a person with no workspace creates one from the empty state, with the same name rule', async () => {
+  const f = await fixture();
+  try {
+    const dom = await mountApp(f, 'outsider');
+    assert.equal(dom.app.state.phase, 'no-workspace');
+    assert.match(textOf(dom.root), /Create your own private workspace/);
+    assert.equal(buttons(dom.header, 'New workspace').length, 0, 'the header offers nothing before there is a workspace');
+    const form = all(dom.root, e => e.tag === 'form')[0];
+    one(form, e => e.getAttribute('name') === 'name').value = 'ab';
+    form.dispatch('submit');
+    await settle();
+    assert.match(textOf(form), /The name must be 3 to 120 characters\./);
+    assert.equal(f.db.query('SELECT COUNT(*) AS n FROM workspaces')[0].n, 2);
+    one(form, e => e.getAttribute('name') === 'name').value = ' Grace Chapel ';
+    form.dispatch('submit');
+    await until(() => dom.app.state.phase === 'ready', 'created and opened');
+    assert.equal(f.db.query("SELECT COUNT(*) AS n FROM workspaces WHERE name = 'Grace Chapel'")[0].n, 1);
+  } finally { f.db.close(); }
+});
+
 test('calendar: year overview, month grid, selected-day inspector, arrows and links to the record', async () => {
   const f = await fixture();
   try {
@@ -1027,7 +1167,7 @@ test('calendar: year overview, month grid, selected-day inspector, arrows and li
     // Without-a-day groups and undated note.
     assert.match(text(), /Recorded for March 2025 without a day/);
     assert.match(text(), /Recorded for 2025 without a month/);
-    assert.match(text(), /1 preaching in this archive has no date/);
+    assert.match(text(), /1 preaching in this workspace has no date/);
     // Month arrows and year navigation are links.
     assert.equal(one(dom.root, e => e.getAttribute('data-focus-key') === 'prev-month').getAttribute('href'), '#/library/calendar?y=2025&m=2');
     assert.equal(one(dom.root, e => e.getAttribute('data-focus-key') === 'next-year').getAttribute('href'), '#/library/calendar?y=2026&m=3');
@@ -1071,7 +1211,7 @@ test('empty, error, access-denied and signed-out states render with the right ro
     const failing = status => ({ ...base, get: async path => { if (path.includes('/sermons')) throw new ApiError(status, 'x'); return base.get(path); } });
     const denied = await mountApp(f, 'owner', { api: failing(404) });
     assert.equal(denied.app.state.phase, 'denied');
-    assert.match(textOf(denied.root), /don’t have access to this archive/);
+    assert.match(textOf(denied.root), /don’t have access to this workspace/);
     assert.equal(one(denied.root, e => e.hasClass('state')).getAttribute('role'), 'alert');
 
     const broken = await mountApp(f, 'owner', { api: failing(503) });
@@ -1088,7 +1228,7 @@ test('empty, error, access-denied and signed-out states render with the right ro
 
     const lost = await mountApp(f, 'outsider');
     assert.equal(lost.app.state.phase, 'no-workspace');
-    assert.match(textOf(lost.root), /don’t have an archive yet/);
+    assert.match(textOf(lost.root), /don’t have a workspace yet/);
   } finally { f.db.close(); }
 });
 
@@ -1173,7 +1313,7 @@ test('sign out posts to the logout route and returns to the sign-in page', async
   } finally { f.db.close(); }
 });
 
-test('a slow load for the previous archive cannot overwrite the archive you switched to', async () => {
+test('a slow load for the previous workspace cannot overwrite the workspace you switched to', async () => {
   const f = await fixture();
   try {
     f.db.execute("INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at) VALUES (?,?,'viewer',CURRENT_TIMESTAMP)", [ids.w2, ids.editor]);
@@ -1188,15 +1328,15 @@ test('a slow load for the previous archive cannot overwrite the archive you swit
     const app = createApp({ api: slow, root, headerRoot, announcer: document.make('div'), toastRoot: document.make('div'),
       getHash: () => '', setHash() {}, storage: { get: () => ids.w1, set() {} }, today: () => '2026-11-13', navigate() {} });
     const started = app.start();
-    await until(() => buttons(headerRoot, 'Switch archive ▾').length === 1, 'header offers both archives');
+    await until(() => buttons(headerRoot, 'Switch workspace ▾').length === 1, 'header offers both workspaces');
     one(headerRoot, e => e.tag === 'button' && textOf(e).startsWith('Private Beta')).dispatch('click');
-    await until(() => app.state.phase === 'ready' && app.state.workspaceId === ids.w2, 'second archive loaded');
+    await until(() => app.state.phase === 'ready' && app.state.workspaceId === ids.w2, 'second workspace loaded');
     release();
     await started;
     await settle();
     assert.equal(app.state.workspaceId, ids.w2);
     assert.deepEqual(app.state.items.map(item => item.title), ['Beta Secret Sermon']);
-    assert.ok(!textOf(root).includes('Alpha'), 'the first archive must not appear under the second');
+    assert.ok(!textOf(root).includes('Alpha'), 'the first workspace must not appear under the second');
     assert.match(textOf(root), /Beta Secret Sermon/);
   } finally { f.db.close(); }
 });

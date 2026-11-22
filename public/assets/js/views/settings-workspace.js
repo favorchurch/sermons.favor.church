@@ -1,4 +1,4 @@
-// Workspace: which archive this is, what the person's role allows, and switching archives.
+// Workspace: which workspace this is, what the person's role allows, and switching workspaces.
 import { h } from '../dom.js';
 import { ROLE_ABILITIES, ROLE_LABELS, ROLE_ORDER } from '../permissions.js';
 import { libraryTotals } from '../library-model.js';
@@ -11,9 +11,9 @@ export function workspaceSection(ctx) {
   const current = state.workspaces.find(w => w.id === state.workspaceId);
   const totals = libraryTotals(state.items);
   const others = state.workspaces.filter(w => w.id !== state.workspaceId);
-  return sectionBox('workspace-title', 'Workspace', 'This archive and what your role can do in it.',
+  return sectionBox('workspace-title', 'Workspace', 'This workspace and what your role can do in it.',
     h('dl', { class: 'facts' },
-      h('dt', null, 'Archive'), h('dd', null, current?.name || '—'),
+      h('dt', null, 'Workspace'), h('dd', null, current?.name || '—'),
       h('dt', null, 'Your role'), h('dd', null, ROLE_LABELS[state.role] || '—'),
       h('dt', null, 'Signed in as'), h('dd', null, state.account?.display_name || '—'),
       h('dt', null, 'Contents'), h('dd', null, `${plural(totals.sermons, 'sermon')} · ${plural(totals.preachings, 'preaching')}`)),
@@ -24,8 +24,8 @@ export function workspaceSection(ctx) {
         h('th', { scope: 'row', 'data-label': 'Ability' }, label),
         ...ROLE_ORDER.map(role => h('td', { 'data-label': ROLE_LABELS[role] }, roles.includes(role) ? 'Yes' : '—'))))))),
     others.length ? h('div', { class: 'switch-list' },
-      h('h3', null, 'Other archives'),
+      h('h3', null, 'Other workspaces'),
       h('div', { class: 'row-actions' }, ...others.map(w => h('button', { type: 'button', class: 'btn', onclick: () => ctx.switchWorkspace(w.id) }, `Open ${w.name}`)))) : null,
-    h('div', { class: 'join-box' }, h('h3', null, 'Join another archive'),
-      h('p', { class: 'muted' }, 'Have an invitation code? Enter it here to add that archive to your list.'), joinForm({ join: ctx.join })));
+    h('div', { class: 'join-box' }, h('h3', null, 'Join another workspace'),
+      h('p', { class: 'muted' }, 'Have an invitation code? Enter it here to add that workspace to your list.'), joinForm({ join: ctx.join })));
 }

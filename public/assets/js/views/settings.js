@@ -21,7 +21,7 @@ export function settingsPage(ctx) {
     ? SECTIONS[route.section](ctx)
     : h('div', { class: 'notice', role: 'status' },
       h('h2', null, `${label} is not available to your role`),
-      h('p', null, 'Ask an Owner if you need access to this part of the archive.'),
+      h('p', null, 'Ask an Owner if you need access to this part of the workspace.'),
       h('p', null, h('a', { href: hrefFor({ name: 'settings', section: 'places' }) }, 'Back to Places')));
   return h('div', { class: 'settings' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Settings'),

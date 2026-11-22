@@ -44,8 +44,9 @@ const FIELD_LABELS = {
 
 // Fixed text for the codes the Settings screens can meet. Anything unknown falls back to the status text.
 const CODE_TEXT = {
-  invite_limit_reached: 'This archive has reached its limit of 20 invitations a day. Try again tomorrow.',
+  invite_limit_reached: 'This workspace has reached its limit of 20 invitations a day. Try again tomorrow.',
   invalid_invitation: 'Check the email address and role, then try again.',
+  invalid_workspace_name: 'The name must be 3 to 120 characters.',
   invalid_membership_change: 'That role change is not allowed.',
   membership_changed: 'That person’s access changed while you were working. Reload and try again.',
   invalid_row_state: 'That row changed while you were working. Reload the list and try again.',
@@ -71,7 +72,7 @@ export function describeError(error) {
   if (Object.hasOwn(CODE_TEXT, code) && (status !== 400 || field === null)) return CODE_TEXT[code];
   if (status === 413) return CODE_TEXT.too_large;
   if (status === 415) return CODE_TEXT.not_a_pdf;
-  if (status === 403) return 'You don’t have permission to change this archive.';
+  if (status === 403) return 'You don’t have permission to change this workspace.';
   if (status === 404) return 'That item no longer exists, or you don’t have access to it.';
   if (status === 400) {
     const label = FIELD_LABELS[field];

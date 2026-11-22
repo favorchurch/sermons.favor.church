@@ -300,7 +300,7 @@ function signInPage(): Response {
   const headers = noStoreHeaders();
   headers.set('content-type', 'text/html; charset=utf-8');
   headers.set('content-security-policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
-  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sermon Bank</title>${ICON_LINKS}<style>${SIGN_IN_CSS}</style><main><span class="mark" aria-hidden="true">${ICON_SVG.replace('<svg ', '<svg width="48" height="48" ')}</span><h1>Sermon Bank</h1><p class="what">Sign in to open your sermon archive.</p><a class="go" href="/auth/google/start"><span class="g" aria-hidden="true">${GOOGLE_G_SVG}</span>Continue with Google</a><p class="note">Invite only. Use the Google account that was invited.</p></main></html>`;
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sermon Bank</title>${ICON_LINKS}<style>${SIGN_IN_CSS}</style><main><span class="mark" aria-hidden="true">${ICON_SVG.replace('<svg ', '<svg width="48" height="48" ')}</span><h1>Sermon Bank</h1><p class="what">Sign in to open your workspace.</p><a class="go" href="/auth/google/start"><span class="g" aria-hidden="true">${GOOGLE_G_SVG}</span>Continue with Google</a><p class="note">Any Google account can sign in. If you were invited, use the account the invitation was made for.</p></main></html>`;
   return new Response(html, { status: 200, headers });
 }
 

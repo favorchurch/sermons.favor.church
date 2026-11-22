@@ -16,7 +16,7 @@ const STATE_NOTES = {
   not_indexed: 'Not searchable.',
   awaiting_consent: 'The text was read from the PDF and is held privately. It is not searchable until an Owner consents.',
   queued: 'Consent was given and indexing is in progress.',
-  indexed: 'Searchable by everyone in this archive.',
+  indexed: 'Searchable by everyone in this workspace.',
   failed: 'The file is stored, but its text could not be read or indexed, so it cannot be searched.',
   revoked: 'Access was revoked. The text has been removed from search and cannot be indexed again.'
 };
@@ -74,7 +74,7 @@ function consentDialog({ client, sermon, version, onDone }) {
   return confirmDialog({
     title: 'Let this PDF be searched?',
     body: [
-      `Everyone in this archive will be able to find text from “${version.label}” in search. Only you, as an Owner, can allow this.`,
+      `Everyone in this workspace will be able to find text from “${version.label}” in search. Only you, as an Owner, can allow this.`,
       'You can revoke it later. Revoking deletes the extracted text and cannot be undone.'
     ],
     confirmLabel: 'Allow search', onDone, save: () => client.consentToIndex(sermon.id, version.id)
