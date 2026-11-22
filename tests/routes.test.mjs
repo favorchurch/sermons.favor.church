@@ -153,6 +153,21 @@ test('full mocked Google callback links approved subject, issues session, and re
  }finally{globalThis.fetch=originalFetch;f.db.close()}
 });
 
+test('public sign-up: a Google account on no allowlist and with no invite gets an account and a session',async()=>{
+ const f=await fixture(); const originalFetch=globalThis.fetch;
+ try{
+  const callback=await googleCallback(f,{sub:'stranger-google-subject',email:'stranger@example.test'});
+  const complete=await handleRequest(callback,f.env);
+  assert.equal(complete.status,303);
+  const sessionToken=complete.headers.get('set-cookie')?.match(/__Host-sb_session=([^;]+)/)?.[1];
+  assert.ok(sessionToken);
+  const me=await handleRequest(new Request(origin+'/api/me',{headers:{cookie:'__Host-sb_session='+sessionToken}}),f.env);
+  assert.equal((await me.json()).account.email_normalized,'stranger@example.test');
+  const list=await handleRequest(new Request(origin+'/api/workspaces',{headers:{cookie:'__Host-sb_session='+sessionToken}}),f.env);
+  assert.deepEqual((await list.json()).workspaces,[]);
+ }finally{globalThis.fetch=originalFetch;f.db.close()}
+});
+
 test('callback for a Google subject linked to a disabled account is refused explicitly with no session',async()=>{
  const f=await fixture(); const originalFetch=globalThis.fetch;
  try{
