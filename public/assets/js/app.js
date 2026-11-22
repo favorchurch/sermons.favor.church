@@ -245,7 +245,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function noWorkspaceView() {
-    const name = field({ label: 'Name your archive', name: 'name', required: true, maxlength: 120, value: 'My Sermons', hint: 'At least 3 characters. Only pilot owners can create an archive.' });
+    const name = field({ label: 'Name your archive', name: 'name', required: true, maxlength: 120, value: 'My Sermons', hint: 'At least 3 characters.' });
     const message = h('p', { class: 'form-error', role: 'alert', hidden: true });
     const form = h('form', {
       class: 'state-form', novalidate: true,
