@@ -1,4 +1,4 @@
-/** Private, fail-closed Worker routes. Pilot authentication: Google OIDC only. */
+/** Private, fail-closed Worker routes. Public sign-up: Google OIDC only. */
 import {
   SESSION_COOKIE, FLOW_COOKIE, randomToken, sha256, constantTimeEqual,
   getCookie, sessionCookie, clearSessionCookie, flowCookie, clearFlowCookie,
@@ -39,20 +39,6 @@ function config(env: Env, request: Request): { origin: string; clientId: string;
   return { origin, clientId, clientSecret, redirectUri: origin + '/auth/google/callback' };
 }
 
-function pilotAllowed(env: Env, email: string): boolean {
-  const list = readBinding(env, 'PILOT_OWNER_EMAILS');
-  return Boolean(list && list.split(',').some(item => parseEmail(item) === email));
-}
-
-async function activeInviteForEmail(env: Env, email: string): Promise<boolean> {
-  const row = await env.DB.prepare(`SELECT 1 AS found FROM workspace_invitations i
-    JOIN workspaces w ON w.id = i.workspace_id
-    WHERE i.email_normalized = ? AND i.expires_at > ? AND i.accepted_at IS NULL
-      AND i.revoked_at IS NULL AND w.deleted_at IS NULL LIMIT 1`)
-    .bind(email, NOW()).first<{ found: number }>();
-  return row?.found === 1;
-}
-
 async function findOrProvisionAccount(env: Env, identity: GoogleIdentity): Promise<Account | null> {
   const existing = await env.DB.prepare(`SELECT a.id, a.email_normalized, a.display_name, a.disabled_at
     FROM google_identities gi JOIN user_accounts a ON a.id = gi.account_id
@@ -65,7 +51,6 @@ async function findOrProvisionAccount(env: Env, identity: GoogleIdentity): Promi
     // explicit reconciliation rather than silently inheriting workspace access.
     return existing.email_normalized === identity.email ? existing : null;
   }
-  if (!pilotAllowed(env, identity.email) && !(await activeInviteForEmail(env, identity.email))) return null;
   const byEmail = await env.DB.prepare(`SELECT id, email_normalized, display_name FROM user_accounts
     WHERE email_normalized = ? AND disabled_at IS NULL`).bind(identity.email).first<Account>();
   if (byEmail) {
@@ -166,8 +151,7 @@ async function listWorkspaces(env: Env, account: Account): Promise<Response> {
 }
 
 async function createWorkspace(request: Request, env: Env, actor: Account): Promise<Response> {
-  // This is an *invite-only pilot* bootstrap, not global self-registration.
-  if (!pilotAllowed(env, actor.email_normalized)) return reply(403, { error: 'pilot_access_only' });
+  // Public sign-up: any verified Google account may create its one personal workspace.
   const body = await readJson(request);
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
   if (name.length < 3 || name.length > 120) return reply(400, { error: 'invalid_workspace_name' });
