@@ -629,7 +629,7 @@ async function withQuickLibrary(run) {
     await run(f);
   });
 }
-const quickIds = res => res.json.matches.map(m => m.sermon_id);
+const quickIds = res => res.json.sermonMatches.map(m => m.sermon_id);
 
 test('quick search reports which field matched: title, series, scripture, tags and passage', async () => {
   await withQuickLibrary(async f => {
@@ -637,9 +637,11 @@ test('quick search reports which field matched: title, series, scripture, tags a
       const res = await quick(f, q);
       assert.equal(res.status, 200, res.text);
       assert.deepEqual(quickIds(res), [id], q);
-      assert.deepEqual(res.json.matches[0].matched_on, fields, q);
-      return res.json.matches[0];
+      assert.deepEqual(res.json.sermonMatches[0].matched_on, fields, q);
+      return res.json.sermonMatches[0];
     };
+    const body = (await quick(f, 'Notes')).json;
+    assert.deepEqual(Object.keys(body).sort(), ['limit', 'query', 'sermonMatches'], 'the accepted field is sermonMatches');
     const hit = await only('Notes', SQ, ['title']);
     assert.deepEqual([hit.sermon_title, hit.series_name, hit.scripture_references, hit.tags, hit.archived],
       ['Café Grace Notes', 'Anchors Series', ['Romans 8:28'], ['healing', 'Faith'], false]);
@@ -651,7 +653,7 @@ test('quick search reports which field matched: title, series, scripture, tags a
     assert.deepEqual(quickIds(await quick(f, 'grace zebra')), [], 'every term must match');
     assert.deepEqual(quickIds(await quick(f, 'grace  healing')), [SQ], 'terms may sit in different fields, with extra spaces');
     assert.deepEqual(quickIds(await quick(f, 'nothing here')), []);
-    assert.deepEqual((await quick(f, 'sermon')).json.matches.map(m => m.sermon_id).sort(), [ids.sermon1, sermon3].sort());
+    assert.deepEqual((await quick(f, 'sermon')).json.sermonMatches.map(m => m.sermon_id).sort(), [ids.sermon1, sermon3].sort());
   });
 });
 
@@ -671,7 +673,7 @@ test('quick search shares matchesQuery with the library filter on the same data'
     for (const q of ['cafe', 'grace anchors', 'romans 8', 'sermon', 'Faith healing', 'zzz', 'beta john', 'John 3:14']) {
       const res = await quick(f, q, 'owner', '&limit=50');
       const expected = list.filter(s => matchesQuery(s, q)).map(s => s.id).sort();
-      const textOnly = res.json.matches.filter(m => m.matched_on.some(field => field !== 'passage')).map(m => m.sermon_id).sort();
+      const textOnly = res.json.sermonMatches.filter(m => m.matched_on.some(field => field !== 'passage')).map(m => m.sermon_id).sort();
       assert.deepEqual(textOnly, expected, q);
     }
   });
@@ -682,7 +684,7 @@ test('quick search on a Bible reference adds sermons whose own passage overlaps,
     const res = await quick(f, 'John 3:16');
     assert.equal(res.status, 200, res.text);
     assert.deepEqual(res.json.query, { kind: 'reference', label: 'John 3:16' });
-    const byId = Object.fromEntries(res.json.matches.map(m => [m.sermon_id, m]));
+    const byId = Object.fromEntries(res.json.sermonMatches.map(m => [m.sermon_id, m]));
     assert.deepEqual(Object.keys(byId).sort(), [ids.sermon1, sermon3].sort());
     // The overlap with a range is passage only: its text does not say "3:16".
     assert.deepEqual(byId[sermon3].matched_on, ['passage']);
@@ -690,7 +692,7 @@ test('quick search on a Bible reference adds sermons whose own passage overlaps,
     // Alpha's own reference text is the query, so it matches as Scripture and as a passage.
     assert.deepEqual(byId[ids.sermon1].matched_on, ['scripture', 'passage']);
     assert.equal(byId[ids.sermon1].passage, 'John 3:16');
-    assert.ok(!('passage' in (await quick(f, 'romans')).json.matches[0]), 'a text match carries no passage');
+    assert.ok(!('passage' in (await quick(f, 'romans')).json.sermonMatches[0]), 'a text match carries no passage');
     assert.deepEqual(quickIds(await quick(f, 'Psalm 150')), [], 'a reference nobody preaches on finds nothing');
   });
 });
@@ -701,10 +703,10 @@ test('quick search excludes archived sermons unless asked, and never shows delet
     assert.deepEqual(quickIds(await quick(f, 'grace')), []);
     assert.deepEqual(quickIds(await quick(f, 'grace', 'owner', '&archived=exclude')), []);
     const shown = await quick(f, 'grace', 'owner', '&archived=include');
-    assert.deepEqual([quickIds(shown), shown.json.matches[0].archived], [[SQ], true]);
+    assert.deepEqual([quickIds(shown), shown.json.sermonMatches[0].archived], [[SQ], true]);
     f.db.execute('UPDATE sermons SET archived_at=CURRENT_TIMESTAMP WHERE id=?', [sermon3]);
     assert.deepEqual(quickIds(await quick(f, 'John 3:16')), [ids.sermon1], 'archived passage matches are excluded too');
-    assert.deepEqual((await quick(f, 'John 3:16', 'owner', '&archived=include')).json.matches.length, 2);
+    assert.deepEqual((await quick(f, 'John 3:16', 'owner', '&archived=include')).json.sermonMatches.length, 2);
     f.db.execute('UPDATE sermons SET deleted_at=CURRENT_TIMESTAMP WHERE id IN (?,?)', [SQ, sermon3]);
     assert.deepEqual(quickIds(await quick(f, 'grace', 'owner', '&archived=include')), []);
     assert.deepEqual(quickIds(await quick(f, 'John 3:16', 'owner', '&archived=include')), [ids.sermon1], 'deleted passage matches never appear');
@@ -724,7 +726,7 @@ test('quick search validates the query like /search and limits results', async (
     assert.equal((await quick(f, 'one two three four five six seven eight nine ten eleven twelve')).status, 200, '12 words is allowed');
     for (const limit of ['0', '51', 'abc']) assert.equal((await quick(f, 'sermon', 'owner', `&limit=${limit}`)).status, 400, limit);
     const one = await quick(f, 'sermon', 'owner', '&limit=1');
-    assert.deepEqual([one.json.limit, one.json.matches.length], [1, 1]);
+    assert.deepEqual([one.json.limit, one.json.sermonMatches.length], [1, 1]);
     assert.equal((await quick(f, 'sermon')).json.limit, 20);
   });
 });
@@ -779,7 +781,7 @@ test('quick search does not read note text and does not write', async () => {
     const reference = await quick(f, 'John 3:16');
     f.env.DB.prepare = prepare;
     assert.deepEqual(quickIds(text), [], 'a word that is only in the notes finds no sermon in the quick pass');
-    assert.ok(reference.json.matches.length > 0);
+    assert.ok(reference.json.sermonMatches.length > 0);
     assert.ok(sql.length > 0);
     for (const statement of sql) assert.ok(!/note_texts|note_fts|note_reference_tokens/.test(statement), statement);
     assert.equal(JSON.stringify([f.db.query('SELECT * FROM audit_events'), f.db.query('SELECT * FROM note_texts')]), before);

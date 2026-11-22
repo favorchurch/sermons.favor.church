@@ -40,7 +40,7 @@ sermons never appear. Results are newest first.
 ```json
 {
   "query": {"kind": "reference", "label": "John 3:16"},
-  "matches": [
+  "sermonMatches": [
     {"sermon_id": "…", "sermon_title": "…", "series_name": null, "scripture_references": ["John 3:14-17"],
      "tags": [], "archived": false, "matched_on": ["passage"], "passage": "John 3:14-17"}
   ],

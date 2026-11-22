@@ -93,7 +93,7 @@ function resultsView(shaped, route, ctx) {
     sections.push(group({
       title: 'Sermons', id: 'group-sermons', stage: ctx.quick, items: shaped.sermons.map(hit => sermonItem(hit, route.q)),
       pending: 'Searching sermons…', empty: 'No sermon title, series, Scripture or tag matches this.',
-      retry: ctx.retryQuick, more: moreLine(ctx.quick, 'matches')
+      retry: ctx.retryQuick, more: moreLine(ctx.quick, 'sermonMatches')
     }));
   }
   sections.push(group({

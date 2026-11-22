@@ -57,7 +57,7 @@ export function shapeSearch({ scope, quick, deep, q = '' }) {
   const reference = query?.kind === 'reference';
   const needsReference = scope === 'bible' && Boolean(query) && !reference;
   const showSermons = scope !== 'notes';
-  const sermons = showSermons ? items(quick, 'matches') : [];
+  const sermons = showSermons ? items(quick, 'sermonMatches') : [];
   const notes = items(deep, 'notesMatches');
   const pending = (showSermons && waiting(quick)) || waiting(deep);
   const label = reference ? `Bible reference ${query.label}` : `“${q}”`;

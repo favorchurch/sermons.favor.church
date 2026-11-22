@@ -214,7 +214,7 @@ const ready = data => ({ phase: 'ready', data });
 const refQuery = { kind: 'reference', label: 'John 3:16' };
 
 test('scope decides which result groups are shown, and each stage counts only when it has landed', () => {
-  const quick = ready({ query: refQuery, matches: [{ sermon_id: 'a' }, { sermon_id: 'c' }], limit: 50 });
+  const quick = ready({ query: refQuery, sermonMatches: [{ sermon_id: 'a' }, { sermon_id: 'c' }], limit: 50 });
   const deep = ready({ query: refQuery, metadataMatches: [{ sermon_id: 'a' }], notesMatches: [{ sermon_id: 'b' }], limit: 50 });
   assert.deepEqual(stagesFor('everything'), { quick: true, deep: true });
   assert.deepEqual(stagesFor('bible'), { quick: true, deep: true });
@@ -236,7 +236,7 @@ test('scope decides which result groups are shown, and each stage counts only wh
   assert.equal(shapeSearch({ scope: 'everything', quick: null, deep }).pending, true);
   // Bible verses needs a reference, known from whichever stage answered first.
   const phrase = { query: { kind: 'text', label: 'grace' } };
-  assert.equal(shapeSearch({ scope: 'bible', quick: ready({ ...phrase, matches: [] }), deep: null, q: 'grace' }).needsReference, true);
+  assert.equal(shapeSearch({ scope: 'bible', quick: ready({ ...phrase, sermonMatches: [] }), deep: null, q: 'grace' }).needsReference, true);
   assert.equal(shapeSearch({ scope: 'bible', quick: null, deep: ready({ ...phrase, notesMatches: [] }), q: 'grace' }).needsReference, true);
   assert.equal(shapeSearch({ scope: 'bible', quick: null, deep: null, q: 'grace' }).needsReference, false, 'unknown until a stage lands');
   assert.match(shapeSearch({ scope: 'bible', quick: ready(phrase), deep: null, q: 'grace' }).notice, /“grace” is not a Bible reference/);
@@ -1412,12 +1412,12 @@ test('Find in notes run again with the same text asks the server again', async (
 test('search says when a stage hit the server cap', async () => {
   const stage = (key, count, limit) => ({ phase: 'ready', data: { limit, [key]: new Array(count).fill({}) } });
   assert.equal(truncated(stage('notesMatches', 50, 50), 'notesMatches'), true);
-  assert.equal(truncated(stage('matches', 50, 50), 'matches'), true);
+  assert.equal(truncated(stage('sermonMatches', 50, 50), 'sermonMatches'), true);
   assert.equal(truncated(stage('notesMatches', 49, 50), 'notesMatches'), false);
-  assert.equal(truncated(stage('matches', 50, 50), 'notesMatches'), false, 'each stage is judged on its own list');
-  assert.equal(truncated({ phase: 'ready', data: { matches: [] } }, 'matches'), false);
-  assert.equal(truncated({ phase: 'loading' }, 'matches'), false);
-  assert.equal(truncated(null, 'matches'), false);
+  assert.equal(truncated(stage('sermonMatches', 50, 50), 'notesMatches'), false, 'each stage is judged on its own list');
+  assert.equal(truncated({ phase: 'ready', data: { sermonMatches: [] } }, 'sermonMatches'), false);
+  assert.equal(truncated({ phase: 'loading' }, 'sermonMatches'), false);
+  assert.equal(truncated(null, 'sermonMatches'), false);
   await withLibrary(async f => {
     const base = realApi(f, 'owner');
     const capped = { ...base, get: async path => {

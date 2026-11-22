@@ -67,7 +67,7 @@ export async function quickSearch(c: Ctx): Promise<Response> {
     { includeArchived: archived === 'include', limit });
   return reply(200, {
     query: queryInfo(query),
-    matches: hits.map(hit => ({
+    sermonMatches: hits.map(hit => ({
       sermon_id: hit.sermon_id, sermon_title: hit.title, series_name: hit.series_name,
       scripture_references: hit.scripture_references, tags: hit.tags, archived: hit.archived,
       matched_on: hit.matched_on, ...(hit.passage === undefined ? {} : { passage: hit.passage })
