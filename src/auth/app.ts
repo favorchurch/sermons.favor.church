@@ -6,7 +6,7 @@ import {
   readJson, can, canInvite, canManageMember, isRole, isUuid, type Role
 } from './security.ts';
 import { handleLibraryRoute } from '../api/index.ts';
-import { isStaticPath, serveStatic } from '../ui/assets.ts';
+import { FAVICON_PATH, isStaticPath, serveFavicon, serveStatic } from '../ui/assets.ts';
 import { googleAuthorizationUrl, pkceChallenge, exchangeCode, verifyGoogleIdToken, type GoogleIdentity } from './google.ts';
 
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -320,7 +320,7 @@ function signInPage(): Response {
   const headers = noStoreHeaders();
   headers.set('content-type', 'text/html; charset=utf-8');
   headers.set('content-security-policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
-  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Sermons</title>${ICON_LINKS}<style>body{font:16px system-ui;background:#f4f6f2;color:#24382a;min-height:80vh;display:grid;place-items:center;margin:0}main{max-width:480px;padding:3rem;background:white;border:1px solid #dfe8df;border-radius:16px}a{display:inline-block;background:#376448;color:white;border-radius:8px;padding:12px 18px}small{display:block;margin-top:24px;color:#657769}</style><main><h1>My Sermons</h1><p>Every message has a story. Keep your archive private and discoverable.</p><a href="/auth/google/start">Continue with Google</a><small>Invite-only pilot. Original Google Docs and PDFs remain untouched.</small></main></html>`;
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My Sermons</title>${ICON_LINKS}<style>body{font:16px system-ui;background:#f4f6f2;color:#24382a;min-height:80vh;display:grid;place-items:center;margin:0}main{max-width:480px;padding:3rem;background:white;border:1px solid #dfe8df;border-radius:16px}a{display:inline-block;background:#376448;color:white;border-radius:8px;padding:12px 18px}small{display:block;margin-top:24px;color:#657769}</style><main><h1>My Sermons</h1><p>Sign in with Google to open your sermon archive.</p><a href="/auth/google/start">Continue with Google</a><small>Invite only. Your original Google Docs and PDFs are not changed.</small></main></html>`;
   return new Response(html, { status: 200, headers });
 }
 
@@ -331,6 +331,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (!origin || new URL(request.url).origin !== origin || !env.DB) return reply(503, { error: 'service_not_configured' });
   try {
     if (request.method === 'GET' && pathname === '/signin') return signInPage();
+    if ((request.method === 'GET' || request.method === 'HEAD') && pathname === FAVICON_PATH) return await serveFavicon(request, env);
     if ((request.method === 'GET' || request.method === 'HEAD') && isStaticPath(pathname)) {
       // The app shell and its assets are for signed-in users only. Signed out, `/` is the sign-in page.
       if (await session(request, env)) return await serveStatic(request, env);

@@ -322,6 +322,16 @@ test('the app shell links the icons and every decorative use is hidden from assi
   }
 });
 
+test('copy pass: no taglines or uppercase eyebrows over page headings ship', () => {
+  const files = [...walk(publicDir).filter(path => /\.(html|js)$/.test(path)), join(publicDir, '..', 'src', 'auth', 'app.ts')];
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    for (const banned of [/kept and found/i, /Every message/i, /THE LIVING LIBRARY/, /THE CHRONICLE/, /has a story/i, /'SERMON'/]) {
+      assert.ok(!banned.test(text), `${file} still has ${banned}`);
+    }
+  }
+});
+
 test('no asterisk, sparkle or starburst glyph ships under public/', () => {
   const banned = /[✳✱✲✴✻✼❊❋✦✧❇]/u;
   const files = walk(publicDir).filter(path => /\.(html|css|js|svg|json|txt|webmanifest)$/.test(path));
@@ -329,7 +339,7 @@ test('no asterisk, sparkle or starburst glyph ships under public/', () => {
   for (const file of files) assert.ok(!banned.test(readFileSync(file, 'utf8')), `${file} contains a banned glyph`);
 });
 
-test('signed-out visitors get the icon inline and still cannot fetch any asset', async () => {
+test('signed-out visitors get the icon inline, /favicon.ico, and no other asset', async () => {
   const f = await fixture();
   try {
     const calls = withAssets(f.env);
@@ -344,7 +354,13 @@ test('signed-out visitors get the icon inline and still cannot fetch any asset',
     assert.deepEqual(pngSize(Buffer.from(touch[1], 'base64')), [180, 180]);
     assert.match(page.headers.get('content-security-policy'), /img-src data:(;|$)/);
     assert.ok(!/img-src[^;]*(https?:|'self'|\*)/.test(page.headers.get('content-security-policy')));
-    for (const path of ['/favicon.ico', ...Object.keys(ICON_FILES).map(name => `/assets/${name}`), '/assets/icon-16.svg']) {
+    const ico = await f.call('GET', '/favicon.ico', null);
+    assert.equal(ico.status, 200);
+    assert.equal(ico.headers.get('content-type'), 'image/x-icon');
+    assert.match(ico.headers.get('cache-control'), /^public/);
+    assert.equal(ico.headers.get('vary'), null, 'the icon does not depend on the session');
+    assert.deepEqual(calls.splice(0), ['/favicon.ico']);
+    for (const path of ['/favicon.ico/', '/favicon.ico.bak', ...Object.keys(ICON_FILES).map(name => `/assets/${name}`), '/assets/icon-16.svg']) {
       const res = await f.call('GET', path, null);
       assert.equal(res.status, 404, path);
       assert.deepEqual(res.json, { error: 'not_found' }, path);
@@ -1026,7 +1042,7 @@ test('empty, error, access-denied and signed-out states render with the right ro
     f.db.execute('DELETE FROM sermon_scripture_refs WHERE workspace_id = ?', [ids.w1]);
     f.db.execute('DELETE FROM sermons WHERE workspace_id = ?', [ids.w1]);
     const empty = await mountApp(f, 'owner');
-    assert.match(textOf(empty.root), /first sermon/);
+    assert.match(textOf(empty.root), /No sermons yet/);
     assert.equal(one(empty.root, e => e.hasClass('state')).getAttribute('role'), 'status');
     assert.equal(buttons(empty.root, 'New draft').length >= 1, true);
     const emptyViewer = await mountApp(f, 'viewer');
@@ -1058,7 +1074,7 @@ test('empty, error, access-denied and signed-out states render with the right ro
   } finally { f.db.close(); }
 });
 
-test('loading shows a polite status while data is in flight', async () => {
+test('QA12: loading is announced once through #announcer, and the skeleton is not a live region', async () => {
   const f = await fixture();
   try {
     let release;
@@ -1069,13 +1085,18 @@ test('loading shows a polite status while data is in flight', async () => {
     globalThis.document = document;
     const root = document.make('main');
     document.body.append(root);
-    const app = createApp({ api: slow, root, headerRoot: document.make('header'), announcer: document.make('div'), toastRoot: document.make('div'),
+    const announcer = document.make('div');
+    const app = createApp({ api: slow, root, headerRoot: document.make('header'), announcer, toastRoot: document.make('div'),
       getHash: () => '', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-13', navigate() {} });
     const started = app.start();
     await settle();
     const loading = one(root, e => e.hasClass('state-loading'));
-    assert.equal(loading.getAttribute('role'), 'status');
+    assert.equal(loading.getAttribute('role'), null, 'not a status node inserted with its text');
+    assert.equal(loading.getAttribute('aria-live'), null);
     assert.equal(loading.getAttribute('aria-busy'), 'true');
+    assert.equal(textOf(announcer), 'Loading your library…');
+    app.render();
+    assert.equal(textOf(announcer), 'Loading your library…', 'a re-render while loading does not announce again');
     release();
     await started;
     assert.equal(all(root, e => e.hasClass('state-loading')).length, 0);

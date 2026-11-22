@@ -33,6 +33,23 @@ function notFound(): Response {
   });
 }
 
+/** The site icon at the root path browsers request on their own. It is public: the same picture is inlined on the sign-in page. */
+export const FAVICON_PATH = '/favicon.ico';
+
+/** Serve public/favicon.ico to anyone, signed in or not. Nothing else under public/ is reachable this way. */
+export async function serveFavicon(request: Request, env: Env): Promise<Response> {
+  const binding = (env as { ASSETS?: Fetcher }).ASSETS;
+  if (!binding) return notFound();
+  const found = await binding.fetch(new Request(new URL(FAVICON_PATH, request.url), { method: request.method }));
+  if (!found.ok) return notFound();
+  const headers = new Headers();
+  headers.set('content-type', 'image/x-icon');
+  headers.set('cache-control', 'public, max-age=86400');
+  headers.set('content-security-policy', "default-src 'none'");
+  headers.set('x-content-type-options', 'nosniff');
+  return new Response(request.method === 'HEAD' ? null : found.body, { status: 200, headers });
+}
+
 /** Serve one allowed static file with private caching and a strict CSP. Callers must have verified the session. */
 export async function serveStatic(request: Request, env: Env): Promise<Response> {
   const binding = (env as { ASSETS?: Fetcher }).ASSETS;

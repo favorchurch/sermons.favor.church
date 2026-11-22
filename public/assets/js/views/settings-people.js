@@ -2,7 +2,7 @@
 // The token is shown once in a dialog and kept nowhere else: not in state, the address or the page.
 import { h, field, openDialog } from '../dom.js';
 import { ROLE_LABELS, ROLE_ORDER, assignableRoles, canManageMember } from '../permissions.js';
-import { actions, confirmDialog, formErrorBox, wireForm } from './dialogs.js';
+import { Handled, actions, confirmDialog, formErrorBox, wireForm } from './dialogs.js';
 import { panel, sectionBox } from './panel.js';
 
 const roleOptions = (roles, selected) => roles.map(role => h('option', { value: role, selected: role === selected }, ROLE_LABELS[role]));
@@ -42,7 +42,17 @@ function inviteDialog({ client, role, toast, onDone }) {
   let invitation = null;
   wireForm({
     form, submit, formError, dialog: opened, fields: { email, role: roleField },
-    save: async () => { invitation = await client.invite(email.control.value, roleField.control.value); },
+    save: async () => {
+      // QA11: the server answers a bad address with a bare invalid_invitation, so check it here and tie the message to the field.
+      // Same rule as parseEmail in src/auth/security.ts.
+      const address = email.control.value.trim();
+      if (address.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+        email.setError('Enter their full email address, for example name@example.org.');
+        email.control.focus();
+        throw new Handled();
+      }
+      invitation = await client.invite(address, roleField.control.value);
+    },
     onDone: () => { tokenDialog({ invitation, toast }); invitation = null; return onDone(); }
   });
   return opened;

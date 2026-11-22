@@ -449,6 +449,16 @@ mark { background: #f6e3a1; color: var(--ink); border-radius: 3px; padding: 0 2p
   .library-rows .search label, .library-table .search label, .library-rows .sort label, .library-table .sort label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .library-rows .search input, .library-table .search input, .library-rows .sort select, .library-table .sort select, .library-rows .segmented button, .library-table .segmented button { height: 38px; }
   .library-rows .result-count, .library-table .result-count { margin: 0 0 6px; }
+  /* Quick rows on a phone: title, Scripture and series, then last preached and versions on one line (about 80 px a row, was 130). */
+  .quick-rows { gap: 6px; }
+  .quick-row { grid-template-columns: 10px auto minmax(0, 1fr) auto; gap: 2px 8px; padding: 10px 12px; align-items: baseline; }
+  .quick-row .row-dot { width: 10px; height: 10px; grid-row: 1; align-self: start; margin-top: 6px; }
+  .quick-row .row-main { grid-column: 2 / 4; grid-row: 1; }
+  .quick-row .row-last { grid-column: 2; grid-row: 2; }
+  .quick-row .row-versions { grid-column: 3; grid-row: 2; }
+  .quick-row .row-versions::before { content: '· ' / ''; }
+  .quick-row .row-last, .quick-row .row-versions { font-size: 12.5px; }
+  .quick-row .pill { grid-column: 4; grid-row: 1 / span 2; align-self: center; }
   .search-page { padding-top: 8px; gap: 8px; }
   .search-page h1 { font-size: 24px; letter-spacing: -.5px; line-height: 1.15; }
   .search-form { gap: 8px; }

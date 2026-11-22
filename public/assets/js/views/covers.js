@@ -10,7 +10,7 @@ export function coverArt(sermon) {
     h('span', { class: 'cover-line' }),
     h('span', { class: 'cover-art' }, h('i'), h('i'), h('i')),
     h('span', { class: 'cover-edge' }),
-    h('span', { class: 'cover-index' }, first ? first.toUpperCase() : 'SERMON'),
+    h('span', { class: 'cover-index' }, first ? first.toUpperCase() : null),
     h('span', { class: 'cover-series' }, sermon.series_name || sermon.title));
 }
 

@@ -38,6 +38,14 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     if (!announcer) return;
     announcer.textContent = announcer.textContent === message ? message + '\u00a0' : message;
   };
+  // QA12: announce a loading screen once when it appears, not again on each re-render while it stays up.
+  let loadingShown = null;
+  let loadingNext = null;
+  const loading = label => {
+    if (loadingShown !== label) announce(label);
+    loadingNext = label;
+    return loadingState(label);
+  };
   function toast(message) {
     if (!toastRoot) return;
     toastRoot.textContent = message;
@@ -208,7 +216,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       detail = { id: route.id, phase: 'loading' };
       loadDetail(route.id, false);
     }
-    if (detail.phase === 'loading') return loadingState('Loading sermon…');
+    if (detail.phase === 'loading') return loading('Loading sermon…');
     if (detail.phase === 'failed') {
       const { error } = detail;
       if (error instanceof ApiError && error.status === 404) {
@@ -295,7 +303,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     const focusKey = document.activeElement?.getAttribute?.('data-focus-key');
     const focused = rememberFocus();
     let view;
-    if (state.phase === 'boot' || state.phase === 'loading') view = loadingState('Loading your library…');
+    loadingNext = null;
+    if (state.phase === 'boot' || state.phase === 'loading') view = loading('Loading your library…');
     else if (state.phase === 'signedout') {
       view = deniedState({
         title: 'Your session has ended', body: 'Sign in again to keep working. Nothing you have saved is lost.',
@@ -314,6 +323,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       });
     } else if (state.phase === 'no-workspace') view = noWorkspaceView();
     else view = readyView(route);
+    loadingShown = loadingNext;
 
     mount(root, view);
     // Move focus to the new page only after a route change (never on first load or data refresh).
