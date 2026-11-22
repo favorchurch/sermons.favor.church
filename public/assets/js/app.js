@@ -38,6 +38,14 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     if (!announcer) return;
     announcer.textContent = announcer.textContent === message ? message + '\u00a0' : message;
   };
+  // QA12: announce a loading screen once when it appears, not again on each re-render while it stays up.
+  let loadingShown = null;
+  let loadingNext = null;
+  const loading = label => {
+    if (loadingShown !== label) announce(label);
+    loadingNext = label;
+    return loadingState(label);
+  };
   function toast(message) {
     if (!toastRoot) return;
     toastRoot.textContent = message;
@@ -162,7 +170,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function searchView(route) {
-    document.title = 'Search · My Sermons';
+    document.title = 'Search · Sermon Bank';
     const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
     if (route.q && search?.key !== key) loadSearch(route, key);
     return searchPage({ route, result: route.q ? search : null, announce, search: runSearch, retry: () => { search = null; render(); } });
@@ -208,7 +216,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       detail = { id: route.id, phase: 'loading' };
       loadDetail(route.id, false);
     }
-    if (detail.phase === 'loading') return loadingState('Loading sermon…');
+    if (detail.phase === 'loading') return loading('Loading sermon…');
     if (detail.phase === 'failed') {
       const { error } = detail;
       if (error instanceof ApiError && error.status === 404) {
@@ -224,7 +232,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       });
     }
     const { sermon } = detail;
-    document.title = `${sermon.title} · My Sermons`;
+    document.title = `${sermon.title} · Sermon Bank`;
     const done = message => afterWrite(message, sermon.id);
     return sermonPage({
       sermon, role: state.role, tab: route.tab || 'details', q: route.q,
@@ -270,7 +278,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     detail = null;
     if (route.name === 'search') return searchView(route);
     if (route.name === 'settings') {
-      document.title = 'Settings · My Sermons';
+      document.title = 'Settings · Sermon Bank';
       return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
     }
     if (route.name !== 'library') {
@@ -279,7 +287,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         actions: [h('a', { class: 'btn btn-primary', href: hrefFor({ name: 'library', view: 'covers' }) }, 'Go to the library')]
       });
     }
-    document.title = 'Library · My Sermons';
+    document.title = 'Library · Sermon Bank';
     const common = { state, announce, newDraft };
     return route.view === 'calendar'
       ? calendarPage({ route, today: today(), index: state.index })
@@ -295,7 +303,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     const focusKey = document.activeElement?.getAttribute?.('data-focus-key');
     const focused = rememberFocus();
     let view;
-    if (state.phase === 'boot' || state.phase === 'loading') view = loadingState('Loading your library…');
+    loadingNext = null;
+    if (state.phase === 'boot' || state.phase === 'loading') view = loading('Loading your library…');
     else if (state.phase === 'signedout') {
       view = deniedState({
         title: 'Your session has ended', body: 'Sign in again to keep working. Nothing you have saved is lost.',
@@ -314,6 +323,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       });
     } else if (state.phase === 'no-workspace') view = noWorkspaceView();
     else view = readyView(route);
+    loadingShown = loadingNext;
 
     mount(root, view);
     // Move focus to the new page only after a route change (never on first load or data refresh).

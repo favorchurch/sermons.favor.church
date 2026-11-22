@@ -88,8 +88,8 @@ export function libraryPage(ctx) {
     if (!shown.length) {
       results.replaceChildren(state.items.length === 0
         ? emptyState({
-          title: 'Your library is ready for its first sermon',
-          body: editor ? 'Start with a title. Add Scripture, versions and where it was preached whenever you are ready.' : 'Nothing has been added to this archive yet. Editors and owners can add sermons.',
+          title: 'No sermons yet',
+          body: editor ? 'Choose New draft to add one. Only a title is needed. Scripture, versions and places can be added later.' : 'Nothing has been added to this archive yet. Editors and owners can add sermons.',
           actions: editor ? [h('button', { type: 'button', class: 'btn btn-primary', onclick: ctx.newDraft }, 'New draft')] : []
         })
         : emptyState({
@@ -107,8 +107,7 @@ export function libraryPage(ctx) {
   const page = h('div', { class: `library library-${view}` },
     h('section', { class: `hero${view === 'rows' || view === 'table' ? ' hero-compact' : ''}` },
       h('div', { class: 'hero-copy' },
-        h('p', { class: 'eyebrow' }, 'THE LIVING LIBRARY'),
-        h('h1', null, 'Every message, ', h('em', null, 'kept and found.')),
+        h('h1', null, 'Library'),
         h('p', { class: 'hero-lede' },
           `${plural(totals.sermons, 'sermon')} · ${plural(totals.preachings, 'preaching')}`,
           totals.latest ? ` · last preached ${formatWhenShort(totals.latest.date, totals.latest.precision)}` : ''),

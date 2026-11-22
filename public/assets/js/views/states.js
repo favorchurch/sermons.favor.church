@@ -1,8 +1,10 @@
 // The four non-happy-path screens every view shares: loading, empty, error and access denied.
 import { h } from '../dom.js';
 
+// Not a live region (QA12): a status node inserted with its text is not reliably announced, so the app
+// announces the label through the persistent #announcer when the loading screen first appears.
 export function loadingState(label = 'Loading…') {
-  return h('section', { class: 'state state-loading', role: 'status', 'aria-live': 'polite', 'aria-busy': 'true' },
+  return h('section', { class: 'state state-loading', 'aria-busy': 'true' },
     h('p', { class: 'sr-only' }, label),
     h('div', { class: 'skeleton-grid', 'aria-hidden': 'true' },
       ...Array.from({ length: 8 }, () => h('div', { class: 'skeleton-card' }))));

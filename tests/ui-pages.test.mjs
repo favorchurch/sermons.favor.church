@@ -753,7 +753,11 @@ test('people: Owner invites with a one-time token that is shown once and can be 
     one(dialog, e => e.tag === 'form').dispatch('submit');
     await settle(); await settle();
     assert.ok(dialog.open);
-    assert.match(textOf(dialog), /email address and role/);
+    // QA11: the message is on the email field (aria-invalid, described by its error), and nothing reached the server.
+    const emailInput = one(dialog, e => e.getAttribute('name') === 'email');
+    assert.equal(emailInput.getAttribute('aria-invalid'), 'true');
+    assert.match(textOf(dialog), /Enter their full email address/);
+    assert.ok(!/email address and role/.test(textOf(dialog)), 'no form-level message');
     one(dialog, e => e.getAttribute('name') === 'email').value = 'outsider@example.test';
     one(dialog, e => e.tag === 'select').value = 'editor';
     one(dialog, e => e.tag === 'form').dispatch('submit');
@@ -1281,11 +1285,11 @@ test('settings pages move focus to the heading and set the document title', asyn
     const dom = await mountApp(f, 'owner', { hash: '' });
     dom.go('#/settings/workspace');
     assert.equal(dom.document.activeElement.getAttribute('id'), 'page-title');
-    assert.equal(dom.document.title, 'Settings · My Sermons');
+    assert.equal(dom.document.title, 'Settings · Sermon Bank');
     assert.equal(textOf(one(dom.root, e => e.tag === 'h1')), 'Settings');
     assert.equal(all(dom.root, e => e.tag === 'h1').length, 1, 'one h1 per page');
     dom.go('#/search');
-    assert.equal(dom.document.title, 'Search · My Sermons');
+    assert.equal(dom.document.title, 'Search · Sermon Bank');
     assert.equal(all(dom.root, e => e.tag === 'h1').length, 1);
   });
 });

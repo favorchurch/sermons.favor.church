@@ -44,7 +44,7 @@ export function sermonPage(ctx) {
     h('a', { class: 'back-link', href: hrefFor({ name: 'library', view: ctx.backView || 'covers' }) }, '← Library'),
     h('header', { class: `detail-head cover-${cover.palette}` },
       h('div', { class: 'detail-titles' },
-        sermon.series_name ? h('p', { class: 'eyebrow' }, sermon.series_name) : h('p', { class: 'eyebrow' }, 'SERMON'),
+        sermon.series_name ? h('p', { class: 'eyebrow' }, sermon.series_name) : null,
         h('h1', { id: 'sermon-title', tabindex: '-1' }, sermon.title),
         sermon.archived_at ? h('p', null, h('span', { class: 'pill pill-warn' }, 'Archived')) : null,
         h('ul', { class: 'chips', 'aria-label': 'Scripture and tags' },
