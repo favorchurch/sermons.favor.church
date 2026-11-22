@@ -401,7 +401,7 @@ async function qaTenancy() {
   check('TEN-13', 'Public sign-up: any signed-in account can create its own workspace (201 owner)', create.status === 201 && create.data?.role === 'owner', `status ${create.status}`);
   const again = await http('POST', '/api/workspaces', { cookie: asSession(A.fresh.session), body: { name: 'QA second workspace' } });
   const after = await http('GET', '/api/workspaces', { cookie: asSession(A.fresh.session) });
-  check('TEN-14', 'A second self-serve workspace is refused (409) and only one exists', again.status === 409 && after.data?.workspaces?.length === 1, `status ${again.status}, ${after.data?.workspaces?.length} workspaces`);
+  check('TEN-14', 'An account can create a second workspace (201) and both are listed', again.status === 201 && again.data?.role === 'owner' && after.data?.workspaces?.length === 2, `status ${again.status}, ${after.data?.workspaces?.length} workspaces`);
 }
 
 async function qaRequestRules() {

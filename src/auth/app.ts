@@ -151,29 +151,20 @@ async function listWorkspaces(env: Env, account: Account): Promise<Response> {
 }
 
 async function createWorkspace(request: Request, env: Env, actor: Account): Promise<Response> {
-  // Public sign-up: any verified Google account may create its one personal workspace.
+  // Public sign-up: any verified Google account may create workspaces, as many as it needs.
   const body = await readJson(request);
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
   if (name.length < 3 || name.length > 120) return reply(400, { error: 'invalid_workspace_name' });
-  const hasWorkspace = async () => Boolean(await env.DB.prepare(`SELECT 1 AS found FROM workspaces
-    WHERE owner_account_id = ? AND deleted_at IS NULL LIMIT 1`).bind(actor.id).first());
-  if (await hasWorkspace()) return reply(409, { error: 'personal_workspace_exists' });
   const id = crypto.randomUUID();
-  try {
-    await env.DB.batch([
-      env.DB.prepare(`INSERT INTO workspaces(id, name, owner_account_id) VALUES(?, ?, ?)`)
-        .bind(id, name, actor.id),
-      env.DB.prepare(`INSERT INTO workspace_memberships(workspace_id, account_id, role, accepted_at)
-        VALUES(?, ?, 'owner', CURRENT_TIMESTAMP)`).bind(id, actor.id),
-      env.DB.prepare(`INSERT INTO audit_events(id, workspace_id, actor_account_id, action, target_type, target_id)
-        VALUES(?, ?, ?, 'workspace.create', 'workspace', ?)`)
-        .bind(crypto.randomUUID(), id, actor.id, id)
-    ]);
-  } catch (error) {
-    // A concurrent create hits the unique active-owner index; report it as a conflict.
-    if (await hasWorkspace()) return reply(409, { error: 'personal_workspace_exists' });
-    throw error;
-  }
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO workspaces(id, name, owner_account_id) VALUES(?, ?, ?)`)
+      .bind(id, name, actor.id),
+    env.DB.prepare(`INSERT INTO workspace_memberships(workspace_id, account_id, role, accepted_at)
+      VALUES(?, ?, 'owner', CURRENT_TIMESTAMP)`).bind(id, actor.id),
+    env.DB.prepare(`INSERT INTO audit_events(id, workspace_id, actor_account_id, action, target_type, target_id)
+      VALUES(?, ?, ?, 'workspace.create', 'workspace', ?)`)
+      .bind(crypto.randomUUID(), id, actor.id, id)
+  ]);
   return reply(201, { id, name, role: 'owner' });
 }
 

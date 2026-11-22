@@ -246,6 +246,8 @@ test('async handler failures return a generic 503 instead of rejecting',async()=
   f.db.prepare=(sql)=>{const stmt=realPrepare(sql);
    if(!/FROM sermons|JOIN workspaces|FROM workspaces/i.test(sql))return stmt;
    return {bind:(...args)=>{const b=stmt.bind(...args);const fail=async()=>{throw new Error('boom owner@example.test SELECT secret')};return {...b,first:fail,all:fail,run:fail}}}};
+  // Workspace create writes through batch() only, so fail that too.
+  f.db.batch=async()=>{throw new Error('boom owner@example.test INSERT secret')};
   for(const [method,path,body] of [['GET','/api/workspaces/'+ids.w1+'/sermons'],['GET','/api/workspaces'],['POST','/api/workspaces',{name:'Fixture'}]]){
    const response=await handleRequest(f.request(method,path,ids.owner,body),f.env);
    assert.equal(response.status,503,method+' '+path);
@@ -254,16 +256,13 @@ test('async handler failures return a generic 503 instead of rejecting',async()=
  }finally{f.db.close()}
 });
 
-test('racing workspace creates conflict instead of making a second active workspace',async()=>{
+test('an owner can create a second workspace and both are listed',async()=>{
  const f=await fixture();try{
-  const realPrepare=f.db.prepare.bind(f.db);let hidden=true;
-  // Simulate the check-then-insert race: the first existence check misses the other request's workspace.
-  f.db.prepare=sql=>{const stmt=realPrepare(sql);
-   if(!hidden||!/FROM workspaces\s+WHERE owner_account_id/i.test(sql))return stmt;
-   hidden=false;return {bind:()=>({first:async()=>null})}};
   const res=await handleRequest(f.request('POST','/api/workspaces',ids.owner,{name:'Second Archive'}),f.env);
-  assert.equal(res.status,409);assert.equal((await res.json()).error,'personal_workspace_exists');
-  assert.equal(f.db.connection.prepare('SELECT COUNT(*) AS n FROM workspaces WHERE owner_account_id=? AND deleted_at IS NULL').get(ids.owner).n,1);
+  assert.equal(res.status,201);assert.equal((await res.json()).role,'owner');
+  assert.equal(f.db.connection.prepare('SELECT COUNT(*) AS n FROM workspaces WHERE owner_account_id=? AND deleted_at IS NULL').get(ids.owner).n,2);
+  const list=await (await handleRequest(f.request('GET','/api/workspaces',ids.owner),f.env)).json();
+  assert.ok(list.workspaces.some(w=>w.name==='Second Archive'&&w.role==='owner'));
  }finally{f.db.close()}
 });
 
