@@ -264,6 +264,61 @@ export async function searchPassages(
   return hits;
 }
 
+// ---- Quick metadata search ----
+
+export type QuickField = 'title' | 'series' | 'scripture' | 'tags' | 'passage';
+export type QuickHit = {
+  sermon_id: string; title: string; series_name: string | null; scripture_references: string[]; tags: string[];
+  archived: boolean; matched_on: QuickField[]; passage?: string;
+};
+
+/** Same folding as the library filter (library-model.js): decompose, drop combining marks, lowercase. */
+const foldLoose = (text: unknown): string => String(text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/**
+ * Sermons whose own metadata matches, for the fast first stage of search. Text matching is the
+ * library filter's: every whitespace-separated term must appear (case and diacritics folded) in the
+ * title, series, Scripture references or tags. A reference query also includes sermons whose passage
+ * overlaps it (matched_on 'passage'). Never reads note text.
+ */
+export async function searchSermonMetadata(
+  db: D1Database, workspaceId: string, text: string, query: SearchQuery, options: { includeArchived?: boolean; limit: number }
+): Promise<QuickHit[]> {
+  const terms = foldLoose(text).split(/\s+/).filter(Boolean);
+  const [rows, passages] = await Promise.all([
+    db.prepare(`SELECT s.id, s.title, s.series_name, s.tags_json, s.archived_at,
+        (SELECT json_group_array(reference_text) FROM (SELECT r.reference_text FROM sermon_scripture_refs r
+          WHERE r.workspace_id = s.workspace_id AND r.sermon_id = s.id ORDER BY r.position)) AS refs_json
+      FROM sermons s WHERE s.workspace_id = ? AND s.deleted_at IS NULL${options.includeArchived ? '' : ' AND s.archived_at IS NULL'}
+      ORDER BY s.created_at DESC, s.id DESC`)
+      .bind(workspaceId).all<{ id: string; title: string; series_name: string | null; tags_json: string; archived_at: string | null; refs_json: string }>(),
+    query.kind === 'reference'
+      ? searchPassages(db, workspaceId, query.reference, { includeArchived: options.includeArchived, limit: Infinity })
+      : Promise.resolve([])
+  ]);
+  const overlapping = new Map(passages.map(hit => [hit.sermon_id, hit.passage]));
+  const hits: QuickHit[] = [];
+  for (const row of rows.results || []) {
+    const refs = JSON.parse(row.refs_json) as string[], tags = JSON.parse(row.tags_json) as string[];
+    const fields: [QuickField, string][] = [
+      ['title', foldLoose(row.title)], ['series', foldLoose(row.series_name)],
+      ['scripture', foldLoose(refs.join(' \n '))], ['tags', foldLoose(tags.join(' \n '))]
+    ];
+    const haystack = fields.map(([, value]) => value).join(' \n ');
+    const textMatch = terms.length > 0 && terms.every(term => haystack.includes(term));
+    const passage = overlapping.get(row.id);
+    if (!textMatch && passage === undefined) continue;
+    const matched_on = textMatch ? fields.filter(([, value]) => terms.some(term => value.includes(term))).map(([field]) => field) : [];
+    if (passage !== undefined) matched_on.push('passage');
+    hits.push({
+      sermon_id: row.id, title: row.title, series_name: row.series_name, scripture_references: refs, tags,
+      archived: row.archived_at !== null, matched_on, ...(passage === undefined ? {} : { passage })
+    });
+    if (hits.length >= options.limit) break;
+  }
+  return hits;
+}
+
 // ---- Per-version status ----
 
 export type VersionStatus =

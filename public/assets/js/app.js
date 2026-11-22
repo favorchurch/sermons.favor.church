@@ -12,6 +12,7 @@ import { libraryPage } from './views/library.js';
 import { calendarPage } from './views/calendar.js';
 import { sermonPage } from './views/sermon.js';
 import { searchPage, notesPanel } from './views/search.js';
+import { shapeSearch, stagesFor } from './search-model.js';
 import { settingsPage } from './views/settings.js';
 import { joinForm } from './views/join.js';
 import { loadingState, emptyState, errorState, deniedState } from './views/states.js';
@@ -26,7 +27,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   };
   let client = null;
   let detail = null;
-  let search = null; // { key, phase, data?, error? } for the search page
+  let search = null; // { key, scope, quick, deep } for the search page; each stage is { phase, data?, error? }
   let notes = null; // the same, for a sermon's Find in notes tab
   let lastSignature = null;
   let headerSignature = null;
@@ -175,22 +176,52 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
 
   const runSearch = ({ q, scope, archived }) => visit(hrefFor({ name: 'search', q: cleanQuery(q), scope, archived }), () => { search = null; });
 
-  async function loadSearch(route, key) {
-    search = { key, phase: 'loading' };
-    try {
-      const data = await client.search(route.q, { archived: route.archived });
-      if (search?.key === key) search = { key, phase: 'ready', data };
-    } catch (error) {
-      if (search?.key === key) search = { key, phase: 'failed', error };
-    }
-    if (search?.key === key && parseRoute(getHash()).name === 'search') render();
+  /**
+   * The search page runs two requests that land on their own: the quick sermon matches and the deep note
+   * matches. Each is its own {phase, data?, error?} on the run, so one can render, fail or be retried
+   * without the other. A response only counts while its run is still the page's current search.
+   */
+  function runStage(run, stage, route) {
+    const entry = { phase: 'loading' };
+    run[stage] = entry;
+    const request = stage === 'quick' ? client.quickSearch : client.search;
+    request(route.q, { archived: route.archived }).then(
+      data => { entry.phase = 'ready'; entry.data = data; },
+      error => { entry.phase = 'failed'; entry.error = error; }
+    ).then(() => {
+      if (search !== run) return;
+      const current = parseRoute(getHash());
+      if (current.name !== 'search') return;
+      if (entry.phase === 'ready') announceSearch(run, current);
+      render();
+    });
+  }
+
+  /** One announcement per stage that lands. The "not a Bible reference" notice is spoken once per search. */
+  function announceSearch(run, route) {
+    const shaped = shapeSearch({ scope: route.scope, quick: run.quick, deep: run.deep, q: route.q });
+    if (!shaped.needsReference) announce(shaped.summary);
+    else if (!run.announcedNotice) { run.announcedNotice = true; announce(shaped.notice); }
   }
 
   function searchView(route) {
     document.title = 'Search · Sermon Bank';
-    const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
-    if (route.q && search?.key !== key) loadSearch(route, key);
-    return searchPage({ route, result: route.q ? search : null, announce, search: runSearch, retry: () => { search = null; render(); } });
+    let run = null;
+    if (route.q) {
+      const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
+      if (search?.key !== key) { search = { key, scope: route.scope, quick: null, deep: null }; announce('Searching…'); }
+      run = search;
+      const needs = stagesFor(route.scope);
+      if (needs.deep && !run.deep) runStage(run, 'deep', route);
+      if (needs.quick && !run.quick) runStage(run, 'quick', route);
+      // Changing scope re-filters what is already here, so say what the new scope shows.
+      if (run.scope !== route.scope) { run.scope = route.scope; if (run.quick || run.deep) announceSearch(run, route); }
+    }
+    const retry = stage => () => { if (run) run[stage] = null; render(); };
+    return searchPage({
+      route, quick: run?.quick ?? null, deep: run?.deep ?? null, search: runSearch,
+      retryQuick: retry('quick'), retryDeep: retry('deep')
+    });
   }
 
   async function loadNotes(route, key) {

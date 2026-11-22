@@ -102,7 +102,7 @@ const textOf = node => node?.textContent ?? '';
 
 // ---------------------------------------------------------------- modules under test
 
-const { highlightParts, shapeResults, noteReason, truncated } = await import(J('search-model.js'));
+const { highlightParts, shapeSearch, stagesFor, matchedOn, noteReason, truncated } = await import(J('search-model.js'));
 const { parseRoute, hrefFor, notesHref } = await import(J('router.js'));
 const { rowActions, filterRows, pageOf, flagLabel, statusInfo, PAGE_SIZE } = await import(J('import-model.js'));
 const perms = await import(J('permissions.js'));
@@ -148,6 +148,8 @@ async function mountApp(f, actor, { hash = '', api, today = '2026-11-13' } = {})
 const buttons = (node, label) => all(node, e => e.tag === 'button' && textOf(e).trim() === label);
 const byAction = (node, action) => all(node, e => e.getAttribute('data-action') === action);
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+/** Both search groups are on the page and neither is still waiting for its request. */
+const searchDone = dom => all(dom.root, e => e.hasClass('result-group')).length > 0 && all(dom.root, e => e.getAttribute('aria-busy') === 'true').length === 0;
 async function until(check, message) {
   for (let i = 0; i < 150; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 10)); }
   assert.fail(message);
@@ -208,17 +210,43 @@ test('highlightParts splits text on ranges, merges overlaps and drops bad ranges
   assert.equal(highlightParts(text, [{ start: 4, end: 9 }]).map(p => p.text).join(''), text);
 });
 
-test('scope decides which result groups are shown', () => {
-  const data = { query: { kind: 'reference', label: 'John 3:16' }, metadataMatches: [{ sermon_id: 'a' }], notesMatches: [{ sermon_id: 'b' }] };
-  assert.deepEqual(shapeResults(data, 'everything'), { reference: true, needsReference: false, showMetadata: true, metadata: data.metadataMatches, notes: data.notesMatches });
-  assert.deepEqual(shapeResults(data, 'bible').metadata, data.metadataMatches);
-  const inside = shapeResults(data, 'notes');
-  assert.deepEqual([inside.showMetadata, inside.metadata.length, inside.notes.length], [false, 0, 1], 'Inside notes hides passage matches');
-  const phrase = { query: { kind: 'phrase', label: 'grace' }, metadataMatches: [], notesMatches: [{ sermon_id: 'b' }] };
-  assert.equal(shapeResults(phrase, 'bible').needsReference, true);
-  assert.equal(shapeResults(phrase, 'bible').notes.length, 0);
-  assert.equal(shapeResults(phrase, 'everything').showMetadata, false, 'phrases have no passage group');
-  assert.deepEqual(shapeResults(null, 'everything').notes, []);
+const ready = data => ({ phase: 'ready', data });
+const refQuery = { kind: 'reference', label: 'John 3:16' };
+
+test('scope decides which result groups are shown, and each stage counts only when it has landed', () => {
+  const quick = ready({ query: refQuery, matches: [{ sermon_id: 'a' }, { sermon_id: 'c' }], limit: 50 });
+  const deep = ready({ query: refQuery, metadataMatches: [{ sermon_id: 'a' }], notesMatches: [{ sermon_id: 'b' }], limit: 50 });
+  assert.deepEqual(stagesFor('everything'), { quick: true, deep: true });
+  assert.deepEqual(stagesFor('bible'), { quick: true, deep: true });
+  assert.deepEqual(stagesFor('notes'), { quick: false, deep: true }, 'Inside notes needs no quick request');
+  const everything = shapeSearch({ scope: 'everything', quick, deep, q: 'John 3:16' });
+  assert.deepEqual([everything.showSermons, everything.sermons.length, everything.notes.length, everything.pending], [true, 2, 1, false]);
+  assert.equal(everything.summary, '3 results for Bible reference John 3:16');
+  assert.equal(shapeSearch({ scope: 'bible', quick, deep }).sermons.length, 2);
+  const inside = shapeSearch({ scope: 'notes', quick, deep });
+  assert.deepEqual([inside.showSermons, inside.sermons.length, inside.notes.length], [false, 0, 1], 'Inside notes shows only the notes group');
+  // Quick landed, deep still pending: the count is what is shown so far.
+  const early = shapeSearch({ scope: 'everything', quick, deep: { phase: 'loading' }, q: 'John 3:16' });
+  assert.deepEqual([early.sermons.length, early.notes.length, early.pending, early.summary], [2, 0, true, '2 results so far for Bible reference John 3:16']);
+  // A failed stage shows nothing and is not "pending", and the other stage still counts.
+  const failed = shapeSearch({ scope: 'everything', quick: { phase: 'failed', error: new ApiError(503) }, deep, q: 'x' });
+  assert.deepEqual([failed.sermons.length, failed.notes.length, failed.pending, failed.summary], [0, 1, false, '1 result for Bible reference John 3:16']);
+  // A scope that did not ask for quick is not waiting for it.
+  assert.equal(shapeSearch({ scope: 'notes', quick: null, deep }).pending, false);
+  assert.equal(shapeSearch({ scope: 'everything', quick: null, deep }).pending, true);
+  // Bible verses needs a reference, known from whichever stage answered first.
+  const phrase = { query: { kind: 'text', label: 'grace' } };
+  assert.equal(shapeSearch({ scope: 'bible', quick: ready({ ...phrase, matches: [] }), deep: null, q: 'grace' }).needsReference, true);
+  assert.equal(shapeSearch({ scope: 'bible', quick: null, deep: ready({ ...phrase, notesMatches: [] }), q: 'grace' }).needsReference, true);
+  assert.equal(shapeSearch({ scope: 'bible', quick: null, deep: null, q: 'grace' }).needsReference, false, 'unknown until a stage lands');
+  assert.match(shapeSearch({ scope: 'bible', quick: ready(phrase), deep: null, q: 'grace' }).notice, /“grace” is not a Bible reference/);
+  assert.equal(shapeSearch({ scope: 'everything', quick: ready(phrase), deep: null, q: 'grace' }).needsReference, false);
+  assert.deepEqual(shapeSearch({ scope: 'everything', quick: null, deep: null }).sermons, []);
+  assert.equal(matchedOn(['title', 'tags']), 'Matched in title and tags');
+  assert.equal(matchedOn(['title', 'series', 'passage']), 'Matched in title, series and passage');
+  assert.equal(matchedOn(['scripture']), 'Matched in Scripture');
+  assert.equal(matchedOn(['bogus']), '');
+  assert.equal(matchedOn(null), '');
   assert.match(noteReason('pending'), /consent/);
   assert.match(noteReason('revoked'), /revoked/);
   assert.match(noteReason('unindexed'), /not been indexed/);
@@ -386,17 +414,20 @@ test('the header search box goes to the search page', async () => {
 
 const groupItems = (group) => all(group, e => e.hasClass('result-item'));
 
-test('search separates Sermon passage (metadata) from Found in notes, with version and highlighted excerpt', async () => {
+test('search separates Sermons (metadata) from Found in notes, with version and highlighted excerpt', async () => {
   await withLibrary(async f => {
     const dom = await mountApp(f, 'viewer', { hash: '#/search?q=John%203:16&scope=everything' });
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 2, 'two result groups');
-    const passages = section(dom.root, 'Sermon passage (metadata)');
+    await until(() => searchDone(dom), 'both groups landed');
+    assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 2);
+    const passages = section(dom.root, 'Sermons');
     const notes = section(dom.root, 'Found in notes');
     assert.notEqual(passages, notes);
     assert.deepEqual(groupItems(passages).map(item => textOf(one(item, e => e.hasClass('result-title')))).sort(), ['Alpha Hope Sermon', 'Beta Light Sermon']);
     assert.match(textOf(passages), /Its notes were not read/);
     assert.equal(all(passages, e => e.tag === 'mark').length, 0, 'passage matches never show note text');
     assert.ok(!textOf(passages).includes('God so loved'));
+    assert.match(textOf(passages), /Matched in Scripture and passage/);
+    assert.match(textOf(passages), /Matched in passage \(John 3:14-17\)/);
     // The notes group has only the sermon whose notes contain the reference, with its version name.
     const hits = groupItems(notes);
     assert.equal(hits.length, 1);
@@ -418,10 +449,12 @@ test('search separates Sermon passage (metadata) from Found in notes, with versi
 test('scopes: Everything, Bible verses and Inside notes', async () => {
   await withLibrary(async f => {
     const dom = await mountApp(f, 'owner', { hash: '#/search?q=John%203:16&scope=notes' });
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length > 0, 'results');
-    assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 1, 'Inside notes hides passage matches');
+    await until(() => searchDone(dom), 'results');
+    assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 1, 'Inside notes shows only the notes group');
     assert.match(textOf(dom.root), /Found in notes/);
-    assert.ok(!textOf(dom.root).includes('Sermon passage (metadata)'));
+    assert.ok(!textOf(dom.root).includes('Sermons'));
+    const quickCalls = () => dom.calls.filter(c => c.includes('/search/quick?')).length;
+    assert.equal(quickCalls(), 0, 'Inside notes does not ask for the quick pass');
     assert.deepEqual(all(dom.root, e => e.getAttribute('data-scope')).map(e => [e.getAttribute('data-scope'), e.getAttribute('aria-pressed')]),
       [['everything', 'false'], ['bible', 'false'], ['notes', 'true']]);
 
@@ -429,22 +462,25 @@ test('scopes: Everything, Bible verses and Inside notes', async () => {
     const searches = () => dom.calls.filter(c => c.includes('/search?')).length;
     assert.equal(searches(), 1);
     one(dom.root, e => e.getAttribute('data-scope') === 'bible').dispatch('click');
-    await settle();
+    await until(() => searchDone(dom), 'sermons group landed');
     assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 2);
-    assert.equal(searches(), 1, 'scope change does not search again');
+    assert.equal(searches(), 1, 'scope change does not run the deep search again');
+    assert.equal(quickCalls(), 1, 'the quick pass runs once the scope needs it');
     one(dom.root, e => e.getAttribute('data-scope') === 'everything').dispatch('click');
     await settle();
     assert.equal(searches(), 1);
+    assert.equal(quickCalls(), 1, 'and is not repeated');
 
     // A plain phrase: Bible verses explains itself, Everything shows notes only.
     dom.go('#/search?q=lanterns&scope=bible');
     await until(() => /is not a Bible reference/.test(textOf(dom.root)), 'reference hint');
     assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 0);
     dom.go('#/search?q=lanterns&scope=everything');
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'phrase results');
+    await until(() => searchDone(dom), 'phrase results');
     const hits = groupItems(section(dom.root, 'Found in notes'));
     assert.deepEqual(hits.map(item => textOf(one(item, e => e.hasClass('result-title')))).sort(), ['Alpha Hope Sermon', 'Beta Light Sermon']);
-    assert.ok(!textOf(dom.root).includes('Sermon passage (metadata)'), 'a phrase has no passage group');
+    assert.equal(groupItems(section(dom.root, 'Sermons')).length, 0, 'no sermon metadata says lanterns');
+    assert.match(textOf(section(dom.root, 'Sermons')), /No sermon title, series, Scripture or tag matches this/);
   });
 });
 
@@ -452,10 +488,11 @@ test('search handles no query, no results, archived sermons, and server errors',
   await withLibrary(async f => {
     const dom = await mountApp(f, 'editor', { hash: '#/search' });
     assert.match(textOf(dom.root), /Notes only appear once an Owner has allowed them/);
+    assert.match(textOf(dom.root), /titles, series, Scripture, tags and the text of indexed notes/i, 'the idle copy says what is searched');
     assert.equal(dom.calls.filter(c => c.includes('/search?')).length, 0, 'no request without a query');
 
     dom.go('#/search?q=zzzznotthere&scope=everything');
-    await until(() => /0 results/.test(textOf(dom.root)), 'empty result');
+    await until(() => /^0 results for/.test(textOf(one(dom.root, e => e.hasClass('result-count')))), 'empty result');
     assert.match(textOf(dom.root), /No indexed notes contain this/);
 
     // Archived sermons are excluded until asked for.
@@ -475,7 +512,7 @@ test('search handles no query, no results, archived sermons, and server errors',
 
     // Too many words is rejected by the server and shown as a fixed message.
     dom.go('#/search?q=' + encodeURIComponent('one two three four five six seven eight nine ten eleven twelve thirteen'));
-    await until(() => all(dom.root, e => e.hasClass('inline-error')).length === 1, 'validation error');
+    await until(() => all(dom.root, e => e.hasClass('inline-error')).length === 2, 'both stages show the validation error');
     assert.match(textOf(dom.root), /Check the search and try again/);
 
     // A failing server: alert with Try again that runs the search once more.
@@ -483,23 +520,25 @@ test('search handles no query, no results, archived sermons, and server errors',
     const base = realApi(f, 'editor');
     const flaky = { ...base, get: async path => { if (failing && path.includes('/search?')) throw new ApiError(503, 'temporarily_unavailable'); return base.get(path); } };
     const broken = await mountApp(f, 'editor', { api: flaky, hash: '#/search?q=lanterns' });
-    await until(() => all(broken.root, e => e.hasClass('inline-error')).length === 1, 'error shown');
+    await until(() => all(broken.root, e => e.hasClass('inline-error')).length === 1 && all(broken.root, e => e.getAttribute('aria-busy') === 'true').length === 0, 'error shown');
     assert.equal(one(broken.root, e => e.hasClass('inline-error')).getAttribute('role'), 'alert');
     assert.match(textOf(broken.root), /Search could not run/);
     failing = false;
     buttons(broken.root, 'Try again')[0].dispatch('click');
-    await until(() => all(broken.root, e => e.hasClass('result-group')).length === 1, 'retry works');
+    await until(() => all(broken.root, e => e.hasClass('inline-error')).length === 0 && searchDone(broken), 'retry works');
+    assert.equal(groupItems(section(broken.root, 'Found in notes')).length, 1, 'the archived sermon stays out');
   });
 });
 
 test('searching again with the same text runs the search again', async () => {
   await withLibrary(async f => {
     const dom = await mountApp(f, 'owner', { hash: '#/search?q=lanterns&scope=everything' });
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'first run');
+    await until(() => searchDone(dom), 'first run');
     const count = () => dom.calls.filter(c => c.includes('/search?')).length;
-    assert.equal(count(), 1);
+    const quickCount = () => dom.calls.filter(c => c.includes('/search/quick?')).length;
+    assert.deepEqual([count(), quickCount()], [1, 1]);
     one(dom.root, e => e.tag === 'form').dispatch('submit'); // same address
-    await until(() => count() === 2, 'second request');
+    await until(() => count() === 2 && quickCount() === 2, 'second request for both stages');
   });
 });
 
@@ -1370,22 +1409,30 @@ test('Find in notes run again with the same text asks the server again', async (
   });
 });
 
-test('search says when a group hit the server cap', async () => {
-  assert.equal(truncated({ limit: 50, metadataMatches: [], notesMatches: new Array(50).fill({}) }), true);
-  assert.equal(truncated({ limit: 50, metadataMatches: new Array(50).fill({}), notesMatches: [] }), true);
-  assert.equal(truncated({ limit: 50, metadataMatches: [], notesMatches: new Array(49).fill({}) }), false);
-  assert.equal(truncated({ metadataMatches: [], notesMatches: [] }), false);
-  assert.equal(truncated(null), false);
+test('search says when a stage hit the server cap', async () => {
+  const stage = (key, count, limit) => ({ phase: 'ready', data: { limit, [key]: new Array(count).fill({}) } });
+  assert.equal(truncated(stage('notesMatches', 50, 50), 'notesMatches'), true);
+  assert.equal(truncated(stage('matches', 50, 50), 'matches'), true);
+  assert.equal(truncated(stage('notesMatches', 49, 50), 'notesMatches'), false);
+  assert.equal(truncated(stage('matches', 50, 50), 'notesMatches'), false, 'each stage is judged on its own list');
+  assert.equal(truncated({ phase: 'ready', data: { matches: [] } }, 'matches'), false);
+  assert.equal(truncated({ phase: 'loading' }, 'matches'), false);
+  assert.equal(truncated(null, 'matches'), false);
   await withLibrary(async f => {
     const base = realApi(f, 'owner');
     const capped = { ...base, get: async path => {
       const data = await base.get(path);
-      return path.includes('/search?') ? { ...data, limit: 1 } : data;
+      return path.includes('/search?') || path.includes('/search/quick?') ? { ...data, limit: 1 } : data;
     } };
+    const hint = node => all(node, e => e.tag === 'p' && /^Showing the first 1\./.test(textOf(e))).length;
     const dom = await mountApp(f, 'owner', { api: capped, hash: '#/search?q=lanterns' });
-    await until(() => /Showing the first 1 in each group/.test(textOf(dom.root)), 'cap hint');
+    await until(() => searchDone(dom), 'results');
+    assert.deepEqual([hint(section(dom.root, 'Found in notes')), hint(section(dom.root, 'Sermons'))], [1, 0], 'only the notes group hit the cap');
+    const byTitle = await mountApp(f, 'owner', { api: capped, hash: '#/search?q=beta' });
+    await until(() => searchDone(byTitle), 'results');
+    assert.deepEqual([hint(section(byTitle.root, 'Sermons')), hint(section(byTitle.root, 'Found in notes'))], [1, 0], 'only the sermons group hit the cap');
     const roomy = await mountApp(f, 'owner', { hash: '#/search?q=lanterns' });
-    await until(() => all(roomy.root, e => e.hasClass('result-group')).length === 1, 'results');
+    await until(() => searchDone(roomy), 'results');
     assert.ok(!/Showing the first/.test(textOf(roomy.root)));
   });
 });
@@ -1513,7 +1560,7 @@ test('text typed in the header search box survives a result arriving', async () 
     box.value = 'half a thought';
     box.focus();
     release(); // the search page re-renders when its answer lands
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'results');
+    await until(() => searchDone(dom), 'results');
     assert.equal(one(dom.header, e => e.tag === 'input'), box, 'the header box was not rebuilt');
     assert.equal(box.value, 'half a thought');
     assert.equal(dom.document.activeElement, box, 'and it kept focus');
@@ -1528,7 +1575,7 @@ test('text typed in the header search box survives a result arriving', async () 
 test('QA6/QA7: search results are spoken through the page live region and the search box keeps focus', async () => {
   await withLibrary(async f => {
     const dom = await mountApp(f, 'owner', { hash: '#/search?q=lanterns&scope=everything' });
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'first run');
+    await until(() => searchDone(dom), 'first run');
     assert.match(textOf(dom.announcer), /^\d+ results? for “lanterns”/, 'the count reaches the persistent #announcer');
     assert.equal(all(dom.root, e => e.getAttribute('role') === 'status').length, 0, 'no live region is created and destroyed with the results');
     // Search again from the keyboard: the form re-renders, and focus must stay in the search box.
@@ -1536,7 +1583,7 @@ test('QA6/QA7: search results are spoken through the page live region and the se
     box.focus();
     one(dom.root, e => e.tag === 'form').dispatch('submit');
     await until(() => dom.calls.filter(c => c.includes('/search?')).length === 2, 'second request');
-    await until(() => all(dom.root, e => e.hasClass('result-group')).length === 1, 'second result');
+    await until(() => searchDone(dom), 'second result');
     const active = dom.document.activeElement;
     assert.ok(active.isConnected, 'focus is not left on the removed search box');
     assert.equal(active.getAttribute('id'), 'search-q');
@@ -1552,5 +1599,170 @@ test('QA6: Find in notes announces how many versions matched, and the loading st
     await until(() => /Found in \d+ versions? of \d+/.test(textOf(dom.announcer)), 'count announced');
     assert.equal(all(dom.root, e => e.getAttribute('role') === 'status').length, 0);
     assert.match(textOf(one(dom.root, e => e.hasClass('result-count'))), /^Found in 1 version of/);
+  });
+});
+
+// ================================================================= two-stage search (quick sermons, deep notes)
+
+const itemTitles = group => groupItems(group).map(item => textOf(one(item, e => e.hasClass('result-title'))));
+/** Record every message the page speaks through the live region. */
+function recordAnnouncements(dom) {
+  const spoken = [];
+  const original = Object.getOwnPropertyDescriptor(FakeElement.prototype, 'textContent');
+  Object.defineProperty(dom.announcer, 'textContent', {
+    configurable: true,
+    get() { return original.get.call(this); },
+    set(value) { spoken.push(String(value).replace(/\u00a0/g, '')); original.set.call(this, value); }
+  });
+  return spoken;
+}
+
+test('two-stage search: sermons render when the quick request lands, notes follow when the deep one does', async () => {
+  await withLibrary(async f => {
+    const { api, release, calls } = gatedApi(f, 'viewer', /\/search\?q=John/);
+    const dom = await mountApp(f, 'viewer', { api, hash: '#/search' });
+    const spoken = recordAnnouncements(dom);
+    dom.go('#/search?q=John%203:16&scope=everything');
+    // Both requests go out together.
+    assert.ok(calls.some(c => c.includes('/search/quick?')), 'quick request sent');
+    assert.ok(calls.some(c => /\/search\?q=/.test(c)), 'deep request sent');
+    await until(() => itemTitles(section(dom.root, 'Sermons')).length === 2, 'metadata results in the DOM while the deep request is pending');
+    const notes = section(dom.root, 'Found in notes');
+    assert.equal(groupItems(notes).length, 0);
+    const busy = all(notes, e => e.getAttribute('aria-busy') === 'true');
+    assert.equal(busy.length, 1, 'one muted hint in the notes group');
+    assert.match(textOf(busy[0]), /^Searching notes…$/);
+    assert.ok(busy[0].hasClass('muted'));
+    assert.deepEqual(itemTitles(section(dom.root, 'Sermons')).sort(), ['Alpha Hope Sermon', 'Beta Light Sermon']);
+    assert.equal(textOf(one(dom.root, e => e.hasClass('result-count'))), '2 results so far for Bible reference John 3:16');
+    dom.app.render(); dom.app.render(); // re-rendering while waiting speaks nothing more
+    release();
+    await until(() => searchDone(dom), 'notes landed');
+    assert.equal(itemTitles(section(dom.root, 'Found in notes')).length, 1);
+    assert.equal(itemTitles(section(dom.root, 'Sermons')).length, 2, 'the sermons stay');
+    assert.equal(textOf(one(dom.root, e => e.hasClass('result-count'))), '3 results for Bible reference John 3:16', 'the count updates when the deep pass lands');
+    dom.app.render(); dom.app.render();
+    assert.deepEqual(spoken, ['Searching…', '2 results so far for Bible reference John 3:16', '3 results for Bible reference John 3:16'],
+      'the live region speaks once per stage');
+    // Result items still link to the sermon's notes as before.
+    const first = groupItems(section(dom.root, 'Sermons'))[0];
+    assert.match(one(first, e => e.hasClass('result-title')).getAttribute('href'), /\?tab=notes&q=John\+3%3A16$/);
+  });
+});
+
+test('two-stage search: the quick group can also arrive after the deep one', async () => {
+  await withLibrary(async f => {
+    const { api, release } = gatedApi(f, 'owner', /\/search\/quick\?q=lanterns/);
+    const dom = await mountApp(f, 'owner', { api, hash: '#/search?q=lanterns&scope=everything' });
+    await until(() => itemTitles(section(dom.root, 'Found in notes')).length === 2, 'notes rendered first');
+    assert.equal(all(section(dom.root, 'Sermons'), e => e.getAttribute('aria-busy') === 'true').length, 1);
+    assert.match(textOf(section(dom.root, 'Sermons')), /Searching sermons…/);
+    release();
+    await until(() => searchDone(dom), 'sermons landed');
+    assert.match(textOf(section(dom.root, 'Sermons')), /No sermon title, series, Scripture or tag matches this/);
+  });
+});
+
+test('two-stage search: a later search drops an earlier search\'s late quick or deep response', async () => {
+  await withLibrary(async f => {
+    // Hold both stages of the first query. A different query runs to completion, then the first one lands.
+    const { api, release } = gatedApi(f, 'owner', /\/search(\/quick)?\?q=Alpha&/);
+    const dom = await mountApp(f, 'owner', { api, hash: '#/search' });
+    const spoken = recordAnnouncements(dom);
+    dom.go('#/search?q=Alpha&scope=everything');
+    dom.go('#/search?q=Beta&scope=everything');
+    await until(() => searchDone(dom), 'newer search done');
+    const snapshot = textOf(one(dom.root, e => e.getAttribute('id') === 'search-results'));
+    assert.match(snapshot, /Beta Light Sermon/);
+    assert.ok(!snapshot.includes('Alpha Hope Sermon'));
+    release();
+    await settle(); await settle();
+    assert.equal(textOf(one(dom.root, e => e.getAttribute('id') === 'search-results')), snapshot, 'late responses changed nothing');
+    assert.equal(one(dom.root, e => e.getAttribute('id') === 'search-q').value, 'Beta');
+    assert.ok(!spoken.some(message => message.includes('“Alpha”')), 'nothing was announced for the dropped search');
+    assert.ok(spoken.at(-1).includes('“Beta”'));
+  });
+});
+
+test('two-stage search: a late response is dropped when the same query is searched again', async () => {
+  await withLibrary(async f => {
+    const base = realApi(f, 'owner');
+    const held = [];
+    const slow = { ...base, get: async path => {
+      const data = await base.get(path);
+      if (!path.includes('/search?q=lanterns')) return data;
+      if (held.length === 0) { await new Promise(resolve => held.push(resolve)); return { ...data, notesMatches: [{ ...data.notesMatches[0], sermon_title: 'STALE TITLE' }] }; }
+      return data;
+    } };
+    const dom = await mountApp(f, 'owner', { api: slow, hash: '#/search?q=lanterns&scope=everything' });
+    await until(() => held.length === 1 && itemTitles(section(dom.root, 'Sermons')).length === 0 && all(dom.root, e => e.getAttribute('aria-busy') === 'true').length === 1, 'first deep request held');
+    one(dom.root, e => e.tag === 'form').dispatch('submit'); // same address: runs both stages again
+    await until(() => searchDone(dom), 'second run done');
+    held[0]();
+    await settle(); await settle();
+    assert.ok(!textOf(dom.root).includes('STALE TITLE'), 'the first run never overwrites the second');
+  });
+});
+
+test('two-stage search: each stage fails on its own and retries on its own', async () => {
+  await withLibrary(async f => {
+    const base = realApi(f, 'owner');
+    const fail = { quick: false, deep: false };
+    const seen = [];
+    const flaky = { ...base, get: async path => {
+      seen.push(path);
+      if (fail.deep && /\/search\?q=/.test(path)) throw new ApiError(503, 'temporarily_unavailable');
+      if (fail.quick && path.includes('/search/quick?')) throw new ApiError(503, 'temporarily_unavailable');
+      return base.get(path);
+    } };
+    const stageCalls = () => ({ quick: seen.filter(p => p.includes('/search/quick?')).length, deep: seen.filter(p => /\/search\?q=/.test(p)).length });
+
+    // Deep fails: the sermons stay, the notes group has the error and Try again.
+    fail.deep = true;
+    const dom = await mountApp(f, 'owner', { api: flaky, hash: '#/search?q=John%203:16&scope=everything' });
+    await until(() => all(dom.root, e => e.hasClass('inline-error')).length === 1 && searchDone(dom), 'deep error shown');
+    assert.equal(itemTitles(section(dom.root, 'Sermons')).length, 2, 'metadata results are kept');
+    const notes = section(dom.root, 'Found in notes');
+    assert.equal(all(notes, e => e.hasClass('inline-error')).length, 1, 'the error is inside the notes group');
+    assert.equal(all(section(dom.root, 'Sermons'), e => e.hasClass('inline-error')).length, 0);
+    assert.equal(one(notes, e => e.hasClass('inline-error')).getAttribute('role'), 'alert');
+    assert.equal(textOf(one(dom.root, e => e.hasClass('result-count'))), '2 results for Bible reference John 3:16', 'the count is what is shown');
+    fail.deep = false;
+    const before = stageCalls();
+    buttons(notes, 'Try again')[0].dispatch('click');
+    await until(() => itemTitles(section(dom.root, 'Found in notes')).length === 1, 'deep retry landed');
+    assert.deepEqual(stageCalls(), { quick: before.quick, deep: before.deep + 1 }, 'only the deep request ran again');
+    assert.equal(all(dom.root, e => e.hasClass('inline-error')).length, 0);
+    assert.equal(itemTitles(section(dom.root, 'Sermons')).length, 2);
+
+    // Quick fails: the notes stay, the sermons group has the error and Try again.
+    fail.quick = true;
+    dom.go('#/search?q=John%203:16&scope=everything&archived=1');
+    await until(() => all(dom.root, e => e.hasClass('inline-error')).length === 1 && searchDone(dom), 'quick error shown');
+    assert.equal(all(section(dom.root, 'Sermons'), e => e.hasClass('inline-error')).length, 1, 'the error is inside the sermons group');
+    assert.equal(itemTitles(section(dom.root, 'Found in notes')).length, 1, 'note results are kept');
+    fail.quick = false;
+    const mid = stageCalls();
+    buttons(section(dom.root, 'Sermons'), 'Try again')[0].dispatch('click');
+    await until(() => itemTitles(section(dom.root, 'Sermons')).length === 2, 'quick retry landed');
+    assert.deepEqual(stageCalls(), { quick: mid.quick + 1, deep: mid.deep }, 'only the quick request ran again');
+    assert.equal(all(dom.root, e => e.hasClass('inline-error')).length, 0);
+  });
+});
+
+test('two-stage search: Inside notes never asks for the quick pass, Bible verses still needs a reference', async () => {
+  await withLibrary(async f => {
+    const dom = await mountApp(f, 'owner', { hash: '#/search?q=lanterns&scope=notes' });
+    await until(() => searchDone(dom), 'notes only');
+    assert.deepEqual(all(dom.root, e => e.hasClass('result-group')).map(e => textOf(e.children[0])), ['Found in notes (2)']);
+    assert.equal(dom.calls.filter(c => c.includes('/search/quick?')).length, 0);
+    const spoken = recordAnnouncements(dom);
+    one(dom.root, e => e.getAttribute('data-scope') === 'bible').dispatch('click');
+    await until(() => /is not a Bible reference/.test(textOf(dom.root)), 'bible scope explains itself');
+    assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 0);
+    assert.equal(spoken.filter(message => /not a Bible reference/.test(message)).length, 1, 'the notice is spoken once');
+    dom.go('#/search?q=John%203:16&scope=bible');
+    await until(() => searchDone(dom), 'bible scope with a reference');
+    assert.equal(all(dom.root, e => e.hasClass('result-group')).length, 2, 'Bible verses keeps showing both groups for a reference');
   });
 });

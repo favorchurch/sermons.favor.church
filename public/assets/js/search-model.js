@@ -29,16 +29,42 @@ export function highlightParts(text, highlights) {
 }
 
 /**
- * Pick what a scope shows. Passage matches (metadata) only exist for Bible references and never
- * read note text. "Inside notes" hides them. "Bible verses" needs a reference.
+ * Which requests a scope needs. Everything and Bible verses ask for the quick sermon matches and the
+ * deep note matches together. Inside notes needs only the deep pass.
  */
-export function shapeResults(data, scope) {
-  const metadata = Array.isArray(data?.metadataMatches) ? data.metadataMatches : [];
-  const notes = Array.isArray(data?.notesMatches) ? data.notesMatches : [];
-  const reference = data?.query?.kind === 'reference';
-  if (scope === 'bible' && !reference) return { reference, needsReference: true, metadata: [], notes: [], showMetadata: false };
-  const showMetadata = scope !== 'notes' && reference;
-  return { reference, needsReference: false, showMetadata, metadata: showMetadata ? metadata : [], notes };
+export const stagesFor = scope => ({ quick: scope !== 'notes', deep: true });
+
+const ready = stage => stage?.phase === 'ready';
+const waiting = stage => !stage || stage.phase === 'loading';
+const items = (stage, key) => (ready(stage) && Array.isArray(stage.data?.[key]) ? stage.data[key] : []);
+
+export const MATCH_FIELDS = { title: 'title', series: 'series', scripture: 'Scripture', tags: 'tags', passage: 'passage' };
+
+/** "Matched in title and tags": the fields a quick result matched on, in plain words. */
+export function matchedOn(fields) {
+  const names = (Array.isArray(fields) ? fields : []).map(field => MATCH_FIELDS[field]).filter(Boolean);
+  if (!names.length) return '';
+  return 'Matched in ' + (names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]);
+}
+
+/**
+ * What the page shows for a scope, given each stage's state ({phase, data?, error?} or null when it was
+ * not asked for). A stage that is loading or failed contributes nothing but never hides the other one.
+ * "Bible verses" needs a reference, known from whichever stage answered first.
+ */
+export function shapeSearch({ scope, quick, deep, q = '' }) {
+  const query = (ready(quick) ? quick : ready(deep) ? deep : null)?.data?.query;
+  const reference = query?.kind === 'reference';
+  const needsReference = scope === 'bible' && Boolean(query) && !reference;
+  const showSermons = scope !== 'notes';
+  const sermons = showSermons ? items(quick, 'matches') : [];
+  const notes = items(deep, 'notesMatches');
+  const pending = (showSermons && waiting(quick)) || waiting(deep);
+  const label = reference ? `Bible reference ${query.label}` : `“${q}”`;
+  const total = sermons.length + notes.length;
+  const summary = `${total} ${total === 1 ? 'result' : 'results'}${pending ? ' so far' : ''} for ${label}`;
+  const notice = needsReference ? `“${q}” is not a Bible reference. Try a reference like John 3:16, or switch to Everything.` : '';
+  return { reference, needsReference, notice, showSermons, sermons, notes, pending, label, total, summary };
 }
 
 export const NOTE_REASONS = {
@@ -54,8 +80,8 @@ export const VERSION_STATUS = {
   not_searchable: ['Not searchable', 'warn']
 };
 
-/** True when a group hit the server's cap, so there may be more than is shown. */
-export function truncated(data) {
-  const limit = Number.isInteger(data?.limit) ? data.limit : Infinity;
-  return (data?.metadataMatches?.length ?? 0) >= limit || (data?.notesMatches?.length ?? 0) >= limit;
+/** True when a stage hit the server's cap, so there may be more than is shown. */
+export function truncated(stage, key) {
+  const limit = Number.isInteger(stage?.data?.limit) ? stage.data.limit : Infinity;
+  return items(stage, key).length >= limit;
 }

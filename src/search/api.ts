@@ -6,7 +6,7 @@
 import { reply } from '../auth/security.ts';
 import { Invalid, intParam, notFound, type Ctx } from '../api/http.ts';
 import {
-  findInSermonNotes, parseSearchQuery, searchNotes, searchPassages, type SearchQuery
+  findInSermonNotes, parseSearchQuery, searchNotes, searchPassages, searchSermonMetadata, type SearchQuery
 } from './index.ts';
 
 function queryParam(c: Ctx): SearchQuery {
@@ -47,6 +47,30 @@ export async function search(c: Ctx): Promise<Response> {
       sermon_id: hit.sermon_id, sermon_title: hit.sermon_title, version_id: hit.version_id,
       version_label: hit.version_label, source_type: hit.source_type, match_count: hit.match_count,
       offset: hit.offset, excerpt: hit.excerpts[0]
+    })),
+    limit
+  });
+}
+
+/**
+ * GET /search/quick?q=&archived=exclude|include&limit=
+ * The fast first stage: sermons whose title, series, Scripture or tags match every term (the library
+ * filter's rules), plus sermons whose own passage overlaps a reference query. Reads no note text.
+ * `matched_on` lists the fields that matched: title, series, scripture, tags, passage.
+ */
+export async function quickSearch(c: Ctx): Promise<Response> {
+  const query = queryParam(c);
+  const archived = c.url.searchParams.get('archived') ?? 'exclude';
+  if (archived !== 'exclude' && archived !== 'include') throw new Invalid('archived');
+  const limit = intParam(c.url, 'limit', 20, 1, 50);
+  const hits = await searchSermonMetadata(c.env.DB, c.workspaceId, c.url.searchParams.get('q') ?? '', query,
+    { includeArchived: archived === 'include', limit });
+  return reply(200, {
+    query: queryInfo(query),
+    matches: hits.map(hit => ({
+      sermon_id: hit.sermon_id, sermon_title: hit.title, series_name: hit.series_name,
+      scripture_references: hit.scripture_references, tags: hit.tags, archived: hit.archived,
+      matched_on: hit.matched_on, ...(hit.passage === undefined ? {} : { passage: hit.passage })
     })),
     limit
   });

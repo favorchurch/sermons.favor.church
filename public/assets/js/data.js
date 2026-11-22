@@ -42,6 +42,7 @@ export function createLibraryClient(api, workspaceId) {
     mergePlaces: (id, targetId) => api.post(`${base}/places/${id}/merge`, { target_place_id: targetId }),
 
     search: (q, { archived = false } = {}) => api.get(`${base}/search?${new URLSearchParams({ q, archived: archived ? 'include' : 'exclude', limit: '50' })}`),
+    quickSearch: (q, { archived = false } = {}) => api.get(`${base}/search/quick?${new URLSearchParams({ q, archived: archived ? 'include' : 'exclude', limit: '50' })}`),
     findInNotes: (sermonId, q) => api.get(`${base}/sermons/${sermonId}/find-in-notes?${new URLSearchParams({ q })}`),
 
     async listMembers() { return (await api.get(`${base}/members`)).members || []; },

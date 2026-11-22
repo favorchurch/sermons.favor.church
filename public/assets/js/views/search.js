@@ -1,9 +1,10 @@
-// Global search page and the per-sermon "Find in notes" panel. Passage matches (from a sermon's
-// own Scripture references) and note matches (from indexed text) are always shown apart.
+// Global search page and the per-sermon "Find in notes" panel. The page runs two requests: a quick
+// pass over sermon metadata ("Sermons") and a deep pass over indexed notes ("Found in notes"). Each
+// group renders when its own request lands and fails on its own.
 import { h } from '../dom.js';
 import { describeError } from '../api.js';
 import { SCOPES, notesHref } from '../router.js';
-import { highlightParts, shapeResults, noteReason, truncated, VERSION_STATUS } from '../search-model.js';
+import { highlightParts, matchedOn, shapeSearch, noteReason, truncated, VERSION_STATUS } from '../search-model.js';
 import { SOURCE_LABELS, plural } from '../format.js';
 
 /** Excerpt text with matches wrapped in <mark>. Text goes in as text nodes only. */
@@ -22,11 +23,14 @@ const errorBox = (error, retry) => h('div', { class: 'inline-error', role: 'aler
   h('p', null, `Search could not run. ${describeError(error)}`),
   retry ? h('button', { type: 'button', class: 'btn', onclick: retry }, 'Try again') : null);
 
-function metadataItem(hit, q) {
+function sermonItem(hit, q) {
+  const details = [hit.series_name ? `Series: ${hit.series_name}` : '', ...(hit.scripture_references || []), hit.archived ? 'Archived' : '']
+    .filter(Boolean).join(' · ');
   return h('li', { class: 'result-item' },
     h('a', { class: 'result-title', href: notesHref(hit.sermon_id, q) }, hit.sermon_title),
-    h('p', { class: 'result-meta' }, h('span', { class: 'pill pill-neutral' }, 'Sermon passage (metadata)'), ' ', h('span', { class: 'chip-ref chip' }, hit.passage)),
-    h('p', { class: 'hint' }, 'Matches the Scripture the sermon is about. Its notes were not read for this result.'));
+    details ? h('p', { class: 'muted' }, details) : null,
+    h('p', { class: 'muted' }, matchedOn(hit.matched_on),
+      hit.passage ? ` (${hit.passage}). Its notes were not read for this result.` : ''));
 }
 
 function noteItem(hit, q) {
@@ -39,9 +43,12 @@ function noteItem(hit, q) {
     hit.excerpt ? excerptNode(hit.excerpt) : null);
 }
 
-/** ctx: { route, result: {phase, data?, error?}, search(route), retry() } */
+/**
+ * ctx: { route, quick, deep, search(route), retryQuick(), retryDeep() }. `quick` and `deep` are each
+ * {phase, data?, error?}, or null when the scope did not ask for that stage.
+ */
 export function searchPage(ctx) {
-  const { route, result } = ctx;
+  const { route } = ctx;
   const input = h('input', { id: 'search-q', name: 'q', type: 'search', value: route.q, maxlength: 200, autocomplete: 'off', placeholder: 'A phrase or a reference like John 3:16' });
   const archived = h('input', { id: 'search-archived', type: 'checkbox', checked: route.archived });
   const go = scope => ctx.search({ q: input.value, scope, archived: Boolean(archived.checked) });
@@ -56,50 +63,45 @@ export function searchPage(ctx) {
     h('div', { class: 'search-options' }, scopes,
       h('label', { class: 'check', for: 'search-archived' }, archived, ' Include archived sermons')));
 
-  let body;
-  if (!route.q) {
-    body = h('p', { class: 'muted' }, 'Search sermon titles’ Scripture passages and the text of indexed notes. Words are matched as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.');
-  } else if (!result || result.phase === 'loading') {
-    body = pendingLine('Searching…', ctx.announce);
-  } else if (result.phase === 'failed') {
-    body = errorBox(result.error, ctx.retry);
-  } else {
-    body = resultsView(result.data, route, ctx.announce);
-  }
+  const body = route.q
+    ? resultsView(shapeSearch({ scope: route.scope, quick: ctx.quick, deep: ctx.deep, q: route.q }), route, ctx)
+    : h('p', { class: 'muted' }, 'Searches sermon titles, series, Scripture, tags and the text of indexed notes. Titles, series, Scripture and tags match every word you type. Notes match the words as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.');
   return h('section', { class: 'search-page', 'aria-labelledby': 'page-title' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Search'),
     form,
     h('div', { class: 'search-results', id: 'search-results' }, body));
 }
 
-function group(title, id, items, empty) {
-  return h('section', { class: 'result-group', 'aria-labelledby': id },
-    h('h2', { id }, title, ' ', h('span', { class: 'count' }, `(${items.length})`)),
-    items.length ? h('ul', { class: 'result-list' }, ...items) : h('p', { class: 'muted' }, empty));
+/** A result group: its own pending line, error with Try again, or its items. */
+function group({ title, id, stage, items, pending, empty, retry, more }) {
+  const state = !stage || stage.phase === 'loading' ? 'loading' : stage.phase;
+  const head = h('h2', { id }, title, state === 'ready' ? [' ', h('span', { class: 'count' }, `(${items.length})`)] : null);
+  let content;
+  if (state === 'loading') content = h('p', { class: 'muted', 'aria-busy': 'true' }, pending);
+  else if (state === 'failed') content = errorBox(stage.error, retry);
+  else content = items.length ? h('ul', { class: 'result-list' }, ...items) : h('p', { class: 'muted' }, empty);
+  return h('section', { class: 'result-group', 'aria-labelledby': id }, head, content, state === 'ready' ? more : null);
 }
 
-function resultsView(data, route, announce) {
-  const shaped = shapeResults(data, route.scope);
-  const label = data?.query?.kind === 'reference' ? `Bible reference ${data.query.label}` : `“${route.q}”`;
-  if (shaped.needsReference) {
-    const message = `“${route.q}” is not a Bible reference. Try a reference like John 3:16, or switch to Everything.`;
-    announce(message);
-    return h('p', { class: 'notice' }, message);
-  }
-  const total = shaped.metadata.length + shaped.notes.length;
+const moreLine = (stage, key) => truncated(stage, key)
+  ? h('p', { class: 'muted' }, `Showing the first ${stage.data.limit}. Narrow your search to see the rest.`) : null;
+
+function resultsView(shaped, route, ctx) {
+  if (shaped.needsReference) return h('p', { class: 'notice' }, shaped.notice);
   const sections = [];
-  if (shaped.showMetadata) {
-    sections.push(group('Sermon passage (metadata)', 'group-passages', shaped.metadata.map(hit => metadataItem(hit, route.q)),
-      'No sermon is about this passage.'));
+  if (shaped.showSermons) {
+    sections.push(group({
+      title: 'Sermons', id: 'group-sermons', stage: ctx.quick, items: shaped.sermons.map(hit => sermonItem(hit, route.q)),
+      pending: 'Searching sermons…', empty: 'No sermon title, series, Scripture or tag matches this.',
+      retry: ctx.retryQuick, more: moreLine(ctx.quick, 'matches')
+    }));
   }
-  sections.push(group('Found in notes', 'group-notes', shaped.notes.map(hit => noteItem(hit, route.q)),
-    'No indexed notes contain this.'));
-  const summary = `${plural(total, 'result')} for ${label}`;
-  announce(summary);
-  return h('div', null,
-    h('p', { class: 'result-count' }, summary),
-    truncated(data) ? h('p', { class: 'hint' }, `Showing the first ${data.limit} in each group. Narrow your search to see the rest.`) : null,
-    ...sections);
+  sections.push(group({
+    title: 'Found in notes', id: 'group-notes', stage: ctx.deep, items: shaped.notes.map(hit => noteItem(hit, route.q)),
+    pending: 'Searching notes…', empty: 'No indexed notes contain this.',
+    retry: ctx.retryDeep, more: moreLine(ctx.deep, 'notesMatches')
+  }));
+  return h('div', null, h('p', { class: 'result-count' }, shaped.summary), ...sections);
 }
 
 /** The "Find in notes" tab of a sermon. ctx: { sermon, route, result, find(q), retry() } */
