@@ -1,4 +1,4 @@
-// Single-weight (1.75px stroke) line icon set + Sermon Bank mark.
+// Single-weight (1.75px stroke) line icon set + original Sermon Bank book art.
 // Zero stars, sparkles, bursts, or emoji glyphs.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -19,14 +19,14 @@ const PATHS = {
   external: '<path d="M14 4h6v6"/><path d="M10 14 20 4"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   menu: '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>',
-  check: '<path d="M20 6 9 17l-5-5"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>',
   archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
   rows: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M9 4v16"/>',
   folder: '<path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
-  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/>'
+  layoutRail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  layoutTop: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>'
 };
 
 export function icon(name, size = 18) {
@@ -45,6 +45,7 @@ export function icon(name, size = 18) {
   return svg;
 }
 
+/** Exact original Sermon Bank mark (three shelf spines + brass ribbon, public/assets/icon.svg) */
 export function brandMark(size = 32) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('width', String(size));
@@ -54,11 +55,86 @@ export function brandMark(size = 32) {
   svg.classList.add('brand-mark');
   svg.innerHTML =
     '<rect width="32" height="32" rx="7" fill="var(--accent)"/>' +
-    '<rect x="6.5" y="9" width="4.6" height="15" rx="1" fill="#f7f5f0"/>' +
-    '<rect x="12.4" y="6.5" width="4.6" height="17.5" rx="1" fill="#eadfd4"/>' +
-    '<rect x="18.6" y="9.4" width="4.6" height="15" rx="1" transform="rotate(14 20.9 24)" fill="#f7f5f0"/>' +
-    '<path d="M13.6 6.5h2.2v6.4l-1.1-1-1.1 1z" fill="#d9a84e"/>' +
-    '<rect x="5" y="24" width="22" height="2.4" rx="1.2" fill="#4f1c11"/>';
+    '<rect x="6.5" y="9" width="4.6" height="15" rx="1" fill="#eef4ea"/>' +
+    '<rect x="12.4" y="6.5" width="4.6" height="17.5" rx="1" fill="#cfe0cc"/>' +
+    '<rect x="18.6" y="9.4" width="4.6" height="15" rx="1" transform="rotate(14 20.9 24)" fill="#eef4ea"/>' +
+    '<path d="M13.6 6.5h2.2v6.4l-1.1-1-1.1 1z" fill="var(--book-ribbon)"/>' +
+    '<rect x="5" y="24" width="22" height="2.4" rx="1.2" fill="var(--book-shelf)"/>';
+  return svg;
+}
+
+/** Compact architectural bookshelf illustration for Library header & Sign-in banner */
+export function shelfBooksArt({ width = 108, height = 44 } = {}) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
+  svg.setAttribute('viewBox', '0 0 108 44');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('shelf-art');
+  svg.innerHTML =
+    '<rect x="10" y="10" width="11" height="28" rx="2" fill="var(--book-moss-bg)"/>' +
+    '<rect x="12" y="14" width="7" height="1.2" rx=".6" fill="var(--book-moss-fg)" opacity=".55"/>' +
+    '<rect x="23" y="6" width="12" height="32" rx="2" fill="var(--book-linen-bg)" stroke="var(--rule)" stroke-width=".75"/>' +
+    '<path d="M27.5 6h3v9.5l-1.5-1.4-1.5 1.4z" fill="var(--book-ribbon)"/>' +
+    '<rect x="37" y="12" width="10" height="26" rx="2" fill="var(--book-night-bg)"/>' +
+    '<rect x="39" y="16" width="6" height="1.2" rx=".6" fill="var(--book-night-fg)" opacity=".5"/>' +
+    '<rect x="49" y="8" width="12" height="30" rx="2" fill="var(--book-sage-bg)"/>' +
+    '<rect x="51" y="12" width="8" height="1.2" rx=".6" fill="var(--book-sage-fg)" opacity=".45"/>' +
+    '<rect x="63" y="11" width="11" height="27" rx="2" fill="var(--book-pine-bg)"/>' +
+    '<rect x="78" y="11" width="10" height="27" rx="2" transform="rotate(13 83 38)" fill="var(--book-clay-bg)"/>' +
+    '<rect x="4" y="38" width="100" height="4" rx="2" fill="var(--book-clay-bg)"/>' +
+    '<rect x="4" y="38" width="100" height="1.2" rx=".6" fill="var(--book-shelf)" opacity=".28"/>';
+  return svg;
+}
+
+/** Calm open-book & shelf illustration for empty states */
+export function emptyBooksArt() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', '76');
+  svg.setAttribute('height', '52');
+  svg.setAttribute('viewBox', '0 0 76 52');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('empty-books-art');
+  svg.innerHTML =
+    '<path d="M12 14c0-2.2 1.8-4 4-4h18c2.2 0 4 1.8 4 4v26c0-1.6-1.4-3-3-3H14a2 2 0 0 1-2-2V14z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>' +
+    '<path d="M64 14c0-2.2-1.8-4-4-4H42c-2.2 0-4 1.8-4 4v26c0-1.6 1.4-3 3-3h21a2 2 0 0 0 2-2V14z" fill="var(--bg-surface)" stroke="var(--accent)" stroke-width="1.5"/>' +
+    '<path d="M46 10h4v12l-2-1.8-2 1.8z" fill="var(--book-ribbon)"/>' +
+    '<path d="M18 19h12M18 24h10M18 29h8" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round" opacity=".55"/>' +
+    '<path d="M46 25h11M46 30h9" stroke="var(--muted)" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>' +
+    '<rect x="6" y="43" width="64" height="3.5" rx="1.75" fill="var(--book-clay-bg)"/>';
+  return svg;
+}
+
+/** Tactile mini book cover for Sermon Detail header (deterministic original palette + line motif) */
+export function miniBookCover(swatchIndex) {
+  const palettes = [
+    ['var(--book-moss-bg)', 'var(--book-moss-fg)'],
+    ['var(--book-night-bg)', 'var(--book-night-fg)'],
+    ['var(--book-pine-bg)', 'var(--book-pine-fg)'],
+    ['var(--book-clay-bg)', 'var(--book-clay-fg)'],
+    ['var(--book-sage-bg)', 'var(--book-sage-fg)'],
+    ['var(--book-linen-bg)', 'var(--book-linen-fg)']
+  ];
+  const [bg, fg] = palettes[swatchIndex % palettes.length];
+  const motifs = [
+    `<circle cx="42" cy="48" r="18" stroke="${fg}" stroke-width="1.1" fill="none" opacity=".32"/><circle cx="42" cy="48" r="11" stroke="${fg}" stroke-width="1.1" fill="none" opacity=".32"/>`,
+    `<path d="M8 58 Q 22 40 36 58 T 56 54" stroke="${fg}" stroke-width="1.2" fill="none" opacity=".35"/><path d="M14 64 Q 28 48 44 64" stroke="${fg}" stroke-width="1.2" fill="none" opacity=".28"/>`,
+    `<path d="M14 26h28M14 33h20M14 40h24" stroke="${fg}" stroke-width="1.3" stroke-linecap="round" opacity=".36"/>`
+  ];
+  const motif = motifs[swatchIndex % motifs.length];
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', '54');
+  svg.setAttribute('height', '72');
+  svg.setAttribute('viewBox', '0 0 54 72');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('detail-book-thumb');
+  svg.innerHTML =
+    `<rect x="1" y="1" width="52" height="70" rx="5" fill="${bg}"/>` +
+    `<rect x="1" y="1" width="6" height="70" rx="2" fill="#000" opacity=".12"/>` +
+    `<line x1="7" y1="15" x2="53" y2="15" stroke="${fg}" stroke-width=".9" opacity=".3"/>` +
+    `<path d="M14 1h5v11l-2.5-2-2.5 2z" fill="var(--book-ribbon)"/>` +
+    motif +
+    `<rect x="49" y="1" width="4" height="70" rx="1" fill="#fff" opacity=".2"/>`;
   return svg;
 }
 

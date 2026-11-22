@@ -1,5 +1,6 @@
-/* Sermon Bank Redesign Prototype — Styles
- * All colours, spacing, typography and radii come strictly from tokens.css.
+/* Sermon Bank Redesign Prototype (Round 2) — Styles
+ * Retains the new layout & typography with original Sermon Bank green branding & book art.
+ * Supports interchangeable layouts: Variant A (Side rail, default) and Variant C (Top bar).
  */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -41,8 +42,11 @@ a:hover { color: var(--accent-hover); }
 .muted { color: var(--muted); }
 .ic { flex: none; display: inline-block; vertical-align: middle; }
 .brand-mark { flex: none; display: block; border-radius: var(--r-sm); }
+.shelf-art { flex: none; display: block; }
+.empty-books-art { display: block; }
+.detail-book-thumb { flex: none; display: block; border-radius: 5px; box-shadow: 0 3px 10px rgba(38, 57, 44, 0.14); }
 
-/* Focus ring: consistent 2.5px cobalt ring with offset on every control */
+/* Focus ring: consistent 2.5px ring with offset */
 :focus-visible {
   outline: 2.5px solid var(--focus);
   outline-offset: 2px;
@@ -235,7 +239,7 @@ main:focus, #page-title:focus { outline: none; }
 .select {
   appearance: none;
   padding-right: 34px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235c5750' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235a6b5e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 16px 16px;
@@ -268,6 +272,7 @@ main:focus, #page-title:focus { outline: none; }
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--s-2);
   white-space: nowrap;
   transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
@@ -282,7 +287,31 @@ main:focus, #page-title:focus { outline: none; }
   .segmented button:hover:not([aria-pressed="true"]) { background: var(--bg-subtle); color: var(--ink); }
 }
 
-/* Underline tabs (e.g. Sermon Details / Find in notes) */
+/* Layout switcher (Rail <-> Top bar, persisted per user) */
+.layout-toggle {
+  display: grid;
+  gap: var(--s-1);
+}
+.layout-toggle-label {
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 var(--s-1);
+}
+.layout-toggle .segmented { width: 100%; }
+.layout-toggle .segmented button {
+  flex: 1;
+  padding: 0 var(--s-2);
+  font-size: var(--text-small);
+  gap: 6px;
+}
+.topbar-layout-toggle .segmented button {
+  padding: 0 var(--s-3);
+  font-size: var(--text-small);
+  gap: 6px;
+}
+
+/* Underline tabs */
 .tabs {
   display: flex;
   gap: var(--s-2);
@@ -314,7 +343,7 @@ main:focus, #page-title:focus { outline: none; }
 }
 
 /* ============================================================
- * SHELL — VARIANT A (Editorial Rail, default) & VARIANT B (Split Studio)
+ * SHELL — VARIANT A (Side Rail, default)
  * ============================================================ */
 .shell {
   display: grid;
@@ -433,9 +462,7 @@ main:focus, #page-title:focus { outline: none; }
 @media (hover: hover) {
   .ws-option:hover { background: var(--bg-subtle); }
 }
-.ws-option[aria-pressed="true"] {
-  background: var(--accent-soft);
-}
+.ws-option[aria-pressed="true"] { background: var(--accent-soft); }
 .ws-option-main { display: grid; gap: 2px; min-width: 0; }
 .ws-option-name { font-size: var(--text-ui); font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .ws-option-sub { font-size: var(--text-small); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -464,7 +491,7 @@ main:focus, #page-title:focus { outline: none; }
 }
 
 /* Rail nav groups */
-.rail-nav { display: grid; gap: var(--s-5); flex: 1; align-content: start; }
+.rail-nav { display: grid; gap: var(--s-4); flex: 1; align-content: start; }
 .rail-group { display: grid; gap: var(--s-1); }
 .rail-group-label {
   padding: 0 var(--s-3) var(--s-1);
@@ -516,7 +543,7 @@ main:focus, #page-title:focus { outline: none; }
   border-top: 1px solid var(--rule);
   padding-top: var(--s-3);
   display: grid;
-  gap: var(--s-2);
+  gap: var(--s-3);
 }
 .rail-account {
   display: flex;
@@ -527,7 +554,7 @@ main:focus, #page-title:focus { outline: none; }
 }
 .rail-account-name { font-size: var(--text-ui); font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .rail-account-email { font-size: var(--text-small); color: var(--muted); overflow-wrap: anywhere; }
-.rail-footer-actions { display: flex; gap: var(--s-1); flex-wrap: wrap; }
+.rail-footer-actions { display: flex; gap: var(--s-1); }
 .rail-footer-actions .btn { flex: 1; justify-content: flex-start; padding: 0 var(--s-2); }
 
 /* Main canvas */
@@ -541,16 +568,22 @@ main:focus, #page-title:focus { outline: none; }
   min-width: 0;
 }
 
-/* Page header */
+/* Page header with optional book art */
 .page-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
   flex-wrap: wrap;
   padding-bottom: var(--s-5);
   border-bottom: 1px solid var(--rule);
   margin-bottom: var(--s-5);
+}
+.page-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
 }
 .page-head-copy { display: grid; gap: var(--s-1); min-width: 0; }
 .page-summary {
@@ -559,10 +592,10 @@ main:focus, #page-title:focus { outline: none; }
   max-width: 56ch;
   font-variant-numeric: tabular-nums;
 }
-.page-head-actions { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.page-head-actions { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
 
 /* ============================================================
- * VARIANT C — TOP COMMAND BAR LAYOUT
+ * VARIANT C — TOP BAR LAYOUT (Interchangeable with Variant A)
  * ============================================================ */
 body[data-variant="C"] .shell {
   grid-template-columns: minmax(0, 1fr);
@@ -585,10 +618,10 @@ body[data-variant="C"] .topbar { display: block; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--s-4);
+  gap: var(--s-3);
   min-height: 64px;
 }
-.topbar-left { display: flex; align-items: center; gap: var(--s-4); min-width: 0; }
+.topbar-left { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
 .topbar-nav { display: flex; align-items: center; gap: var(--s-1); }
 .topbar-nav a {
   display: inline-flex;
@@ -600,9 +633,10 @@ body[data-variant="C"] .topbar { display: block; }
   color: var(--ink-secondary);
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
 }
 .topbar-nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
-.topbar-right { display: flex; align-items: center; gap: var(--s-2); }
+.topbar-right { display: flex; align-items: center; gap: var(--s-2); flex: none; }
 body[data-variant="C"] .content-wrap { max-width: 1200px; }
 
 /* Series chip filter strip (used in Variant C) */
@@ -632,43 +666,6 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
   border-color: var(--accent-border);
   color: var(--accent-text);
   font-weight: 600;
-}
-
-/* ============================================================
- * VARIANT B — SPLIT READING STUDIO
- * ============================================================ */
-.studio-split {
-  display: grid;
-  grid-template-columns: minmax(310px, 380px) minmax(0, 1fr);
-  gap: var(--s-5);
-  align-items: start;
-}
-.studio-split .sermon-row {
-  grid-template-columns: 4px minmax(0, 1fr) 18px;
-  gap: var(--s-1) var(--s-3);
-  padding: var(--s-3) var(--s-3) var(--s-3) 0;
-  align-items: start;
-}
-.studio-split .sermon-row .row-spine { grid-row: 1 / span 2; }
-.studio-split .sermon-row .row-primary { grid-column: 2; grid-row: 1; }
-.studio-split .sermon-row .row-chevron { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
-.studio-split .sermon-row .row-col-date { grid-column: 2; grid-row: 2; font-size: var(--text-small); color: var(--muted); }
-.studio-split .sermon-row .row-col-count,
-.studio-split .sermon-row .row-col-versions { display: none; }
-.studio-split .mobile-only-inline { display: inline; }
-
-.studio-reader {
-  position: sticky;
-  top: var(--s-5);
-  background: var(--bg-surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-md);
-  padding: var(--s-5);
-  display: grid;
-  gap: var(--s-5);
-}
-.studio-row-active {
-  background: var(--accent-soft) !important;
 }
 
 /* ============================================================
@@ -703,6 +700,7 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
 .filter-selects .select { width: 146px; }
 .filter-search { flex: 1 1 200px; max-width: 340px; }
 .filter-bar .segmented button { padding: 0 var(--s-3); font-size: var(--text-small); }
+
 .search-input-wrap { position: relative; display: flex; align-items: center; }
 .search-input-wrap .ic { position: absolute; left: var(--s-3); color: var(--muted); pointer-events: none; }
 .search-input-wrap .input { padding-left: 38px; }
@@ -718,7 +716,7 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Hairline list panel — one container, hairline rows */
+/* Hairline list panel */
 .panel {
   background: var(--bg-surface);
   border: 1px solid var(--rule);
@@ -1083,9 +1081,16 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
   height: 4px;
   background: var(--spine-color, var(--accent));
 }
-.detail-header-main { display: grid; gap: var(--s-3); flex: 1 1 320px; min-width: 0; }
+.detail-header-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.detail-header-main { display: grid; gap: var(--s-2); flex: 1 1 0; min-width: 0; }
 .detail-series { font-size: var(--text-small); font-weight: 600; color: var(--accent-text); }
-.detail-chips { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.detail-chips { display: flex; gap: var(--s-2); flex-wrap: wrap; padding-top: var(--s-1); }
 .chip-scripture {
   display: inline-flex;
   align-items: center;
@@ -1120,7 +1125,7 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
 
 /* Vertical preaching history timeline */
 .timeline {
-  border-left: 2px solid var(--rule);
+  border-left: 2px solid var(--accent-border);
   margin-left: var(--s-2);
   display: grid;
   gap: var(--s-4);
@@ -1217,7 +1222,7 @@ body[data-variant="C"] .content-wrap { max-width: 1200px; }
   align-items: center;
   gap: var(--s-2);
   flex-wrap: wrap;
-  margin-top: var(--s-3);
+  margin-top: var(--s-2);
 }
 .quick-query-btn {
   min-height: var(--control-h);
@@ -1305,15 +1310,28 @@ mark {
 }
 .auth-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 408px;
   background: var(--bg-surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-md);
+  overflow: hidden;
+  display: grid;
+}
+.auth-shelf-band {
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s-4) var(--s-6) var(--s-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.auth-body {
   padding: var(--s-6);
   display: grid;
   gap: var(--s-5);
 }
-.auth-head { display: grid; gap: var(--s-3); }
+.auth-head { display: grid; gap: var(--s-2); }
 .auth-title {
   font-family: var(--font-display);
   font-size: 1.75rem;
@@ -1348,6 +1366,13 @@ mark {
   display: grid;
   gap: var(--s-6);
 }
+.onboarding-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
 .onboarding-panel {
   background: var(--bg-surface);
   border: 1px solid var(--rule);
@@ -1365,7 +1390,7 @@ mark {
   background: var(--bg-surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-md);
-  padding: var(--s-7) var(--s-5);
+  padding: var(--s-6) var(--s-5);
   display: grid;
   gap: var(--s-3);
   justify-items: start;
@@ -1486,58 +1511,9 @@ mark {
 .mobile-header, .mobile-tabbar, .mobile-drawer-backdrop { display: none; }
 
 /* ============================================================
- * FLOATING PROTOTYPE SWITCHER BAR (visually distinct chrome)
- * ============================================================ */
-.proto-bar {
-  position: fixed;
-  right: var(--s-4);
-  bottom: var(--s-4);
-  z-index: 150;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  padding: 4px var(--s-2) 4px var(--s-3);
-  border-radius: var(--r-pill);
-  background: var(--proto-bg);
-  color: var(--proto-text);
-  border: 1px solid var(--proto-border);
-  box-shadow: var(--shadow-float);
-  font-size: var(--text-small);
-}
-.proto-bar-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  padding: 0 var(--s-1);
-  white-space: nowrap;
-}
-.proto-bar-tag { color: var(--proto-muted); font-weight: 500; }
-.proto-bar-name { font-weight: 600; color: var(--proto-text); }
-.proto-bar button {
-  min-width: 34px;
-  min-height: 34px;
-  padding: 0 var(--s-2);
-  border: 1px solid var(--proto-border);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--proto-text);
-  font-size: var(--text-small);
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-@media (hover: hover) {
-  .proto-bar button:hover { background: var(--proto-hover); }
-}
-
-/* ============================================================
  * RESPONSIVE — TABLET & PHONE (<= 1023px and <= 720px)
  * ============================================================ */
 @media (max-width: 1120px) {
-  .studio-split { grid-template-columns: minmax(0, 1fr); }
-  .studio-reader { position: static; }
   .cal-grid-layout { grid-template-columns: minmax(0, 1fr); }
   .year-months { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
@@ -1620,7 +1596,6 @@ mark {
     color: var(--accent-text);
   }
 
-  /* Mobile drawer / sheet */
   .mobile-drawer-backdrop {
     display: flex;
     position: fixed;
@@ -1649,13 +1624,6 @@ mark {
     padding-bottom: var(--s-2);
     border-bottom: 1px solid var(--rule);
   }
-
-  .proto-bar {
-    bottom: calc(var(--mobile-tabs-h) + var(--s-2));
-    right: var(--s-3);
-    left: var(--s-3);
-    justify-content: space-between;
-  }
 }
 
 @media (max-width: 720px) {
@@ -1665,7 +1633,9 @@ mark {
     gap: var(--s-2);
     align-items: center;
   }
-  .page-head-copy { flex: 1 1 180px; }
+  .page-head-left { flex: 1 1 180px; gap: var(--s-2); }
+  .page-head-left .shelf-art,
+  .page-head-left .brand-mark { display: none; }
   .page-head-actions { flex: 0 0 auto; }
   .page-head-actions .btn { padding: 0 var(--s-3); }
 
@@ -1698,10 +1668,9 @@ mark {
   .sermon-row .row-col-date { grid-column: 2; grid-row: 2; font-size: var(--text-small); color: var(--muted); }
   .sermon-row .row-col-count, .sermon-row .row-col-versions { display: none; }
 
-  /* Mobile inline metadata line inside row-col-date */
   .mobile-only-inline { display: inline; }
 
-  /* Calendar mobile tightening — compact 6x2 month strip so the month grid fits above the fold */
+  /* Calendar mobile tightening */
   .year-strip-panel { padding: var(--s-3); margin-bottom: var(--s-3); gap: var(--s-2); }
   .year-months { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
   .month-tile { min-height: 44px; padding: 4px 5px; }
@@ -1713,8 +1682,10 @@ mark {
   .cal-day { min-height: 46px; padding: 4px; }
   .cal-day-tag { font-size: var(--text-tab); }
 
-  /* Sermon detail mobile — primary button full width, secondary actions paired below */
+  /* Sermon detail mobile */
   .detail-header { padding: calc(var(--s-4) + 4px) var(--s-4) var(--s-4); gap: var(--s-3); }
+  .detail-header-identity { gap: var(--s-3); }
+  .detail-book-thumb { width: 42px; height: 56px; }
   .detail-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); width: 100%; }
   .detail-actions .btn-primary { grid-column: 1 / -1; }
   .detail-grid { grid-template-columns: minmax(0, 1fr); gap: var(--s-5); }
@@ -1726,15 +1697,13 @@ mark {
   .segmented { width: 100%; }
   .segmented button { flex: 1; justify-content: center; padding: 0 var(--s-2); }
 
-  /* Onboarding mobile full-width stacked actions */
   .onboarding-form .btn { width: 100%; }
 
-  /* Modal actions stack on narrow phones */
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions .btn { width: 100%; }
 
-  /* Auth card mobile */
-  .auth-card { padding: var(--s-5); }
+  .auth-shelf-band { padding: var(--s-3) var(--s-5); }
+  .auth-body { padding: var(--s-5); }
 }
 
 @media (min-width: 721px) {

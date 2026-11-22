@@ -1,9 +1,8 @@
-// Sermon Bank Redesign Prototype — Interactive App
-// Three structural variants (?variant=A|B|C):
-//   A: Editorial Rail (recommended — sticky left rail, clean page headers, hairline rows)
-//   B: Split Studio (side-by-side list + live sermon reader pane on desktop)
-//   C: Top Command Bar (horizontal top navigation, series filter strip, tabular ledger)
-// URL params: ?variant=A|B|C  &  ?state=normal|loading|empty|error  &  ?chrome=hide
+// Sermon Bank Redesign Prototype (Round 2) — Interactive App
+// Two interchangeable layouts persisted per user in localStorage:
+//   A: Side rail (default)
+//   C: Top bar (with series filter strip & wide ledger)
+// URL params: ?variant=A|C  &  ?state=normal|loading|empty|error
 
 import {
   ACCOUNT, TODAY, ROLE_LABELS, SOURCE_LABELS, INDEXING_STATUS, ROLE_ABILITIES,
@@ -11,13 +10,19 @@ import {
   createInitialWorkspaces, plural, formatDay, formatLongDay, formatWhen,
   latestEvent, seriesSwatchIndex, runWorkspaceSearch, runSermonNoteSearch
 } from './data.js';
-import { icon, brandMark, googleMark } from './icons.js';
+import { icon, brandMark, shelfBooksArt, emptyBooksArt, miniBookCover, googleMark } from './icons.js';
 
-const VARIANTS = [
-  { key: 'A', name: 'Editorial Rail' },
-  { key: 'B', name: 'Split Studio' },
-  { key: 'C', name: 'Top Command Bar' }
-];
+const LAYOUT_KEY = 'sermon-bank.layout';
+
+function readInitialLayout(params) {
+  const fromUrl = (params.get('variant') || '').toUpperCase();
+  if (fromUrl === 'A' || fromUrl === 'C') return fromUrl;
+  try {
+    const saved = window.localStorage.getItem(LAYOUT_KEY);
+    if (saved === 'A' || saved === 'C') return saved;
+  } catch { /* ignore storage restrictions */ }
+  return 'A';
+}
 
 // Minimal safe DOM helper (text nodes only, no raw HTML injection)
 function h(tag, props, ...children) {
@@ -56,19 +61,18 @@ function showToast(msg) {
 
 // App State
 const params = new URLSearchParams(window.location.search);
+const initialVariant = readInitialLayout(params);
 const state = {
   workspaces: createInitialWorkspaces(),
   workspaceId: 'ws-riverbend',
-  variant: ['A', 'B', 'C'].includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A',
+  variant: initialVariant,
   panelState: ['normal', 'loading', 'empty', 'error'].includes(params.get('state')) ? params.get('state') : 'normal',
-  hideProtoBar: params.get('chrome') === 'hide',
   // Library filters
   libQuery: '',
   libArchive: 'active',
   libSeries: 'all',
   libSort: 'recent',
-  libView: (params.get('variant') || '').toUpperCase() === 'C' ? 'table' : 'rows', // rows | table | series
-  studioSelectedId: 'sermon-grace',
+  libView: params.get('view') || (initialVariant === 'C' ? 'table' : 'rows'),
   // Calendar state
   calYear: 2026,
   calMonth: 11,
@@ -143,21 +147,37 @@ function go(hash) {
   else window.location.hash = hash;
 }
 
-function setVariant(nextKey) {
+function setLayout(nextKey) {
+  if (nextKey !== 'A' && nextKey !== 'C') return;
   state.variant = nextKey;
+  try { window.localStorage.setItem(LAYOUT_KEY, nextKey); } catch { /* ignore */ }
   const url = new URL(window.location.href);
   url.searchParams.set('variant', nextKey);
   window.history.replaceState({}, '', url);
-  if (nextKey === 'C' && state.libView === 'rows') state.libView = 'table';
-  if (nextKey === 'A' && state.libView === 'table') state.libView = 'rows';
   render();
-  announce(`Switched to Variant ${nextKey}`);
+  const label = nextKey === 'A' ? 'Side rail layout' : 'Top bar layout';
+  announce(`Switched to ${label}`);
+  showToast(`${label} saved for this browser.`);
 }
 
-function cycleVariant(delta) {
-  const idx = VARIANTS.findIndex(v => v.key === state.variant);
-  const next = VARIANTS[(idx + delta + VARIANTS.length) % VARIANTS.length];
-  setVariant(next.key);
+// Visible layout switcher shared by Side rail, Top bar, and Workspace settings
+function layoutToggleControl({ compact = false } = {}) {
+  const buttons = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Navigation layout' },
+    h('button', {
+      type: 'button',
+      'aria-pressed': String(state.variant === 'A'),
+      onclick: () => setLayout('A')
+    }, icon('layoutRail', 15), compact ? 'Rail' : 'Side rail'),
+    h('button', {
+      type: 'button',
+      'aria-pressed': String(state.variant === 'C'),
+      onclick: () => setLayout('C')
+    }, icon('layoutTop', 15), compact ? 'Top' : 'Top bar'));
+
+  if (compact) return h('div', { class: 'topbar-layout-toggle' }, buttons);
+  return h('div', { class: 'layout-toggle' },
+    h('span', { class: 'layout-toggle-label' }, 'Layout'),
+    buttons);
 }
 
 // Excerpt highlighting helper (safe text nodes + <mark>)
@@ -196,7 +216,6 @@ function workspaceOptionsList(onClose) {
         'aria-pressed': String(active),
         onclick: () => {
           state.workspaceId = ws.id;
-          state.studioSelectedId = ws.sermons[0]?.id || null;
           state.switcherOpen = false;
           state.mobileDrawer = null;
           if (onClose) onClose();
@@ -254,7 +273,7 @@ function workspaceSwitcherControl(compact = false) {
 }
 
 // ============================================================
-// SHELL (DESKTOP RAIL + TOPBAR FOR VARIANT C + MOBILE CHROME)
+// SHELL (DESKTOP RAIL [A] + TOP BAR [C] + MOBILE CHROME)
 // ============================================================
 function renderShell(route, mainNode) {
   const ws = currentWorkspace();
@@ -280,7 +299,7 @@ function renderShell(route, mainNode) {
   const activeMain = route.name === 'sermon' ? 'library' : route.name;
   const activeSection = route.name === 'settings' ? route.section : null;
 
-  // Desktop Left Rail (Variants A & B)
+  // Desktop Left Rail (Variant A — default)
   const rail = h('aside', { class: 'rail', 'aria-label': 'Workspace navigation' },
     h('div', { class: 'rail-brand' },
       brandMark(28),
@@ -305,6 +324,7 @@ function renderShell(route, mainNode) {
         h('span', { class: 'rail-link-left' }, icon(item.ic, 18), h('span', null, item.label)),
         item.badge !== undefined ? h('span', { class: 'count-badge' }, String(item.badge)) : null)))),
     h('div', { class: 'rail-footer' },
+      layoutToggleControl({ compact: false }),
       h('div', { class: 'rail-account' },
         h('div', null,
           h('p', { class: 'rail-account-name' }, ACCOUNT.display_name),
@@ -312,7 +332,7 @@ function renderShell(route, mainNode) {
       h('div', { class: 'rail-footer-actions' },
         h('a', { class: 'btn btn-quiet', href: '#/signin' }, icon('logout', 16), 'Sign out'))));
 
-  // Desktop Top Command Bar (Variant C)
+  // Desktop Top Bar (Variant C — interchangeable)
   const topbar = h('header', { class: 'topbar' },
     h('div', { class: 'topbar-inner' },
       h('div', { class: 'topbar-left' },
@@ -327,6 +347,7 @@ function renderShell(route, mainNode) {
             'aria-current': route.name === 'settings' ? 'page' : null
           }, icon('settings', 17), 'Settings'))),
       h('div', { class: 'topbar-right' },
+        layoutToggleControl({ compact: true }),
         h('span', { class: 'pill' }, ROLE_LABELS[ws.role]),
         h('a', { class: 'btn btn-quiet', href: '#/signin' }, 'Sign out'))));
 
@@ -435,7 +456,7 @@ function renderShell(route, mainNode) {
 }
 
 // ============================================================
-// PANEL STATES (Loading skeleton, Empty, Error)
+// PANEL STATES (Loading skeleton, Empty with book art, Error)
 // ============================================================
 function loadingSkeleton(rows = 6) {
   return h('section', { class: 'skeleton-list edge-list-mobile', 'aria-busy': 'true', 'aria-label': 'Loading sermons' },
@@ -447,8 +468,9 @@ function loadingSkeleton(rows = 6) {
       h('div', { class: 'skel-bar skel-meta' }))));
 }
 
-function emptyPanel({ title, body, actionLabel, onAction }) {
+function emptyPanel({ title, body, actionLabel, onAction, showArt = true }) {
   return h('section', { class: 'state-panel', role: 'status' },
+    showArt ? emptyBooksArt() : null,
     h('h2', { class: 'section-heading' }, title),
     h('p', { class: 'body-copy muted' }, body),
     actionLabel ? h('button', { type: 'button', class: 'btn', onclick: onAction }, actionLabel) : null);
@@ -496,33 +518,18 @@ function filterSermons(ws) {
   return sorted;
 }
 
-function sermonListRow(sermon, { studioMode = false } = {}) {
+function sermonListRow(sermon) {
   const last = latestEvent(sermon);
   const swatch = seriesSwatchIndex(sermon.series_name || sermon.title);
   const count = sermon.preaching_events.length;
   const vCount = sermon.versions.length;
   const lastText = last ? formatWhen(last.preached_on, last.date_precision) : 'Not preached yet';
-  const isSelected = studioMode && state.studioSelectedId === sermon.id;
 
-  const linkProps = studioMode
-    ? {
-        class: 'row-link',
-        href: `#/sermon/${sermon.id}`,
-        onclick: event => {
-          if (window.innerWidth >= 1120) {
-            event.preventDefault();
-            state.studioSelectedId = sermon.id;
-            render();
-          }
-        }
-      }
-    : { class: 'row-link', href: `#/sermon/${sermon.id}` };
-
-  return h('li', { class: `sermon-row${isSelected ? ' studio-row-active' : ''}` },
+  return h('li', { class: 'sermon-row' },
     h('span', { class: `row-spine spine-${swatch}`, 'aria-hidden': 'true' }),
     h('div', { class: 'row-primary' },
       h('div', { class: 'row-title-line' },
-        h('a', linkProps, sermon.title),
+        h('a', { class: 'row-link', href: `#/sermon/${sermon.id}` }, sermon.title),
         sermon.archived_at ? h('span', { class: 'pill pill-warning' }, 'Archived') : null),
       h('div', { class: 'row-sub' },
         sermon.scripture_references.length
@@ -565,54 +572,6 @@ function sermonTable(items) {
           })))));
 }
 
-function studioReaderPane(sermon, ws) {
-  if (!sermon) {
-    return h('aside', { class: 'studio-reader', 'aria-label': 'Sermon preview' },
-      h('h2', { class: 'section-heading' }, 'Select a sermon'),
-      h('p', { class: 'body-copy muted' }, 'Choose a sermon from the list to inspect its passage, preaching history, and notes.'));
-  }
-  const editor = canEdit(ws.role);
-  const events = sermon.preaching_events.slice().reverse();
-  return h('aside', { class: 'studio-reader', 'aria-label': `Preview of ${sermon.title}` },
-    h('div', { class: 'detail-header-main' },
-      sermon.series_name ? h('p', { class: 'detail-series' }, sermon.series_name) : null,
-      h('h2', { class: 'page-title' }, sermon.title),
-      h('div', { class: 'detail-chips' },
-        ...sermon.scripture_references.map(r => h('span', { class: 'chip-scripture' }, r)),
-        ...sermon.tags.map(t => h('span', { class: 'chip-tag' }, t))),
-      h('div', { class: 'detail-actions' },
-        h('a', { class: 'btn', href: `#/sermon/${sermon.id}` }, 'Open full record'),
-        editor && !sermon.archived_at
-          ? h('button', { type: 'button', class: 'btn', onclick: () => { state.modal = { kind: 'log-preaching', sermonId: sermon.id }; render(); } }, 'Log preaching')
-          : null)),
-    h('div', { class: 'detail-section' },
-      h('h3', { class: 'sub-heading' }, 'About this sermon'),
-      h('p', { class: 'body-copy' }, sermon.description || 'No description yet.')),
-    h('div', { class: 'detail-section' },
-      h('h3', { class: 'sub-heading' }, `Preaching history (${events.length})`),
-      events.length
-        ? h('ol', { class: 'timeline' },
-            ...events.map(ev => h('li', { class: 'timeline-item' },
-              h('div', { class: 'timeline-date' },
-                formatWhen(ev.preached_on, ev.date_precision),
-                ev.date_precision === 'needs_review' ? h('span', { class: 'pill pill-warning' }, 'Date needs review') : null),
-              h('div', { class: 'timeline-detail' }, [ev.place_name, ev.occasion].filter(Boolean).join(' · ') || 'No place recorded'))))
-        : h('p', { class: 'muted' }, 'Not preached yet.')),
-    h('div', { class: 'detail-section' },
-      h('h3', { class: 'sub-heading' }, `Versions (${sermon.versions.length})`),
-      sermon.versions.length
-        ? h('div', { class: 'panel' },
-            ...sermon.versions.map(v => {
-              const st = INDEXING_STATUS[v.indexing_state] || INDEXING_STATUS.not_indexed;
-              return h('div', { class: 'version-row' },
-                h('div', { class: 'version-top' },
-                  h('span', { class: 'version-name' }, v.label),
-                  h('span', { class: `pill pill-${st.tone}` }, st.label)),
-                h('span', { class: 'version-sub' }, SOURCE_LABELS[v.source_type] || 'Source'));
-            }))
-        : h('p', { class: 'muted' }, 'No versions attached yet.')));
-}
-
 function renderLibrary() {
   const ws = currentWorkspace();
   const editor = canEdit(ws.role);
@@ -633,9 +592,11 @@ function renderLibrary() {
         : `${plural(activeSermons.length, 'active sermon')} · ${plural(totalPreachings, 'preaching')}${latest ? ` · last preached ${formatWhen(latest.preached_on, latest.date_precision)}` : ''}`;
 
   const header = h('header', { class: 'page-head' },
-    h('div', { class: 'page-head-copy' },
-      h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Library'),
-      h('p', { class: 'page-summary' }, summary)),
+    h('div', { class: 'page-head-left' },
+      shelfBooksArt({ width: 96, height: 40 }),
+      h('div', { class: 'page-head-copy' },
+        h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Library'),
+        h('p', { class: 'page-summary' }, summary))),
     h('div', { class: 'page-head-actions' },
       editor
         ? h('button', {
@@ -668,7 +629,6 @@ function renderLibrary() {
         }, 'Standalone'))
     : null;
 
-  // Controls toolbar
   const filterInput = h('input', {
     id: 'lib-filter',
     class: 'input',
@@ -726,24 +686,22 @@ function renderLibrary() {
           h('option', { value: 'title', selected: state.libSort === 'title' }, 'Title A–Z'),
           h('option', { value: 'most', selected: state.libSort === 'most' }, 'Most preached'),
           h('option', { value: 'added', selected: state.libSort === 'added' }, 'Recently added')))),
-      state.variant !== 'B'
-        ? h('div', { class: 'segmented', role: 'group', 'aria-label': 'Layout view' },
-            h('button', {
-              type: 'button',
-              'aria-pressed': String(state.libView === 'rows'),
-              onclick: () => { state.libView = 'rows'; render(); }
-            }, icon('rows', 15), 'Rows'),
-            h('button', {
-              type: 'button',
-              'aria-pressed': String(state.libView === 'table'),
-              onclick: () => { state.libView = 'table'; render(); }
-            }, icon('table', 15), 'Table'),
-            h('button', {
-              type: 'button',
-              'aria-pressed': String(state.libView === 'series'),
-              onclick: () => { state.libView = 'series'; render(); }
-            }, icon('folder', 15), 'Series'))
-        : null));
+      h('div', { class: 'segmented', role: 'group', 'aria-label': 'Layout view' },
+        h('button', {
+          type: 'button',
+          'aria-pressed': String(state.libView === 'rows'),
+          onclick: () => { state.libView = 'rows'; render(); }
+        }, icon('rows', 15), 'Rows'),
+        h('button', {
+          type: 'button',
+          'aria-pressed': String(state.libView === 'table'),
+          onclick: () => { state.libView = 'table'; render(); }
+        }, icon('table', 15), 'Table'),
+        h('button', {
+          type: 'button',
+          'aria-pressed': String(state.libView === 'series'),
+          onclick: () => { state.libView = 'series'; render(); }
+        }, icon('folder', 15), 'Series'))));
 
   let dataArea;
   if (state.panelState === 'loading') {
@@ -770,13 +728,6 @@ function renderLibrary() {
       actionLabel: 'Clear filters',
       onAction: () => { state.libQuery = ''; state.libSeries = 'all'; state.libArchive = 'active'; render(); }
     });
-  } else if (state.variant === 'B') {
-    const selectedSermon = filtered.find(s => s.id === state.studioSelectedId) || filtered[0];
-    state.studioSelectedId = selectedSermon.id;
-    dataArea = h('div', { class: 'studio-split' },
-      h('div', { class: 'panel edge-list-mobile' },
-        h('ul', { class: 'sermon-list' }, ...filtered.map(s => sermonListRow(s, { studioMode: true })))),
-      studioReaderPane(selectedSermon, ws));
   } else if (state.libView === 'table') {
     dataArea = sermonTable(filtered);
   } else if (state.libView === 'series') {
@@ -868,7 +819,6 @@ function renderCalendar(route) {
   const prevMonth = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
   const nextMonth = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
 
-  // Build month grid cells
   const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const weeks = [];
@@ -883,9 +833,11 @@ function renderCalendar(route) {
   }
 
   const header = h('header', { class: 'page-head' },
-    h('div', { class: 'page-head-copy' },
-      h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Preaching Calendar'),
-      h('p', { class: 'page-summary' }, `${plural(yearEvents.length, 'preaching')} in ${y} · ${plural(exactInMonth.length + monthOnly.length, 'preaching')} in ${MONTHS[m - 1]}`)),
+    h('div', { class: 'page-head-left' },
+      brandMark(40),
+      h('div', { class: 'page-head-copy' },
+        h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Preaching Calendar'),
+        h('p', { class: 'page-summary' }, `${plural(yearEvents.length, 'preaching')} in ${y} · ${plural(exactInMonth.length + monthOnly.length, 'preaching')} in ${MONTHS[m - 1]}`))),
     h('div', { class: 'page-head-actions' },
       editor
         ? h('button', {
@@ -1020,17 +972,16 @@ function renderSermonDetail(route) {
   const backBar = h('div', { class: 'back-bar' },
     h('a', { class: 'back-link', href: '#/library' }, icon('arrowLeft', 16), 'Library'));
 
-  // Strictly ONE filled accent button per view:
-  // On Details tab -> "Log preaching" is filled accent.
-  // On Find in notes tab -> "Find" is filled accent, so header "Log preaching" becomes outlined secondary!
   const headerBand = h('header', { class: `detail-header spine-${swatch}` },
-    h('div', { class: 'detail-header-main' },
-      sermon.series_name ? h('p', { class: 'detail-series' }, sermon.series_name) : null,
-      h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, sermon.title),
-      h('div', { class: 'detail-chips' },
-        sermon.archived_at ? h('span', { class: 'pill pill-warning' }, 'Archived') : null,
-        ...sermon.scripture_references.map(ref => h('span', { class: 'chip-scripture' }, ref)),
-        ...sermon.tags.map(tag => h('span', { class: 'chip-tag' }, tag)))),
+    h('div', { class: 'detail-header-identity' },
+      miniBookCover(swatch),
+      h('div', { class: 'detail-header-main' },
+        sermon.series_name ? h('p', { class: 'detail-series' }, sermon.series_name) : null,
+        h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, sermon.title),
+        h('div', { class: 'detail-chips' },
+          sermon.archived_at ? h('span', { class: 'pill pill-warning' }, 'Archived') : null,
+          ...sermon.scripture_references.map(ref => h('span', { class: 'chip-scripture' }, ref)),
+          ...sermon.tags.map(tag => h('span', { class: 'chip-tag' }, tag))))),
     editor
       ? h('div', { class: 'detail-actions' },
           !sermon.archived_at
@@ -1232,6 +1183,7 @@ function renderSearch(route) {
   let resultsArea;
   if (!route.q) {
     resultsArea = h('div', { class: 'state-panel' },
+      emptyBooksArt(),
       h('h2', { class: 'section-heading' }, 'Search passages and indexed notes'),
       h('p', { class: 'body-copy muted' }, 'Words are matched as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.'),
       h('div', { class: 'quick-queries' },
@@ -1371,19 +1323,19 @@ function renderSettings(route) {
                 h('td', { class: 'tabular' }, formatDay(mem.accepted_at)))))))));
   }
 
-  // Workspace overview
   return h('div', { class: 'settings-stack' },
     h('header', { class: 'page-head' },
       h('div', { class: 'page-head-copy' },
         h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Workspace'),
-        h('p', { class: 'page-summary' }, 'Current workspace details and role permissions.')),
+        h('p', { class: 'page-summary' }, 'Current workspace details, navigation layout preference, and role permissions.')),
       h('div', { class: 'page-head-actions' },
         h('button', { type: 'button', class: 'btn btn-primary', onclick: () => { state.modal = { kind: 'new-workspace' }; render(); } }, icon('plus', 17), 'New workspace'))),
     h('dl', { class: 'facts' },
       h('dt', null, 'Workspace name'), h('dd', null, ws.name),
       h('dt', null, 'Your role'), h('dd', null, ROLE_LABELS[ws.role]),
       h('dt', null, 'Signed in as'), h('dd', null, `${ACCOUNT.display_name} (${ACCOUNT.email})`),
-      h('dt', null, 'Sermons'), h('dd', null, String(ws.sermons.length))),
+      h('dt', null, 'Sermons'), h('dd', null, String(ws.sermons.length)),
+      h('dt', null, 'Desktop layout'), h('dd', null, layoutToggleControl({ compact: true }))),
     h('div', { class: 'panel edge-list-mobile' },
       h('div', { class: 'table-scroll' },
         h('table', { class: 'data-table' },
@@ -1400,18 +1352,21 @@ function renderSettings(route) {
 function renderSignIn() {
   return h('main', { class: 'auth-page', id: 'main-content', tabindex: '-1' },
     h('section', { class: 'auth-card', 'aria-labelledby': 'page-title' },
-      h('div', { class: 'auth-head' },
-        brandMark(44),
-        h('h1', { class: 'auth-title', id: 'page-title', tabindex: '-1' }, 'Sermon Bank'),
-        h('p', { class: 'auth-sub' }, 'Sign in to open your workspace.')),
-      h('button', {
-        type: 'button',
-        class: 'btn btn-primary google-btn',
-        onclick: () => { showToast(`Signed in as ${ACCOUNT.display_name}.`); go('#/library'); }
-      },
-      h('span', { class: 'google-badge' }, googleMark()),
-      h('span', { class: 'google-btn-label' }, 'Continue with Google')),
-      h('p', { class: 'auth-note' }, 'Any Google account can sign in. If you were invited, use the Google account the invitation was made for.')));
+      h('div', { class: 'auth-shelf-band' },
+        brandMark(40),
+        shelfBooksArt({ width: 108, height: 44 })),
+      h('div', { class: 'auth-body' },
+        h('div', { class: 'auth-head' },
+          h('h1', { class: 'auth-title', id: 'page-title', tabindex: '-1' }, 'Sermon Bank'),
+          h('p', { class: 'auth-sub' }, 'Sign in to open your workspace.')),
+        h('button', {
+          type: 'button',
+          class: 'btn btn-primary google-btn',
+          onclick: () => { showToast(`Signed in as ${ACCOUNT.display_name}.`); go('#/library'); }
+        },
+        h('span', { class: 'google-badge' }, googleMark()),
+        h('span', { class: 'google-btn-label' }, 'Continue with Google')),
+        h('p', { class: 'auth-note' }, 'Any Google account can sign in. If you were invited, use the Google account the invitation was made for.'))));
 }
 
 function renderOnboarding() {
@@ -1421,7 +1376,9 @@ function renderOnboarding() {
 
   return h('main', { class: 'main-area', id: 'main-content', tabindex: '-1' },
     h('div', { class: 'onboarding-wrap' },
-      h('div', { class: 'rail-brand' }, brandMark(32), h('span', { class: 'rail-app-name' }, 'Sermon Bank')),
+      h('div', { class: 'onboarding-head' },
+        h('div', { class: 'rail-brand' }, brandMark(32), h('span', { class: 'rail-app-name' }, 'Sermon Bank')),
+        shelfBooksArt({ width: 96, height: 40 })),
       h('div', { class: 'page-head-copy' },
         h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'You do not have a workspace yet'),
         h('p', { class: 'page-summary' }, 'Create your own private workspace, or enter an invitation code from an owner.')),
@@ -1655,25 +1612,6 @@ function renderModal() {
 }
 
 // ============================================================
-// FLOATING PROTOTYPE VARIANT SWITCHER (per prototype/UI.md)
-// ============================================================
-function renderProtoBar() {
-  if (state.hideProtoBar) return null;
-  const current = VARIANTS.find(v => v.key === state.variant) || VARIANTS[0];
-  return h('aside', { class: 'proto-bar', 'aria-label': 'Prototype variant switcher' },
-    h('button', { type: 'button', 'aria-label': 'Previous variant', onclick: () => cycleVariant(-1) }, icon('chevronLeft', 15)),
-    h('span', { class: 'proto-bar-label' },
-      h('span', { class: 'proto-bar-tag' }, 'Prototype'),
-      h('span', { class: 'proto-bar-name' }, `${current.key}: ${current.name}`)),
-    h('button', { type: 'button', 'aria-label': 'Next variant', onclick: () => cycleVariant(1) }, icon('chevronRight', 15)),
-    h('button', {
-      type: 'button',
-      'aria-label': 'Hide prototype bar',
-      onclick: () => { state.hideProtoBar = true; render(); }
-    }, icon('close', 14)));
-}
-
-// ============================================================
 // RENDER LOOP & EVENTS
 // ============================================================
 function render() {
@@ -1709,10 +1647,9 @@ function render() {
   }
 
   if (state.modal) view.setAttribute('inert', '');
-  appRoot.replaceChildren(view, ...(state.modal ? [renderModal()] : []), ...(state.hideProtoBar ? [] : [renderProtoBar()]));
+  appRoot.replaceChildren(view, ...(state.modal ? [renderModal()] : []));
 }
 
-// Global keyboard shortcuts (arrows cycle variants outside inputs; Escape closes popovers/modals)
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (state.modal || state.switcherOpen || state.mobileDrawer) {
@@ -1721,12 +1658,7 @@ window.addEventListener('keydown', e => {
       state.mobileDrawer = null;
       render();
     }
-    return;
   }
-  const tag = (document.activeElement?.tagName || '').toLowerCase();
-  if (['input', 'textarea', 'select'].includes(tag) || document.activeElement?.isContentEditable) return;
-  if (e.key === 'ArrowLeft' && !state.modal) cycleVariant(-1);
-  if (e.key === 'ArrowRight' && !state.modal) cycleVariant(1);
 });
 
 window.addEventListener('click', () => {
@@ -1738,7 +1670,6 @@ window.addEventListener('click', () => {
 
 window.addEventListener('hashchange', render);
 
-// Support programmatic demo triggers via URL query (?modal=new-workspace or ?switcher=open)
 if (params.get('modal') === 'new-workspace') state.modal = { kind: 'new-workspace' };
 if (params.get('switcher') === 'open') state.switcherOpen = true;
 
