@@ -1675,9 +1675,12 @@ test('two-stage search: a later search drops an earlier search\'s late quick or 
     const snapshot = textOf(one(dom.root, e => e.getAttribute('id') === 'search-results'));
     assert.match(snapshot, /Beta Light Sermon/);
     assert.ok(!snapshot.includes('Alpha Hope Sermon'));
+    const spokenBefore = [...spoken], announcerBefore = textOf(dom.announcer);
     release();
     await settle(); await settle();
     assert.equal(textOf(one(dom.root, e => e.getAttribute('id') === 'search-results')), snapshot, 'late responses changed nothing');
+    assert.deepEqual(spoken, spokenBefore, 'and spoke nothing');
+    assert.equal(textOf(dom.announcer), announcerBefore);
     assert.equal(one(dom.root, e => e.getAttribute('id') === 'search-q').value, 'Beta');
     assert.ok(!spoken.some(message => message.includes('“Alpha”')), 'nothing was announced for the dropped search');
     assert.ok(spoken.at(-1).includes('“Beta”'));
