@@ -368,6 +368,8 @@ main { display: block; max-width: 1385px; margin: auto; padding: 0 clamp(16px, 3
 .result-item, .version-result { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
 .result-title { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
 .result-meta { display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; }
+/* Search page text floor: 13px at every width. The shared .pill is 11.5px, so raise it here only. */
+.search-page .pill { font-size: 13px; }
 .excerpt { background: #f7faf6; border-left: 3px solid #b7cbb8; padding: 8px 12px; border-radius: 0 8px 8px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 mark { background: #f6e3a1; color: var(--ink); border-radius: 3px; padding: 0 2px; }
 .notes-panel { display: grid; gap: 14px; margin-top: 22px; }
