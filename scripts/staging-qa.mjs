@@ -398,9 +398,10 @@ async function qaTenancy() {
   const post = await http('POST', `/api/workspaces/${W.alpha}/sermons`, { cookie: asSession(A.owner.session), body: {} });
   check('TEN-12', 'Sermon create rejects an empty body (400 with the field name, nothing created)', post.status === 400 && post.data?.field === 'title', `status ${post.status}`);
   const create = await http('POST', '/api/workspaces', { cookie: asSession(A.fresh.session), body: { name: 'QA self-registration' } });
-  check('TEN-13', 'Non-pilot account cannot create a workspace (403 pilot_access_only)', create.status === 403 && create.data?.error === 'pilot_access_only', `status ${create.status}`);
+  check('TEN-13', 'Public sign-up: any signed-in account can create its own workspace (201 owner)', create.status === 201 && create.data?.role === 'owner', `status ${create.status}`);
+  const again = await http('POST', '/api/workspaces', { cookie: asSession(A.fresh.session), body: { name: 'QA second workspace' } });
   const after = await http('GET', '/api/workspaces', { cookie: asSession(A.fresh.session) });
-  check('TEN-14', 'Rejected create left no workspace behind', after.data?.workspaces?.length === 0, 'workspace was created');
+  check('TEN-14', 'A second self-serve workspace is refused (409) and only one exists', again.status === 409 && after.data?.workspaces?.length === 1, `status ${again.status}, ${after.data?.workspaces?.length} workspaces`);
 }
 
 async function qaRequestRules() {
