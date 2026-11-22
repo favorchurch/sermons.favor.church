@@ -16,7 +16,7 @@ A private, signed-in single-page app on top of the [library API](library-api.md)
 The Sermon Bank mark is three shelf spines with a ribbon (`public/assets/icon.svg`, the source of truth). No asterisk or sparkle glyph ships in `public/`; a test enforces it.
 
 - Generated from the SVG: `public/favicon.ico` (16, 32, 48), `assets/icon-32.png`, `icon-180.png` (apple-touch-icon), `icon-192.png`, `icon-512.png`. The 16px favicon frame comes from `assets/icon-16.svg`, a pixel-snapped variant (whole-pixel shapes) because the three spines blur together when the full mark is scaled to 16px. It keeps two upright spines of near-equal height, a third spine that leans as a stepped diagonal, a 1px brass ribbon on the middle spine, and the shelf, so it reads as books rather than a bar chart. Browsers use `icon.svg` for the tab (the 16px frame lives only in `public/favicon.ico`, which is not linked).
-- The header, empty state and calendar header use the SVG as a decorative `<img alt="">`. The visible "My Sermons" text stays the accessible name.
+- The header, empty state and calendar header use the SVG as a decorative `<img alt="">`. The visible "Sermon Bank" text stays the accessible name.
 - Signed-out visitors cannot fetch `/assets/*`, so the sign-in page inlines its favicon (SVG) and apple-touch-icon (PNG) as `data:` URIs and its CSP allows `img-src data:` only. A test checks the inlined SVG matches `icon.svg` and that no asset is public when signed out.
 - `/favicon.ico` is not routed by the Worker (only `/` and `/assets/*` are), so browsers use the `<link>` tags. The file is committed for tooling and a future route.
 

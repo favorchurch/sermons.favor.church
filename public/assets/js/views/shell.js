@@ -1,4 +1,4 @@
-// The persistent header: workspace switcher ("My Sermons"), signed-in person and sign out.
+// The persistent header: workspace switcher ("Sermon Bank"), signed-in person and sign out.
 import { h, uid } from '../dom.js';
 import { ROLE_LABELS } from '../permissions.js';
 import { hrefFor } from '../router.js';
@@ -25,7 +25,7 @@ export function header(ctx) {
   const brand = h('div', { class: 'brand' },
     h('img', { class: 'brand-mark', src: '/assets/icon.svg', alt: '', width: 38, height: 38 }),
     h('div', { class: 'brand-text' },
-      h('span', { class: 'brand-name' }, 'My Sermons'),
+      h('span', { class: 'brand-name' }, 'Sermon Bank'),
       current ? h('span', { class: 'brand-workspace' }, current.name) : null));
 
   let switcher = null;

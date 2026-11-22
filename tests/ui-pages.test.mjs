@@ -1285,11 +1285,11 @@ test('settings pages move focus to the heading and set the document title', asyn
     const dom = await mountApp(f, 'owner', { hash: '' });
     dom.go('#/settings/workspace');
     assert.equal(dom.document.activeElement.getAttribute('id'), 'page-title');
-    assert.equal(dom.document.title, 'Settings · My Sermons');
+    assert.equal(dom.document.title, 'Settings · Sermon Bank');
     assert.equal(textOf(one(dom.root, e => e.tag === 'h1')), 'Settings');
     assert.equal(all(dom.root, e => e.tag === 'h1').length, 1, 'one h1 per page');
     dom.go('#/search');
-    assert.equal(dom.document.title, 'Search · My Sermons');
+    assert.equal(dom.document.title, 'Search · Sermon Bank');
     assert.equal(all(dom.root, e => e.tag === 'h1').length, 1);
   });
 });

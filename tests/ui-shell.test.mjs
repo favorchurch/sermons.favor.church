@@ -369,6 +369,24 @@ test('signed-out visitors get the icon inline, /favicon.ico, and no other asset'
   } finally { f.db.close(); }
 });
 
+test('sign-in page is variant A: name, one sentence, the Google button and one note, nothing else', async () => {
+  const f = await fixture();
+  try {
+    const page = await f.call('GET', '/', null);
+    assert.equal(page.status, 200);
+    const main = page.text.match(/<main>([\s\S]*)<\/main>/)[1];
+    assert.match(page.text, /<title>Sermon Bank<\/title>/);
+    assert.match(main, /<h1>Sermon Bank<\/h1>/);
+    assert.equal((main.match(/<p /g) || []).length, 2, 'one sentence and one note');
+    assert.match(main, /<p class="what">Sign in to open your sermon archive\.<\/p>/);
+    assert.equal((main.match(/<a /g) || []).length, 1);
+    assert.match(main, /<a class="go" href="\/auth\/google\/start">/);
+    assert.match(main, /Continue with Google<\/a>/);
+    assert.match(main, /<p class="note">Invite only\./);
+    assert.ok(!/My Sermons|<small|<img/.test(page.text));
+  } finally { f.db.close(); }
+});
+
 test('signed-in users get the icon files with private caching', async () => {
   const f = await fixture();
   try {
@@ -710,7 +728,7 @@ test('owner sees the library with covers, a New draft control and counts from th
     assert.match(textOf(cards[0]), /Last preached Mar 9, 2025/);
     assert.ok(all(cards[0], e => e.hasClass('bookcover')).length === 1);
     assert.equal(buttons(dom.root, 'New draft').length, 1);
-    assert.match(textOf(dom.header), /My Sermons/);
+    assert.match(textOf(dom.header), /Sermon Bank/);
     assert.match(textOf(dom.header), /Private Alpha/);
     assert.ok(!textOf(dom.root).includes('Beta Secret'), 'other workspace never appears');
   } finally { f.db.close(); }

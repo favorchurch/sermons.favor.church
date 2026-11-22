@@ -170,7 +170,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function searchView(route) {
-    document.title = 'Search · My Sermons';
+    document.title = 'Search · Sermon Bank';
     const key = JSON.stringify([state.workspaceId, route.q, route.archived]);
     if (route.q && search?.key !== key) loadSearch(route, key);
     return searchPage({ route, result: route.q ? search : null, announce, search: runSearch, retry: () => { search = null; render(); } });
@@ -232,7 +232,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       });
     }
     const { sermon } = detail;
-    document.title = `${sermon.title} · My Sermons`;
+    document.title = `${sermon.title} · Sermon Bank`;
     const done = message => afterWrite(message, sermon.id);
     return sermonPage({
       sermon, role: state.role, tab: route.tab || 'details', q: route.q,
@@ -278,7 +278,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     detail = null;
     if (route.name === 'search') return searchView(route);
     if (route.name === 'settings') {
-      document.title = 'Settings · My Sermons';
+      document.title = 'Settings · Sermon Bank';
       return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
     }
     if (route.name !== 'library') {
@@ -287,7 +287,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         actions: [h('a', { class: 'btn btn-primary', href: hrefFor({ name: 'library', view: 'covers' }) }, 'Go to the library')]
       });
     }
-    document.title = 'Library · My Sermons';
+    document.title = 'Library · Sermon Bank';
     const common = { state, announce, newDraft };
     return route.view === 'calendar'
       ? calendarPage({ route, today: today(), index: state.index })
