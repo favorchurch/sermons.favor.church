@@ -107,7 +107,7 @@ export function libraryPage(ctx) {
   const page = h('div', { class: `library library-${view}` },
     h('section', { class: `hero${view === 'rows' || view === 'table' ? ' hero-compact' : ''}` },
       h('div', { class: 'hero-copy' },
-        h('h1', null, 'Living Library'),
+        h('h1', null, 'Library'),
         h('p', { class: 'hero-lede' },
           `${plural(totals.sermons, 'sermon')} · ${plural(totals.preachings, 'preaching')}`,
           totals.latest ? ` · last preached ${formatWhenShort(totals.latest.date, totals.latest.precision)}` : ''),
