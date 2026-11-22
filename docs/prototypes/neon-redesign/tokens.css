@@ -1,0 +1,114 @@
+/*
+ * Sermon Bank Redesign Prototype — Design Tokens
+ * Warm archival paper ground, crisp white working sheets, deep charcoal ink.
+ * Terracotta accent is rationed for the single next action, focus markers, and active states.
+ * All colours verified >= 4.5:1 for text and >= 3:1 for UI borders (WCAG AA).
+ */
+
+:root {
+  /* Colour roles — warm neutral foundation (~90% of surface area) */
+  --bg-ground: #f7f5f0;
+  --bg-surface: #ffffff;
+  --bg-subtle: #efeae1;
+  --bg-hover: #e8e2d7;
+  --bg-mark: #f5df9c;
+
+  --ink: #1b1917;
+  --ink-secondary: #44403b;
+  --muted: #5c5750; /* 6.9:1 on white, 6.3:1 on ground, 5.5:1 on subtle */
+
+  --rule: #ded8cc;
+  --rule-subtle: #ebe6dc;
+  --control-edge: #7c756b; /* 4.5:1 on white, 4.1:1 on ground (WCAG 1.4.11) */
+
+  /* Accent — terracotta-oxblood */
+  --accent: #9e3a24; /* white text on accent = 6.5:1 */
+  --accent-hover: #822e1c; /* white text = 8.6:1 */
+  --accent-pressed: #6d2516;
+  --accent-text: #8c321e; /* 7.7:1 on white, 7.0:1 on ground */
+  --accent-soft: #f9ebe7;
+  --accent-border: #e6c3b9;
+  --on-accent: #ffffff;
+
+  /* Focus ring — high-visibility cobalt, distinct from accent */
+  --focus: #1d5696;
+
+  /* Status pairs — soft fill, border, and >= 4.5:1 ink; always paired with a word */
+  --status-positive-bg: #e7f3ec;
+  --status-positive-border: #b7d8c3;
+  --status-positive-text: #1c5433;
+
+  --status-warning-bg: #fbf1dc;
+  --status-warning-border: #e2c588;
+  --status-warning-text: #72490b;
+
+  --status-danger-bg: #fcebea;
+  --status-danger-border: #e7b8b6;
+  --status-danger-text: #8f2220;
+
+  --status-neutral-bg: #ede9e0;
+  --status-neutral-border: #d4cec2;
+  --status-neutral-text: #44403b;
+
+  /* Muted book-binding swatches for subtle 3px series spines */
+  --spine-0: #9e3a24;
+  --spine-1: #3b5b4f;
+  --spine-2: #39506b;
+  --spine-3: #7d5b28;
+  --spine-4: #5f4a66;
+  --spine-5: #4f5e46;
+
+  /* Floating prototype switcher (intentionally distinct chrome) */
+  --proto-bg: #1b1917;
+  --proto-text: #f7f5f0;
+  --proto-muted: #c2bbb0;
+  --proto-border: #3a3530;
+  --proto-hover: #2e2a26;
+
+  /* Backdrop & elevation */
+  --backdrop: rgba(27, 25, 23, 0.48);
+  --shadow-float: 0 12px 32px rgba(27, 25, 23, 0.11), 0 2px 6px rgba(27, 25, 23, 0.05);
+  --shadow-dialog: 0 24px 64px rgba(27, 25, 23, 0.22), 0 4px 12px rgba(27, 25, 23, 0.08);
+
+  /* Typography — 3 roles, no decorative/serif display on app screens */
+  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --text-display: clamp(1.5rem, 2.2vw, 1.875rem); /* 24px - 30px */
+  --text-h2: 1.125rem; /* 18px */
+  --text-h3: 0.9375rem; /* 15px */
+  --text-body: 1rem; /* 16px */
+  --text-ui: 0.875rem; /* 14px */
+  --text-small: 0.8125rem; /* 13px floor */
+  --text-tab: 0.6875rem; /* 11px — bottom tab bar & count badges only */
+
+  /* Spacing scale (strictly 4, 8, 12, 16, 24, 32, 48, 64) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  /* Radius family */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-pill: 999px;
+
+  /* Layout metrics */
+  --rail-w: 252px;
+  --content-max: 1120px;
+  --control-h: 44px;
+  --mobile-bar-h: 56px;
+  --mobile-tabs-h: 60px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 150ms;
+
+  color-scheme: light;
+}
