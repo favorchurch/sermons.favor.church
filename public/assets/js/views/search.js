@@ -51,7 +51,7 @@ export function searchPage(ctx) {
     }, label)));
   const form = h('form', { class: 'search-form', role: 'search', onsubmit: event => { event.preventDefault(); go(route.scope); } },
     h('div', { class: 'search-row' },
-      h('div', { class: 'field' }, h('label', { for: 'search-q' }, 'Search the archive'), input),
+      h('div', { class: 'field' }, h('label', { for: 'search-q' }, 'Search this workspace'), input),
       h('button', { type: 'submit', class: 'btn btn-primary' }, 'Search')),
     h('div', { class: 'search-options' }, scopes,
       h('label', { class: 'check', for: 'search-archived' }, archived, ' Include archived sermons')));

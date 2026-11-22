@@ -89,7 +89,7 @@ export function libraryPage(ctx) {
       results.replaceChildren(state.items.length === 0
         ? emptyState({
           title: 'No sermons yet',
-          body: editor ? 'Choose New draft to add one. Only a title is needed. Scripture, versions and places can be added later.' : 'Nothing has been added to this archive yet. Editors and owners can add sermons.',
+          body: editor ? 'Choose New draft to add one. Only a title is needed. Scripture, versions and places can be added later.' : 'Nothing has been added to this workspace yet. Editors and owners can add sermons.',
           actions: editor ? [h('button', { type: 'button', class: 'btn btn-primary', onclick: ctx.newDraft }, 'New draft')] : []
         })
         : emptyState({

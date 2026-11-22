@@ -55,10 +55,10 @@ Sections are shown by role. A hidden section that is opened by address says it i
 | Section | Who sees it | What it does |
 |---|---|---|
 | Places | everyone (view-only for Viewers) | Aliases and usage. Editors and above: rename (a taken name is shown on the field), merge with an **impact preview** (events and aliases that move, the alias that is kept, the resulting count). Merge stays disabled until the chosen target has been previewed, and changing the target clears the preview. |
-| People & Access | Owner, Admin | Members from `GET /members`, invite (email and role, roles the actor may grant), change role, revoke with confirmation. The invitation token is shown once in a dialog with a Copy button and exists nowhere else. No email is sent. A person with no archive can redeem the code on the "no archive yet" screen. |
+| People & Access | Owner, Admin | Members from `GET /members`, invite (email and role, roles the actor may grant), change role, revoke with confirmation. The invitation token is shown once in a dialog with a Copy button and exists nowhere else. No email is sent. A person with no workspace can redeem the code on the "no workspace yet" screen. |
 | Import Review | Owner only | Upload the history CSV (only stages rows), summary counts, a row table with flags, filter and 50-row pages, attest (explicit confirmation, one row or the selection), ignore, approve (single or the attested selection) and rollback with confirmation (a blocked rollback is reported as a conflict). The batch id lives in the address (`?batch=`), so a reload reopens the review. |
 | Docs & Privacy | everyone (controls by role) | Pick a sermon, see each version's state. Editors and above upload a PDF (checked locally for type and 10 MB, the server decides) or add a PDF version in one step. Owners consent (confirmation) and revoke (final, deletes the text). Download shows while a file exists and access is not revoked. |
-| Workspace | everyone | Archive name, your role, counts, what each role can do, and switching archives. |
+| Workspace | everyone | Workspace name, your role, counts, what each role can do, and switching workspaces. |
 
 ### API addition
 
@@ -66,7 +66,7 @@ Sections are shown by role. A hidden section that is opened by address says it i
 
 ## States and accessibility
 
-- Loading (`role=status`, `aria-busy`), empty, error (`role=alert`, retry), access denied (404/403 from the workspace) and signed out (401, link back to sign-in). A signed-in account with no workspace gets a create-archive form (pilot owners only, the server decides).
+- Loading (`role=status`, `aria-busy`), empty, error (`role=alert`, retry), access denied (404/403 from the workspace) and signed out (401, link back to sign-in). A signed-in account with no workspace gets a create-workspace form. Any signed-in account can create one. The name is checked like the server does (3 to 120 characters, trimmed). The header switcher lists the account's workspaces and ends with **New workspace**, which opens a dialog with the same name field. Creating one reloads the workspace list and opens the new workspace.
 - Errors shown to people come from fixed text keyed on HTTP status and error code. Server text is never displayed.
 - Search and Find in notes results, their loading line and the "not a Bible reference" notice are spoken through the one persistent `#announcer` live region (the page re-renders, so a region created with its text would not be reliably announced). The Library count uses it too.
 - When a re-render replaces the focused control (a search run, a saved dialog) focus goes to its replacement (same id, name or label, and the same position among identical controls such as the Rename button of one row), else to the page heading, never to `<body>`. This holds for Settings sections too: a section reloads after a save, and focus follows the button that opened the dialog. A dialog whose opener was replaced while it was open does the same when it closes.
@@ -85,4 +85,4 @@ Sections are shown by role. A hidden section that is opened by address says it i
 ## Not covered yet
 
 - Screen reader, Safari and Firefox passes. The Chrome pass at 1440, 820, 390 px and 200% zoom is in [qa/issue-2-browser-a11y.md](qa/issue-2-browser-a11y.md). Follow-ups there: QA11 (invitation email error is not tied to its field) and QA12 (loading screens still use a region created with its text).
-- Version editing, deleting a preaching, creating Google Doc versions, renaming an archive and listing pending invitations. There is no API for the last two, and Google Doc ingest is not built.
+- Version editing, deleting a preaching, creating Google Doc versions, renaming a workspace and listing pending invitations. There is no API for the last two, and Google Doc ingest is not built.

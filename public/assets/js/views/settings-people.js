@@ -73,7 +73,7 @@ function roleDialog({ client, member, actor, onDone }) {
 
 const revokeDialog = ({ client, member, onDone }) => confirmDialog({
   title: 'Revoke access?',
-  body: `${member.display_name} (${member.email}) will lose access to this archive on their next request. Their other archives are not affected. You can invite them again later.`,
+  body: `${member.display_name} (${member.email}) will lose access to this workspace on their next request. Their other workspaces are not affected. You can invite them again later.`,
   confirmLabel: 'Revoke access', danger: true, onDone, save: () => client.revokeMember(member.account_id)
 });
 
@@ -96,7 +96,7 @@ export function peopleSection(ctx) {
     load: async () => (await ctx.client.listMembers()).sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role) || a.display_name.localeCompare(b.display_name)),
     render: members => h('div', { class: 'table-wrap' },
       h('table', { class: 'sermon-table people-table' },
-        h('caption', { class: 'sr-only' }, 'Members of this archive'),
+        h('caption', { class: 'sr-only' }, 'Members of this workspace'),
         h('thead', null, h('tr', null, ...['Name', 'Email', 'Role', 'Actions'].map(label => h('th', { scope: 'col' }, label)))),
         h('tbody', null, ...members.map(member => memberRow(member, ctx, reload)))))
   });
@@ -105,6 +105,6 @@ export function peopleSection(ctx) {
     onclick: () => inviteDialog({ client: ctx.client, role: ctx.state.role, toast: ctx.toast, onDone: () => reload({ quiet: true }) })
   }, 'Invite someone');
   return sectionBox('people-title', 'People & Access',
-    'Who can open this archive. Invitations that have not been accepted yet are not listed here.',
+    'Who can open this workspace. Invitations that have not been accepted yet are not listed here.',
     h('div', { class: 'section-actions' }, invite), node);
 }

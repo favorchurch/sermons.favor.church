@@ -14,7 +14,7 @@ function mainNav(route) {
 function headerSearch(ctx) {
   const input = h('input', { id: 'header-search', type: 'search', name: 'q', maxlength: 200, placeholder: 'Search sermons and notes', autocomplete: 'off' });
   return h('form', { class: 'header-search', role: 'search', onsubmit: event => { event.preventDefault(); if (input.value.trim()) ctx.search(input.value); } },
-    h('label', { class: 'sr-only', for: 'header-search' }, 'Search the archive'), input,
+    h('label', { class: 'sr-only', for: 'header-search' }, 'Search this workspace'), input,
     h('button', { type: 'submit', class: 'btn btn-quiet' }, 'Search'));
 }
 
@@ -29,19 +29,24 @@ export function header(ctx) {
       current ? h('span', { class: 'brand-workspace' }, current.name) : null));
 
   let switcher = null;
-  if (state.workspaces.length > 1) {
+  if (state.account && current) {
+    const setOpen = open => {
+      if (open) menu.removeAttribute('hidden'); else menu.setAttribute('hidden', '');
+      toggle.setAttribute('aria-expanded', String(open));
+    };
     const menu = h('ul', { class: 'menu', id: menuId, hidden: true },
       ...state.workspaces.map(w => h('li', null, h('button', {
         type: 'button', 'aria-pressed': String(w.id === state.workspaceId), onclick: () => ctx.switchWorkspace(w.id)
-      }, w.name, h('span', { class: 'muted' }, ` · ${ROLE_LABELS[w.role] || w.role}`)))));
+      }, w.name, h('span', { class: 'muted' }, ` · ${ROLE_LABELS[w.role] || w.role}`)))),
+      h('li', { class: 'menu-new' }, h('button', {
+        type: 'button', 'data-action': 'new-workspace',
+        // Focus goes back to the toggle first, so closing the dialog returns focus to a visible control.
+        onclick: () => { setOpen(false); toggle.focus(); ctx.newWorkspace(); }
+      }, 'New workspace')));
     const toggle = h('button', {
       type: 'button', class: 'btn btn-quiet', 'aria-expanded': 'false', 'aria-controls': menuId,
-      onclick: () => {
-        const open = menu.hasAttribute('hidden');
-        if (open) menu.removeAttribute('hidden'); else menu.setAttribute('hidden', '');
-        toggle.setAttribute('aria-expanded', String(open));
-      }
-    }, 'Switch archive ▾');
+      onclick: () => setOpen(menu.hasAttribute('hidden'))
+    }, 'Switch workspace ▾');
     switcher = h('div', { class: 'switcher' }, toggle, menu);
   }
 

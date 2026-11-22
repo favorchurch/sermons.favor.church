@@ -1,4 +1,4 @@
-// Dialogs for every write: new draft, edit, log a preaching, archive/restore confirmation.
+// Dialogs for every write: new draft, new workspace, edit, log a preaching, archive/restore confirmation.
 // Each shows server errors inline (plain language only) and disables its button while saving.
 import { h, field, openDialog } from '../dom.js';
 import { describeError, ApiError } from '../api.js';
@@ -57,6 +57,38 @@ export function newDraftDialog({ client, onCreated }) {
   wireForm({
     form, submit, formError, fields: { title }, dialog: opened,
     save: async () => { created = await client.createSermon(title.control.value); },
+    onDone: () => onCreated(created)
+  });
+  return opened;
+}
+
+/** Same limits as the server (POST /api/workspaces): 3 to 120 characters once trimmed. Returns a message, or '' when valid. */
+export function workspaceNameError(value) {
+  const length = String(value ?? '').trim().length;
+  return length >= 3 && length <= 120 ? '' : 'The name must be 3 to 120 characters.';
+}
+
+/** Name field shared by the New workspace dialog and the empty-state form. */
+export const workspaceNameField = ({ value = '', autofocus = false } = {}) =>
+  field({ label: 'Workspace name', name: 'name', required: true, maxlength: 120, value, autofocus, hint: 'Between 3 and 120 characters.' });
+
+/** `create(name)` POSTs the workspace and resolves the created one; `onCreated` runs after the dialog closes. */
+export function newWorkspaceDialog({ create, onCreated }) {
+  const name = workspaceNameField({ autofocus: true });
+  const formError = formErrorBox();
+  let created = null;
+  const dialogApi = { close: () => {} };
+  const { submit, node } = actions(dialogApi, 'Create workspace');
+  const form = h('form', { novalidate: true }, name.wrapper, formError, node);
+  const opened = openDialog({ title: 'New workspace', body: form });
+  dialogApi.close = opened.close;
+  wireForm({
+    form, submit, formError, fields: { name }, dialog: opened,
+    save: async () => {
+      const message = workspaceNameError(name.control.value);
+      if (message) { name.setError(message); name.control.focus(); throw new Handled(); }
+      created = await create(name.control.value.trim());
+    },
     onDone: () => onCreated(created)
   });
   return opened;

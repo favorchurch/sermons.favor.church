@@ -1,7 +1,7 @@
 // App controller: owns state, loads data through the API, picks the view for the current
 // hash route and wires the write actions. Everything environment-specific (location,
 // storage, clock) is injected so the whole flow can run under a fake DOM in tests.
-import { h, mount, rememberFocus, restoreFocus, field } from './dom.js';
+import { h, mount, rememberFocus, restoreFocus } from './dom.js';
 import { ApiError, describeError } from './api.js';
 import { createLibraryClient } from './data.js';
 import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
@@ -15,7 +15,7 @@ import { searchPage, notesPanel } from './views/search.js';
 import { settingsPage } from './views/settings.js';
 import { joinForm } from './views/join.js';
 import { loadingState, emptyState, errorState, deniedState } from './views/states.js';
-import { newDraftDialog, editSermonDialog, logPreachingDialog, confirmArchiveDialog } from './views/dialogs.js';
+import { newDraftDialog, newWorkspaceDialog, editSermonDialog, logPreachingDialog, confirmArchiveDialog, workspaceNameField, workspaceNameError } from './views/dialogs.js';
 
 const WORKSPACE_KEY = 'sermon-bank.workspace';
 
@@ -62,7 +62,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function renderHeader() {
-    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, signOut, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
+    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
   }
 
   async function signOut() {
@@ -87,7 +87,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     const requested = state.workspaceId;
     try {
       const library = await client.loadLibrary();
-      if (state.workspaceId !== requested) return; // the person switched archives while this was loading
+      if (state.workspaceId !== requested) return; // the person switched workspaces while this was loading
       setLibrary(library);
       state.phase = 'ready';
       render();
@@ -123,6 +123,23 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     loadWorkspace();
   }
 
+  /** Create a workspace from the header, reload the list and open the new one. */
+  const newWorkspace = () => newWorkspaceDialog({
+    create: name => api.post('/api/workspaces', { name }),
+    onCreated: async created => {
+      let refreshed = true;
+      try {
+        state.workspaces = (await api.get('/api/workspaces')).workspaces || [];
+      } catch {
+        refreshed = false;
+      }
+      // Fall back to the create response, so the new workspace opens even if the list failed to load.
+      if (!state.workspaces.some(w => w.id === created.id)) state.workspaces = [...state.workspaces, created];
+      toast(refreshed ? 'Workspace created.' : 'Workspace created, but the list could not be refreshed. Reload the page to see the latest.');
+      switchWorkspace(created.id);
+    }
+  });
+
   /** Reload lists after a write without a loading screen. A failed refresh is reported, not fatal. */
   async function refreshLibrary() {
     try {
@@ -144,10 +161,10 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     if (parseRoute(getHash()).id === id) render();
   }
 
-  /** Redeem a one-time invitation code, then reload the list of archives. The server checks it against the signed-in email. */
+  /** Redeem a one-time invitation code, then reload the list of workspaces. The server checks it against the signed-in email. */
   async function joinWithCode(token) {
     await api.post('/api/invitations/accept', { token });
-    toast('You have joined the archive.');
+    toast('You have joined the workspace.');
     await start();
   }
 
@@ -222,7 +239,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       if (error instanceof ApiError && error.status === 404) {
         return emptyState({
           title: 'Sermon not found',
-          body: 'It may have been removed, or it may belong to an archive you don’t have access to.',
+          body: 'It may have been removed, or it may belong to a workspace you don’t have access to.',
           actions: [h('a', { class: 'btn', href: hrefFor({ name: 'library', view: 'covers' }) }, 'Back to the library')]
         });
       }
@@ -245,27 +262,28 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function noWorkspaceView() {
-    const name = field({ label: 'Name your archive', name: 'name', required: true, maxlength: 120, value: 'My Sermons', hint: 'At least 3 characters.' });
+    const name = workspaceNameField({ value: 'My Sermons' });
     const message = h('p', { class: 'form-error', role: 'alert', hidden: true });
     const form = h('form', {
       class: 'state-form', novalidate: true,
       onsubmit: async event => {
         event.preventDefault();
         message.setAttribute('hidden', '');
+        const invalid = workspaceNameError(name.control.value);
+        name.setError(invalid);
+        if (invalid) { name.control.focus(); return; }
         try {
-          await api.post('/api/workspaces', { name: name.control.value });
+          await api.post('/api/workspaces', { name: name.control.value.trim() });
           await start();
         } catch (error) {
-          message.textContent = error instanceof ApiError && error.code === 'pilot_access_only'
-            ? 'Creating an archive is limited to pilot owners. Ask an owner to invite you instead.'
-            : describeError(error);
+          message.textContent = describeError(error);
           message.removeAttribute('hidden');
         }
       }
-    }, name.wrapper, message, h('button', { type: 'submit', class: 'btn btn-primary' }, 'Create archive'));
+    }, name.wrapper, message, h('button', { type: 'submit', class: 'btn btn-primary' }, 'Create workspace'));
     return h('section', { class: 'state state-empty' },
-      h('h2', null, 'You don’t have an archive yet'),
-      h('p', null, 'Create your own private archive, or use the invitation code an owner gave you.'),
+      h('h2', null, 'You don’t have a workspace yet'),
+      h('p', null, 'Create your own private workspace, or use the invitation code an owner gave you.'),
       form,
       joinForm({ join: joinWithCode }));
   }
@@ -312,8 +330,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       });
     } else if (state.phase === 'denied') {
       view = deniedState({
-        title: 'You don’t have access to this archive',
-        body: 'Ask an owner or admin to invite you, or switch to an archive you belong to.',
+        title: 'You don’t have access to this workspace',
+        body: 'Ask an owner or admin to invite you, or switch to a workspace you belong to.',
         actions: state.workspaces.filter(w => w.id !== state.workspaceId).map(w => h('button', { type: 'button', class: 'btn', onclick: () => switchWorkspace(w.id) }, `Open ${w.name}`))
       });
     } else if (state.phase === 'error') {

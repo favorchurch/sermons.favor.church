@@ -610,7 +610,7 @@ test('a hidden section is refused in the UI and never calls its API', async () =
   });
 });
 
-test('Workspace section shows the archive, the role, and what each role can do', async () => {
+test('Workspace section shows the workspace, the role, and what each role can do', async () => {
   await withFixture(async f => {
     const dom = await mountApp(f, 'editor', { hash: '#/settings/workspace' });
     await settle();
@@ -857,12 +857,12 @@ test('people: the invitation limit and server errors are shown without server te
   });
 });
 
-test('a person with no archive can redeem an invitation code', async () => {
+test('a person with no workspace can redeem an invitation code', async () => {
   await withFixture(async f => {
     const invite = await f.call('POST', f.w('/invitations'), 'owner', { email: 'outsider@example.test', role: 'viewer' });
     const dom = await mountApp(f, 'outsider');
     assert.equal(dom.app.state.phase, 'no-workspace');
-    assert.equal(all(dom.header, e => e.tag === 'nav').length, 0, 'no navigation before there is an archive');
+    assert.equal(all(dom.header, e => e.tag === 'nav').length, 0, 'no navigation before there is a workspace');
     const form = all(dom.root, e => e.tag === 'form')[1];
     one(form, e => e.getAttribute('name') === 'token').value = 'wrong-code';
     form.dispatch('submit');
@@ -942,7 +942,7 @@ test('import review: attest needs confirmation, approve is separate, ignore and 
     assert.equal(byAction(first, 'approve').length, 0, 'cannot approve before attesting');
     byAction(first, 'attest')[0].dispatch('click');
     let dialog = openDialog(dom);
-    assert.match(textOf(dialog), /you confirm that you, as Owner of this archive, are responsible/);
+    assert.match(textOf(dialog), /you confirm that you, as Owner of this workspace, are responsible/);
     assert.match(textOf(dialog), /Nothing is created yet/);
     assert.equal(textOf(dom.document.activeElement), 'Cancel');
     assert.equal(rowStatus(f, 5), 'unreviewed', 'opening the dialog changes nothing');
@@ -1182,7 +1182,7 @@ test('docs: upload a PDF, then an Owner consents and it becomes searchable, then
     await until(() => all(owner.root, e => e.hasClass('version-card')).length === 2, 'owner view');
     byAction(versionCard(owner, 'Printed notes'), 'consent')[0].dispatch('click');
     const dialog = openDialog(owner);
-    assert.match(textOf(dialog), /Everyone in this archive will be able to find text from “Printed notes”/);
+    assert.match(textOf(dialog), /Everyone in this workspace will be able to find text from “Printed notes”/);
     assert.equal(textOf(owner.document.activeElement), 'Cancel');
     assert.equal(versionState(f), 'awaiting_consent', 'nothing changes before confirming');
     one(dialog, e => e.tag === 'form').dispatch('submit');
@@ -1268,7 +1268,7 @@ test('docs: sermon picker, empty library and deep links', async () => {
     const viewer = await mountApp(f, 'viewer', { hash: `#/sermons/${ids.sermon1}` });
     await until(() => /Original Alpha/.test(textOf(viewer.root)), 'viewer sermon');
     assert.equal(all(viewer.root, e => e.tag === 'a' && /Manage documents/.test(textOf(e))).length, 0);
-    // An archive with no sermons has nothing to manage yet.
+    // A workspace with no sermons has nothing to manage yet.
     f.db.execute('DELETE FROM preaching_events WHERE workspace_id=?', [ids.w2]);
     f.db.execute('DELETE FROM sermon_versions WHERE workspace_id=?', [ids.w2]);
     f.db.execute('DELETE FROM sermon_scripture_refs WHERE workspace_id=?', [ids.w2]);
@@ -1485,7 +1485,7 @@ test('the invitation token leaves the page entirely when its dialog closes', asy
   });
 });
 
-test('someone who already has an archive can join another with a code from Workspace settings', async () => {
+test('someone who already has a workspace can join another with a code from Workspace settings', async () => {
   await withFixture(async f => {
     const invite = await f.call('POST', f.w('/invitations'), 'owner', { email: 'owner2@example.test', role: 'viewer' });
     const dom = await mountApp(f, 'owner2', { hash: '#/settings/workspace' });
@@ -1499,8 +1499,8 @@ test('someone who already has an archive can join another with a code from Works
     one(form, e => e.getAttribute('name') === 'token').value = invite.json.token;
     form.dispatch('submit');
     await until(() => dom.app.state.workspaces.length === 2, 'joined');
-    await until(() => buttons(dom.root, 'Open Private Alpha').length === 1, 'the new archive is offered');
-    assert.match(textOf(dom.toast), /joined the archive/);
+    await until(() => buttons(dom.root, 'Open Private Alpha').length === 1, 'the new workspace is offered');
+    assert.match(textOf(dom.toast), /joined the workspace/);
     assert.deepEqual(f.db.query('SELECT role FROM workspace_memberships WHERE account_id=? AND workspace_id=?', [ids.owner2, ids.w1]).map(r => r.role), ['viewer']);
   });
 });

@@ -100,7 +100,7 @@ export function calendarPage(ctx) {
       undatedGroups.length || index.undated.length
         ? h('div', { class: 'undated-block' },
           ...undatedGroups.map(([title, events]) => h('section', null, h('h3', null, title), h('ul', { class: 'event-list' }, ...events.map(event => eventItem(event, true))))),
-          index.undated.length ? h('p', { class: 'muted' }, `${plural(index.undated.length, 'preaching')} in this archive ${index.undated.length === 1 ? 'has' : 'have'} no date. Open the sermon to review ${index.undated.length === 1 ? 'it' : 'them'}.`) : null)
+          index.undated.length ? h('p', { class: 'muted' }, `${plural(index.undated.length, 'preaching')} in this workspace ${index.undated.length === 1 ? 'has' : 'have'} no date. Open the sermon to review ${index.undated.length === 1 ? 'it' : 'them'}.`) : null)
         : null));
 }
 

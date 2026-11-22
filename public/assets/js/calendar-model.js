@@ -74,7 +74,7 @@ export function shiftMonth(y, m, delta) {
   return next.y < MIN_YEAR || next.y > MAX_YEAR ? { y, m } : next;
 }
 
-/** Start where the archive actually has history: this month if it has events, else the latest past event, else this month. */
+/** Start where the workspace actually has history: this month if it has events, else the latest past event, else this month. */
 export function defaultPosition(index, today) {
   const now = parseDay(today);
   const current = { y: now.y, m: now.m };
