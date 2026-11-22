@@ -116,6 +116,15 @@ for (const [label, width] of [['desktop (1280px)', 1280], ['tablet (768px)', 768
   });
 }
 
+test('every class the Search view renders has a probe above', () => {
+  const view = readFileSync(new URL('../public/assets/js/views/search.js', import.meta.url), 'utf8');
+  const pageCode = view.slice(0, view.indexOf('export function notesPanel')); // the per-sermon panel is another page
+  const rendered = new Set([...pageCode.matchAll(/class: '([^']+)'/g)].flatMap(m => m[1].split(/\s+/)));
+  const probed = new Set(Object.values(KINDS).flat().flatMap(spec => spec.split('.').slice(1)));
+  const probeless = [...rendered].filter(name => !probed.has(name) && name !== 'search-page');
+  assert.deepEqual(probeless, [], 'add each new class to KINDS so the 13px floor covers it');
+});
+
 test('the pill keeps its smaller size outside the Search page', () => {
   const chain = ['body', 'main', 'table.people-table', 'td', 'span.pill'].map(el);
   assert.equal(resolve(chain, 1280), 11.5);
