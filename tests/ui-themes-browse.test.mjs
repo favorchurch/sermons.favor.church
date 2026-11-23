@@ -131,6 +131,13 @@ const sampleItems = [
     version_count: 1,
     preachCount: 1,
     last: { date: '2026-07-12', precision: 'exact' }
+  },
+  {
+    id: 'c1000000-0000-4000-8000-000000000004',
+    title: 'Archived Series Opener',
+    series_name: 'Enough',
+    archived_at: '2026-10-01 09:00:00',
+    preachCount: 0
   }
 ];
 
@@ -208,7 +215,9 @@ test('Library covers, rows, and table views render under layouts A and C with in
           assert.equal(findAll(panel, n => n.hasClass('row-spine')).length, 2);
         } else {
           const panel = findOne(page, n => n.hasClass('panel') && n.hasClass('edge-list-mobile'), `${layout} table edge-to-edge`);
-          assert.ok(findOne(panel, n => n.tag === 'table' && n.hasClass('data-table')));
+          const table = findOne(panel, n => n.tag === 'table' && n.hasClass('data-table'));
+          const body = findOne(table, n => n.tag === 'tbody');
+          assert.deepEqual(findAll(body, n => n.tag === 'a').map(n => n.textContent), ['Walking on Water', 'The Shepherd Who Stays']);
         }
       }
 
@@ -244,10 +253,12 @@ test('Library covers, rows, and table views render under layouts A and C with in
       assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 0);
       assert.ok(findOne(rowsPage, n => n.tag === 'svg' && n.hasClass('empty-books-art')));
       const clearBtn = findOne(rowsPage, n => n.tag === 'button' && n.textContent === 'Clear filters');
+      clearBtn.focus();
       clearBtn.dispatch('click');
       assert.equal(state.query, '');
       assert.equal(state.series, 'all');
       assert.equal(searchInput.value, '');
+      assert.equal(document.activeElement?.getAttribute('id'), 'sermon-search');
       assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 2);
 
       // Sort by title changes order
@@ -264,9 +275,9 @@ test('Library covers, rows, and table views render under layouts A and C with in
       archivedBtn.dispatch('click');
       assert.equal(archivedBtn.getAttribute('aria-pressed'), 'true');
       assert.equal(findOne(rowsPage, n => n.hasClass('results-scope')).textContent, 'Archived sermons');
-      assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 1);
+      assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 2);
       selectSeries('series:all', 'all');
-      assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 1);
+      assert.deepEqual(findAll(rowsPage, n => n.hasClass('row-link')).map(n => n.textContent), ['Archived Message']);
 
       // Stale '__none__' resets when no standalone sermons exist, and workspace switch resets state.series.
       const onlySeriesItems = [sampleItems[0]];
@@ -315,6 +326,7 @@ test('Preaching Calendar renders under layouts A and C with needs_review, imprec
       const activeDay = findOne(page, n => n.getAttribute('data-focus-key') === 'day-2026-11-08');
       assert.ok(activeDay.hasClass('is-today') && activeDay.hasClass('is-selected'));
       assert.equal(activeDay.getAttribute('aria-current'), 'true');
+      assert.match(activeDay.getAttribute('aria-label'), /date needs review/i);
       const reviewTag = findOne(activeDay, n => n.hasClass('cal-day-tag') && n.hasClass('is-review'));
       assert.match(reviewTag.textContent, /Review/);
       assert.match(reviewTag.textContent, /!/);
@@ -531,7 +543,10 @@ test('browse.css is linked in index.html, scopes all selectors, defines responsi
   assert.match(railTablet, /html\[data-layout="a"\]\s+\.sermon-row[\s\S]*grid-template-columns:\s*4px\s+minmax\(0,\s*1fr\)\s+18px/);
 
   const mobile = extractMediaBlock(css, '@media (max-width: 720px)');
-  assert.match(mobile, /\.edge-list-mobile[\s\S]*\.notes-panel\s+\.version-results[\s\S]*margin-left:\s*-16px[\s\S]*margin-right:\s*-16px[\s\S]*border-radius:\s*0/);
+  const [, edgeSelectors, edgeRules] = mobile.match(/([^{}]+\.edge-list-mobile[^{}]*)\{([^{}]+)\}/) || [];
+  assert.deepEqual(edgeSelectors?.split(',').map(selector => selector.trim()).sort(),
+    ['a', 'c'].flatMap(layout => ['.edge-list-mobile', '.notes-panel .version-results'].map(selector => `html[data-layout="${layout}"] ${selector}`)));
+  assert.match(edgeRules, /margin-left:\s*-16px[\s\S]*margin-right:\s*-16px[\s\S]*border-radius:\s*0/);
   assert.match(mobile, /\.data-table\s+th[\s\S]*border:\s*0;\s*padding:\s*3px\s+0/);
   assert.match(mobile, /html\[data-layout="c"\]\s+\.filter-selects[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
 
@@ -551,4 +566,13 @@ test('browse.css is linked in index.html, scopes all selectors, defines responsi
     const source = await readFile(join(root, rel), 'utf8');
     assert.doesNotMatch(source, /\p{Emoji_Presentation}|[\u2605\u2606\u2736-\u273f]/u, rel);
   }
+});
+
+test('layout C series filter pills constrain and wrap long labels', async () => {
+  const css = await readFile(join(root, 'public/assets/themes/browse.css'), 'utf8');
+  const [, pillRules] = css.match(/html\[data-layout="c"\] \.series-pill\s*\{([^}]+)\}/) || [];
+  assert.ok(pillRules, 'series pill styles exist');
+  assert.match(pillRules, /max-width:\s*100%;/);
+  assert.match(pillRules, /overflow-wrap:\s*anywhere;/);
+  assert.doesNotMatch(pillRules, /display:\s*(?:inline-)?flex;/);
 });

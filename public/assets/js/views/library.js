@@ -47,7 +47,7 @@ function table(items) {
       h('caption', { class: 'sr-only' }, 'Sermons'),
       h('thead', null, h('tr', null, ...head.map(label => h('th', { scope: 'col' }, label)))),
       h('tbody', null, ...items.map(item => h('tr', null,
-        h('th', { scope: 'row', 'data-label': 'Title' }, h('a', { href: sermonHref(item.id) }, item.title), item.archived_at ? h('span', { class: 'pill pill-warn' }, 'Archived') : null),
+        h('th', { scope: 'row', 'data-label': 'Title' }, h('a', { href: sermonHref(item.id) }, item.title), statusChip(item)),
         h('td', { 'data-label': 'Series' }, item.series_name || '—'),
         h('td', { 'data-label': 'Scripture' }, item.scripture_references?.join(', ') || '—'),
         h('td', { 'data-label': 'Tags' }, item.tags?.join(', ') || '—'),
@@ -106,7 +106,7 @@ function themedTable(items) {
         h('tbody', null, ...items.map(item => h('tr', null,
           h('th', { scope: 'row', 'data-label': 'Title' },
             h('a', { href: sermonHref(item.id) }, item.title),
-            item.archived_at ? h('span', { class: 'pill pill-warn' }, 'Archived') : null),
+            statusChip(item)),
           h('td', { 'data-label': 'Scripture' }, item.scripture_references?.join(', ') || '—'),
           h('td', { 'data-label': 'Series' }, item.series_name || 'Standalone'),
           h('td', { 'data-label': 'Tags' }, item.tags?.join(', ') || '—'),
@@ -201,7 +201,12 @@ function themedLibraryPage(ctx, layout) {
           body: hasFilter ? 'Clear the search text or switch between Active and Archived sermons.' : state.archive === 'archived' ? 'Archived sermons keep their history and can be restored.' : 'Everything here has been archived. Switch to Archived to restore one.',
           actions: hasFilter ? [h('button', {
             type: 'button', class: 'btn',
-            onclick: () => { state.query = ''; state.series = 'all'; activeSeries = 'all'; search.value = ''; refresh(); }
+            onclick: () => {
+              state.query = '';
+              search.value = '';
+              setSeries('all');
+              search.focus();
+            }
           }, 'Clear filters')] : []
         }));
       return;
