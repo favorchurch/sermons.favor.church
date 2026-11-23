@@ -174,6 +174,34 @@ test('a layout saved through PATCH /api/me survives a reload, even when the brow
   });
 });
 
+test('the chosen layout carries into the empty and no-workspace fixtures, even when they were opened earlier with another layout', async () => {
+  const layoutOf = async get => (await (await get('/api/me')).json()).account.layout;
+  for (const fixtureName of ['empty', 'no-workspace']) {
+    // Fresh browser: the layout is chosen first, then the fixture.
+    await withPreview({ layout: 'a' }, async ({ get }) => {
+      await get('/?preview_layout=c');
+      await get(`/?preview=${fixtureName}`);
+      assert.equal(await layoutOf(get), 'c', fixtureName);
+      assert.match(await (await get('/')).text(), /<body/);
+    });
+    // The fixture was opened earlier under A; a later switch under C still gets C.
+    await withPreview({ layout: 'a' }, async ({ get }) => {
+      await get(`/?preview=${fixtureName}`);
+      assert.equal(await layoutOf(get), 'a');
+      await get('/?preview=default&preview_layout=c');
+      await get(`/?preview=${fixtureName}`);
+      assert.equal(await layoutOf(get), 'c', fixtureName);
+      await get('/?preview_layout=original');
+      assert.equal(await layoutOf(get), 'original', fixtureName);
+    });
+    // Both parameters in one request.
+    await withPreview({ layout: 'a' }, async ({ get }) => {
+      await get(`/?preview=${fixtureName}&preview_layout=c`);
+      assert.equal(await layoutOf(get), 'c', fixtureName);
+    });
+  }
+});
+
 test('unknown fixture or layout values are rejected and the cookie is not set', async () => {
   await withPreview({}, async ({ get, jar }) => {
     for (const path of ['/?preview=nope', '/?preview_layout=zzz', '/?preview=', '/?preview_layout=']) {
