@@ -146,6 +146,16 @@ const allRules = new Map();
 
 for (const path of cssFiles) allRules.set(path, parseRules(await readFile(path, 'utf8')));
 
+test('Original header workspace name stays on one line with an ellipsis on phones', async () => {
+  const css = await readFile(join(root, 'public/assets/app.css'), 'utf8');
+  const phoneRules = parseRules(css).filter(({ selectors, atRules }) =>
+    selectors.includes('.brand-workspace') && atRules.includes('@media (max-width: 720px)'));
+  const declarations = Object.fromEntries(phoneRules.flatMap(rule => rule.declarations));
+  assert.equal(declarations['white-space'], 'nowrap');
+  assert.equal(declarations.overflow, 'hidden');
+  assert.equal(declarations['text-overflow'], 'ellipsis');
+});
+
 test('every theme selector is layout-scoped, text sizes meet the floor, and layout rules avoid clipping bugs', () => {
   assert.ok(cssFiles.length > 0);
   for (const [path, rules] of allRules) for (const { selectors, declarations } of rules) {
