@@ -13,7 +13,6 @@ const J = path => new URL(`../public/assets/js/${path}`, import.meta.url).pathna
 const { createApi } = await import(J('api.js'));
 const { createApp } = await import(J('app.js'));
 const { joinForm } = await import(J('views/join.js'));
-const { layoutSection } = await import(J('views/settings-layout.js'));
 
 // ---------------------------------------------------------------- minimal fake DOM and app harness
 
@@ -160,10 +159,30 @@ const SECTIONS = ['places', 'people', 'import', 'docs', 'workspace'];
 const themeCss = name => readFileSync(new URL(`../public/assets/themes/${name}.css`, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const otherCss = themeCss('other');
 /** Rules of a theme stylesheet that declare something: { selector, layout } for each selector in each rule's list. */
-const rulesOf = css => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-  .filter(([, prelude, body]) => !prelude.trim().startsWith('@') && /[\w-]+\s*:\s*\S/.test(body))
-  .flatMap(([, prelude]) => prelude.split(/,(?![^(]*\))/).map(selector => selector.trim()))
-  .map(selector => ({ selector, layout: /^html\[data-layout="(a|c)"\]/.exec(selector)?.[1] }));
+function rulesOf(css) {
+  const rules = [];
+  for (let start = 0; start < css.length;) {
+    const open = css.indexOf('{', start);
+    if (open < 0) break;
+    let depth = 1;
+    let end = open + 1;
+    for (; end < css.length && depth; end++) {
+      if (css[end] === '{') depth++;
+      if (css[end] === '}') depth--;
+    }
+    const prelude = css.slice(start, open).trim();
+    const body = css.slice(open + 1, end - 1);
+    if (/^@(media|supports|container|layer)\b/.test(prelude)) {
+      rules.push(...rulesOf(body));
+    } else if (!prelude.startsWith('@') && /[\w-]+\s*:\s*\S/.test(body)) {
+      for (const selector of splitTop(prelude, c => c === ',')) {
+        rules.push({ selector, layout: /^html\[data-layout="(a|c)"\]/.exec(selector)?.[1] });
+      }
+    }
+    start = end;
+  }
+  return rules;
+}
 const otherRules = rulesOf(otherCss);
 /** Every theme stylesheet except layout.css, which owns the Settings > Layout cards. */
 const nonLayoutThemeRules = { 'browse.css': rulesOf(themeCss('browse')), 'other.css': otherRules };
@@ -359,7 +378,10 @@ function compoundMatches(node, compound) {
       if (m[1] === 'not' ? any : !any) return false;
       m = [rest.slice(0, end)];
     }
-    else if ((m = /^:[\w-]+/.exec(rest))) { /* :hover, :focus-visible, :disabled, :last-child ... */ }
+    else if ((m = /^:(disabled|enabled)\b/.exec(rest))) {
+      if ((m[1] === 'disabled') !== node.attrs.has('disabled')) return false;
+    }
+    else if ((m = /^:[\w-]+/.exec(rest))) { /* :hover, :focus-visible, :last-child ... */ }
     else throw new Error('selector part not understood: ' + rest);
     rest = rest.slice(m[0].length);
   }
@@ -386,6 +408,11 @@ test('the selector matcher finds an unguarded button rule and passes a guarded o
   const chain = [describeNode('html', '', { 'data-layout': 'a' }), describeNode('main', 'settings')];
   assert.ok(selectorReaches('html[data-layout="a"] :is(.search-page, .settings) .btn-primary', card, chain));
   assert.ok(selectorReaches('html[data-layout="a"] .settings .btn:hover', card, chain));
+  assert.ok(selectorReaches('html[data-layout="a"] .btn:hover:not(:disabled)', card, chain));
+  assert.ok(selectorReaches('.settings .btn', card, chain));
+  card.attrs.set('disabled', '');
+  assert.ok(!selectorReaches('html[data-layout="a"] .btn:hover:not(:disabled)', card, chain));
+  assert.ok(selectorReaches('html[data-layout="a"] .btn:disabled', card, chain));
   assert.ok(selectorReaches('html[data-layout="a"] .settings :focus-visible', card, chain));
   assert.ok(!selectorReaches('html[data-layout="a"] .settings .btn-primary:where(:not(.layout-option))', card, chain));
   assert.ok(!selectorReaches('html[data-layout="c"] .settings .btn-primary', card, chain));
@@ -393,28 +420,30 @@ test('the selector matcher finds an unguarded button rule and passes a guarded o
   assert.ok(!selectorReaches('html[data-layout="a"] .settings .btn::before', card, chain));
 });
 
-test('no theme stylesheet but layout.css (browse.css, other.css) has a rule that matches the Settings > Layout option cards', () => {
-  const cards = [];
-  globalThis.document = new FakeDocument();
-  for (const active of ['original', 'a', 'c']) {
-    const section = layoutSection({ state: { layout: active, layoutSaving: false, layoutError: null, phase: 'ready' }, changeLayout() {} });
-    cards.push(...all(section, e => e.tag === 'button' && e.hasClass('layout-option')));
-  }
-  assert.equal(cards.length, 9);
-  assert.ok(cards.some(card => card.getAttribute('aria-pressed') === 'true') && cards.some(card => card.getAttribute('aria-pressed') === 'false'));
+test('no theme stylesheet but layout.css (browse.css, other.css) has a rule that matches the Settings > Layout option cards', async () => {
   const offenders = new Set();
+  const describe = node => ({ tag: node.tag, classes: new Set(classesOf(node)), attrs: new Map(node.attrs) });
   for (const layout of THEMED) {
-    const chain = [
-      describeNode('html', '', { 'data-layout': layout }), describeNode('body', ''), describeNode('main', 'settings'),
-      describeNode('div', 'settings-layout'), describeNode('div', 'settings-body'),
-      describeNode('section', 'settings-section theme-layout-settings'), describeNode('div', 'layout-options switch-list', { role: 'group' })
-    ];
-    for (const card of cards) {
-      const node = describeNode('button', card.getAttribute('class'), { type: 'button', 'aria-pressed': card.getAttribute('aria-pressed'), 'data-layout-option': card.getAttribute('data-layout-option') });
-      for (const [sheet, rules] of Object.entries(nonLayoutThemeRules)) {
-        for (const rule of rules) if (rule.layout === layout && selectorReaches(rule.selector, node, chain)) offenders.add(`${sheet}: ${rule.selector}`);
+    const { dom, f } = await mountAs(layout, '#/settings/layout');
+    try {
+      const cards = all(dom.root, e => e.tag === 'button' && e.hasClass('layout-option'));
+      assert.equal(cards.length, 3);
+      assert.equal(cards.filter(card => card.getAttribute('aria-pressed') === 'true').length, 1);
+      for (const card of cards) {
+        const chain = [];
+        for (let ancestor = card.parent; ancestor; ancestor = ancestor.parent) chain.unshift(describe(ancestor));
+        chain.unshift(describe(dom.document.documentElement));
+        const node = describe(card);
+        const disabled = { ...node, attrs: new Map([...node.attrs, ['disabled', '']]) };
+        for (const [sheet, rules] of Object.entries(nonLayoutThemeRules)) {
+          for (const { selector } of rules) {
+            if (selectorReaches(selector, node, chain) || selectorReaches(selector, disabled, chain)) {
+              offenders.add(`${sheet}: ${selector}`);
+            }
+          }
+        }
       }
-    }
+    } finally { f.db.close(); }
   }
   assert.deepEqual([...offenders], []);
 });

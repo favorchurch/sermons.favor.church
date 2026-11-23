@@ -408,7 +408,7 @@ html[data-layout="c"] .search-results .result-item { padding: 16px; }
   html[data-layout="a"] .dialog,
 html[data-layout="c"] .dialog { padding: 20px; }
   html[data-layout="a"] .dialog-actions,
-html[data-layout="c"] .dialog-actions { flex-direction: column-reverse; }
+html[data-layout="c"] .dialog-actions { flex-direction: column; }
   html[data-layout="a"] .dialog-actions .btn,
 html[data-layout="c"] .dialog-actions .btn { width: 100%; }
 }
