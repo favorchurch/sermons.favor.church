@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPreviewServer, LOADING_HOLD_MS } from '../scripts/theme-preview.mjs';
+import { createPreviewServer } from '../scripts/theme-preview.mjs';
 
 async function withPreview(options, run) {
-  const preview = await createPreviewServer({ loadingDelayMs: 200, ...options });
+  const preview = await createPreviewServer(options);
   try {
     await new Promise(resolve => preview.server.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${preview.server.address().port}`;
@@ -57,52 +57,53 @@ test('the error fixture answers 500 to the library list calls only', async () =>
   });
 });
 
-test('the loading fixture holds the library list calls, then answers normally', async () => {
-  await withPreview({ loadingDelayMs: 250 }, async ({ get }) => {
+test('the loading fixture injects a client-side hold ahead of the app and keeps no server request open', async () => {
+  await withPreview({}, async ({ get }) => {
     const paths = await libraryPaths(get);
-    await get('/?preview=loading');
-    const quick = Date.now();
-    assert.equal((await get('/api/me')).status, 200);
-    assert.ok(Date.now() - quick < 200, 'only the library list is held');
+    const normalPage = await (await get('/?preview=default')).text();
+    assert.ok(!normalPage.includes('loading-stub'), 'other fixtures get no stub');
+
+    const page = await get('/?preview=loading');
+    const html = await page.text();
+    const tag = '<script src="/__preview/loading-stub.js"></script>';
+    assert.equal(html.split(tag).length - 1, 1);
+    const later = html.indexOf('<script', html.indexOf(tag) + tag.length);
+    assert.ok(later === -1 || html.indexOf(tag) < later, 'the stub runs before the app scripts');
+    assert.match(page.headers.get('content-security-policy') || '', /script-src 'self'(?:;|$)/, 'the stub is a same-origin file, not inline');
+
+    const stub = await get('/__preview/loading-stub.js');
+    assert.equal(stub.status, 200);
+    assert.match(stub.headers.get('content-type'), /^text\/javascript/);
+
+    // The server answers the library list at once: nothing is held on the server side.
     const started = Date.now();
     const response = await get(paths.sermons);
-    assert.ok(Date.now() - started >= 230, 'the list was held');
     assert.equal(response.status, 200);
     assert.ok((await response.json()).sermons.length >= 5);
+    assert.ok(Date.now() - started < 1000);
+    assert.equal((await get(paths.events)).status, 200);
   });
 });
 
-test('the loading fixture holds by default for far longer than a capture step takes', async () => {
-  assert.ok(LOADING_HOLD_MS >= 300000, 'the default hold outlasts slow capture steps');
-  const preview = await createPreviewServer({});
-  try {
-    await new Promise(resolve => preview.server.listen(0, '127.0.0.1', resolve));
-    const base = `http://127.0.0.1:${preview.server.address().port}`;
-    const login = await fetch(`${base}/?preview=loading`);
-    const cookie = login.headers.getSetCookie().map(line => line.split(';')[0]).join('; ');
-    const workspaces = await (await fetch(`${base}/api/workspaces`, { headers: { cookie } })).json();
-    const controller = new AbortController();
-    const held = fetch(`${base}/api/workspaces/${workspaces.workspaces[0].id}/sermons?archived=include&limit=100&offset=0`, { headers: { cookie }, signal: controller.signal })
-      .then(() => 'answered', () => 'aborted');
-    const outcome = await Promise.race([held, new Promise(resolve => setTimeout(() => resolve('still held'), 1500))]);
-    controller.abort();
-    assert.equal(outcome, 'still held');
-  } finally {
-    preview.server.closeAllConnections();
-    await new Promise(resolve => preview.server.close(resolve));
-    preview.db.close();
-  }
-});
-
-test('an abandoned held request does not keep the server open', async () => {
-  await withPreview({ loadingDelayMs: 60000 }, async ({ get }) => {
-    const paths = await libraryPaths(get);
+test('the injected fetch never settles for GET library list calls and passes everything else through', async () => {
+  await withPreview({}, async ({ get }) => {
     await get('/?preview=loading');
-    const controller = new AbortController();
-    const held = get(paths.sermons, { signal: controller.signal }).catch(error => error.name);
-    await new Promise(resolve => setTimeout(resolve, 50));
-    controller.abort();
-    assert.equal(await held, 'AbortError');
+    const source = await (await get('/__preview/loading-stub.js')).text();
+    const real = async (input, init) => ({ passedThrough: String(input instanceof Request ? input.url : input), method: init?.method });
+    const window = { fetch: real };
+    new Function('window', 'location', source)(window, { href: 'http://127.0.0.1:4181/' });
+    assert.notEqual(window.fetch, real);
+
+    const id = '11111111-1111-4111-8111-111111111111';
+    const settles = promise => Promise.race([promise.then(() => true, () => true), new Promise(resolve => setTimeout(() => resolve(false), 150))]);
+    assert.equal(await settles(window.fetch(`/api/workspaces/${id}/sermons?archived=include&limit=100&offset=0`)), false);
+    assert.equal(await settles(window.fetch(`/api/workspaces/${id}/events?limit=1000&offset=0`)), false);
+    assert.equal(await settles(window.fetch(new Request(`http://127.0.0.1:4181/api/workspaces/${id}/sermons`))), false);
+
+    assert.equal((await window.fetch('/api/me')).passedThrough, '/api/me');
+    assert.equal((await window.fetch(`/api/workspaces/${id}/places`)).passedThrough, `/api/workspaces/${id}/places`);
+    assert.equal((await window.fetch(`/api/workspaces/${id}/sermons`, { method: 'POST' })).method, 'POST');
+    assert.equal((await window.fetch(`/api/workspaces/${id}/sermons/${id}`)).passedThrough, `/api/workspaces/${id}/sermons/${id}`);
   });
 });
 
