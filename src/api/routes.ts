@@ -14,7 +14,7 @@ import {
 import { createEvent, deleteEvent, getEvent, listEvents, listSermonEvents, updateEvent } from './events.ts';
 import { createPlace, listPlaces, mergePlace, previewPlaceMerge, renamePlace } from './places.ts';
 import { upload, summary, rows, attest, ignore, approve, rollback } from '../import/routes.ts';
-import { findInNotes, search } from '../search/api.ts';
+import { findInNotes, quickSearch, search } from '../search/api.ts';
 import { consentToIndex, downloadPdf, revokeIndexing, uploadPdf } from '../sources/api.ts';
 
 export type Handler = (c: Ctx) => Promise<Response>;
@@ -52,6 +52,7 @@ export const ROUTES: Route[] = [
   route('POST', '/imports/:batchId/rows/:rowId/approve', approve),
   route('POST', '/imports/:batchId/rows/:rowId/rollback', rollback),
   route('GET', '/search', search),
+  route('GET', '/search/quick', quickSearch),
   route('GET', '/sermons/:sermonId/find-in-notes', findInNotes),
   route('POST', '/sermons/:sermonId/versions/:versionId/pdf', uploadPdf),
   route('GET', '/sermons/:sermonId/versions/:versionId/pdf', downloadPdf),

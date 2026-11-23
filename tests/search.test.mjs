@@ -609,3 +609,182 @@ test('references with impossible verse numbers are skipped, not fatal to indexin
     assert.equal((await search(f, 'John 3:1000')).json.notesMatches.length, 0);
   });
 });
+
+// ---------------------------------------------------------------------------------------
+// Quick metadata route: GET /search/quick
+// ---------------------------------------------------------------------------------------
+
+const quick = (f, q, actor = 'owner', extra = '') => f.call('GET', f.w(`/search/quick?q=${encodeURIComponent(q)}${extra}`), actor);
+const SQ = 'c1000000-0000-4000-8000-0000000000a1';
+const SQ2 = 'c1000000-0000-4000-8000-0000000000a2';
+
+/** Alpha (John 3:16) plus three w1 sermons that match on different metadata fields. */
+async function withQuickLibrary(run) {
+  await withFixture(async f => {
+    f.db.execute('INSERT INTO sermons(id,workspace_id,title,series_name,tags_json) VALUES (?,?,?,?,?)',
+      [SQ, ids.w1, 'Café Grace Notes', 'Anchors Series', JSON.stringify(['healing', 'Faith'])]);
+    f.db.execute('INSERT INTO sermon_scripture_refs(workspace_id,sermon_id,position,reference_text) VALUES (?,?,0,?)', [ids.w1, SQ, 'Romans 8:28']);
+    f.db.execute('INSERT INTO sermons(id,workspace_id,title,scripture_passage) VALUES (?,?,?,?)', [sermon3, ids.w1, 'Beta Light Sermon', 'John 3:14-17']);
+    f.db.execute('INSERT INTO sermon_scripture_refs(workspace_id,sermon_id,position,reference_text) VALUES (?,?,0,?)', [ids.w1, sermon3, 'John 3:14-17']);
+    await run(f);
+  });
+}
+const quickIds = res => res.json.sermonMatches.map(m => m.sermon_id);
+
+test('quick search reports which field matched: title, series, scripture, tags and passage', async () => {
+  await withQuickLibrary(async f => {
+    const only = async (q, id, fields) => {
+      const res = await quick(f, q);
+      assert.equal(res.status, 200, res.text);
+      assert.deepEqual(quickIds(res), [id], q);
+      assert.deepEqual(res.json.sermonMatches[0].matched_on, fields, q);
+      return res.json.sermonMatches[0];
+    };
+    const body = (await quick(f, 'Notes')).json;
+    assert.deepEqual(Object.keys(body).sort(), ['limit', 'query', 'sermonMatches'], 'the accepted field is sermonMatches');
+    const hit = await only('Notes', SQ, ['title']);
+    assert.deepEqual([hit.sermon_title, hit.series_name, hit.scripture_references, hit.tags, hit.archived],
+      ['Café Grace Notes', 'Anchors Series', ['Romans 8:28'], ['healing', 'Faith'], false]);
+    await only('anchors', SQ, ['series']);
+    await only('romans', SQ, ['scripture']);
+    await only('8:28', SQ, ['scripture']);
+    await only('FAITH', SQ, ['tags']);
+    await only('grace anchors', SQ, ['title', 'series']);
+    assert.deepEqual(quickIds(await quick(f, 'grace zebra')), [], 'every term must match');
+    assert.deepEqual(quickIds(await quick(f, 'grace  healing')), [SQ], 'terms may sit in different fields, with extra spaces');
+    assert.deepEqual(quickIds(await quick(f, 'nothing here')), []);
+    assert.deepEqual((await quick(f, 'sermon')).json.sermonMatches.map(m => m.sermon_id).sort(), [ids.sermon1, sermon3].sort());
+  });
+});
+
+test('quick search folds case and diacritics in both directions, like the library filter', async () => {
+  await withQuickLibrary(async f => {
+    for (const q of ['cafe', 'CAFÉ', 'café', 'Cafe\u0301', 'cAfE grace']) assert.deepEqual(quickIds(await quick(f, q)), [SQ], q);
+    f.db.execute('UPDATE sermons SET series_name=? WHERE id=?', ['Naïve Series', SQ]);
+    assert.deepEqual(quickIds(await quick(f, 'naive')), [SQ]);
+    assert.deepEqual(quickIds(await quick(f, 'NAÏVE')), [SQ]);
+  });
+});
+
+test('quick search shares matchesQuery with the library filter on the same data', async () => {
+  await withQuickLibrary(async f => {
+    const { matchesQuery } = await import('../public/assets/js/library-model.js');
+    const list = (await f.call('GET', f.w('/sermons'), 'owner')).json.sermons;
+    for (const q of ['cafe', 'grace anchors', 'romans 8', 'sermon', 'Faith healing', 'zzz', 'beta john', 'John 3:14']) {
+      const res = await quick(f, q, 'owner', '&limit=50');
+      const expected = list.filter(s => matchesQuery(s, q)).map(s => s.id).sort();
+      const textOnly = res.json.sermonMatches.filter(m => m.matched_on.some(field => field !== 'passage')).map(m => m.sermon_id).sort();
+      assert.deepEqual(textOnly, expected, q);
+    }
+  });
+});
+
+test('quick search on a Bible reference adds sermons whose own passage overlaps, marked passage', async () => {
+  await withQuickLibrary(async f => {
+    const res = await quick(f, 'John 3:16');
+    assert.equal(res.status, 200, res.text);
+    assert.deepEqual(res.json.query, { kind: 'reference', label: 'John 3:16' });
+    const byId = Object.fromEntries(res.json.sermonMatches.map(m => [m.sermon_id, m]));
+    assert.deepEqual(Object.keys(byId).sort(), [ids.sermon1, sermon3].sort());
+    // The overlap with a range is passage only: its text does not say "3:16".
+    assert.deepEqual(byId[sermon3].matched_on, ['passage']);
+    assert.equal(byId[sermon3].passage, 'John 3:14-17');
+    // Alpha's own reference text is the query, so it matches as Scripture and as a passage.
+    assert.deepEqual(byId[ids.sermon1].matched_on, ['scripture', 'passage']);
+    assert.equal(byId[ids.sermon1].passage, 'John 3:16');
+    assert.ok(!('passage' in (await quick(f, 'romans')).json.sermonMatches[0]), 'a text match carries no passage');
+    assert.deepEqual(quickIds(await quick(f, 'Psalm 150')), [], 'a reference nobody preaches on finds nothing');
+  });
+});
+
+test('quick search excludes archived sermons unless asked, and never shows deleted ones', async () => {
+  await withQuickLibrary(async f => {
+    f.db.execute('UPDATE sermons SET archived_at=CURRENT_TIMESTAMP WHERE id=?', [SQ]);
+    assert.deepEqual(quickIds(await quick(f, 'grace')), []);
+    assert.deepEqual(quickIds(await quick(f, 'grace', 'owner', '&archived=exclude')), []);
+    const shown = await quick(f, 'grace', 'owner', '&archived=include');
+    assert.deepEqual([quickIds(shown), shown.json.sermonMatches[0].archived], [[SQ], true]);
+    f.db.execute('UPDATE sermons SET archived_at=CURRENT_TIMESTAMP WHERE id=?', [sermon3]);
+    assert.deepEqual(quickIds(await quick(f, 'John 3:16')), [ids.sermon1], 'archived passage matches are excluded too');
+    assert.deepEqual((await quick(f, 'John 3:16', 'owner', '&archived=include')).json.sermonMatches.length, 2);
+    f.db.execute('UPDATE sermons SET deleted_at=CURRENT_TIMESTAMP WHERE id IN (?,?)', [SQ, sermon3]);
+    assert.deepEqual(quickIds(await quick(f, 'grace', 'owner', '&archived=include')), []);
+    assert.deepEqual(quickIds(await quick(f, 'John 3:16', 'owner', '&archived=include')), [ids.sermon1], 'deleted passage matches never appear');
+    assert.equal((await quick(f, 'grace', 'owner', '&archived=bogus')).status, 400);
+  });
+});
+
+test('quick search validates the query like /search and limits results', async () => {
+  await withQuickLibrary(async f => {
+    const missing = await f.call('GET', f.w('/search/quick'), 'owner');
+    assert.deepEqual([missing.status, missing.json.field], [400, 'q']);
+    for (const q of ['x'.repeat(201), 'one two three four five six seven eight nine ten eleven twelve thirteen', '   ', '!!!']) {
+      const res = await quick(f, q);
+      assert.deepEqual([res.status, res.json.field], [400, 'q'], q.slice(0, 20));
+      assert.equal((await search(f, q)).status, 400, 'same rule as /search');
+    }
+    assert.equal((await quick(f, 'one two three four five six seven eight nine ten eleven twelve')).status, 200, '12 words is allowed');
+    for (const limit of ['0', '51', 'abc']) assert.equal((await quick(f, 'sermon', 'owner', `&limit=${limit}`)).status, 400, limit);
+    const one = await quick(f, 'sermon', 'owner', '&limit=1');
+    assert.deepEqual([one.json.limit, one.json.sermonMatches.length], [1, 1]);
+    assert.equal((await quick(f, 'sermon')).json.limit, 20);
+  });
+});
+
+test('quick search never leaves the workspace and rejects non-members', async () => {
+  await withQuickLibrary(async f => {
+    // Beta Secret Sermon (Psalm 23) belongs to w2.
+    for (const q of ['secret', 'Beta Secret', 'Psalm 23', 'psalm']) {
+      const res = await quick(f, q, 'owner', '&archived=include');
+      assert.equal(res.status, 200);
+      assert.ok(!quickIds(res).includes(ids.sermon2), q);
+      assert.ok(!res.text.includes('Secret') && !res.text.includes(ids.sermon2), q);
+    }
+    for (const actor of ['owner2', 'outsider']) {
+      const res = await quick(f, 'alpha', actor);
+      assert.deepEqual([res.status, res.json], [404, { error: 'not_found' }], actor);
+    }
+    const anonymous = await f.call('GET', f.w('/search/quick?q=alpha'));
+    assert.equal(anonymous.status, 401);
+    assert.ok(!anonymous.text.includes('Alpha'));
+    // The same words in w2's own scope find only w2's sermon.
+    const { searchSermonMetadata } = await import('../src/search/index.ts');
+    const own = await searchSermonMetadata(f.env.DB, ids.w2, 'secret', parseSearchQuery('secret'), { limit: 20 });
+    assert.deepEqual(own.map(hit => hit.sermon_id), [ids.sermon2]);
+    assert.deepEqual(await searchSermonMetadata(f.env.DB, ids.w2, 'alpha', parseSearchQuery('alpha'), { limit: 20 }), []);
+  });
+});
+
+test('every active member, Viewer included, can use the quick route; it only accepts GET', async () => {
+  await withQuickLibrary(async f => {
+    for (const actor of ['viewer', 'editor', 'admin', 'owner']) {
+      const res = await quick(f, 'alpha', actor);
+      assert.equal(res.status, 200, actor);
+      assert.deepEqual(quickIds(res), [ids.sermon1], actor);
+    }
+    for (const actor of ['viewer', 'owner']) {
+      const res = await f.call('POST', f.w('/search/quick?q=alpha'), actor, {});
+      assert.ok(res.status >= 400 && res.status < 500, `${actor} POST ${res.status}`);
+    }
+  });
+});
+
+test('quick search does not read note text and does not write', async () => {
+  await withQuickLibrary(async f => {
+    consent(f.db, ids.version1);
+    await index(f, ids.version1, 'Only the notes mention zebras and John 3:16 and Jn 3:16-18.');
+    const sql = [];
+    const prepare = f.env.DB.prepare.bind(f.env.DB);
+    f.env.DB.prepare = text => { sql.push(text); return prepare(text); };
+    const before = JSON.stringify([f.db.query('SELECT * FROM audit_events'), f.db.query('SELECT * FROM note_texts')]);
+    const text = await quick(f, 'zebras');
+    const reference = await quick(f, 'John 3:16');
+    f.env.DB.prepare = prepare;
+    assert.deepEqual(quickIds(text), [], 'a word that is only in the notes finds no sermon in the quick pass');
+    assert.ok(reference.json.sermonMatches.length > 0);
+    assert.ok(sql.length > 0);
+    for (const statement of sql) assert.ok(!/note_texts|note_fts|note_reference_tokens/.test(statement), statement);
+    assert.equal(JSON.stringify([f.db.query('SELECT * FROM audit_events'), f.db.query('SELECT * FROM note_texts')]), before);
+    assert.equal((await search(f, 'zebras')).json.notesMatches.length, 1, 'while the deep pass does find it');
+  });
+});
