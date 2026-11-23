@@ -20,3 +20,9 @@ export function coverFor(sermon) {
     tilt: ((h >>> 24) % 9) - 4
   };
 }
+
+/** Deterministic 0..5 accent spine index keyed by series name (or sermon title/id when standalone). */
+export function spineIndex(sermon) {
+  const key = sermon?.series_name || sermon?.title || String(sermon?.id ?? '');
+  return hash(String(key)) % 6;
+}

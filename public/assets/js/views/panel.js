@@ -21,7 +21,7 @@ export function panel({ label, load, render }) {
   };
   async function reload({ quiet = false } = {}) {
     const mine = ++generation;
-    if (!quiet) node.replaceChildren(h('p', { class: 'muted', role: 'status' }, `Loading ${label}…`));
+    if (!quiet) node.replaceChildren(h('p', { class: 'muted panel-loading', role: 'status' }, `Loading ${label}…`));
     try {
       const data = await load();
       if (mine === generation) swap(render(data, reload));

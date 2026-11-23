@@ -2,10 +2,10 @@
 import { h } from '../dom.js';
 import { VIEWS, VIEW_LABELS, hrefFor, sermonHref } from '../router.js';
 import { SORTS, filterAndSort, libraryTotals } from '../library-model.js';
-import { coverFor } from '../covers.js';
+import { coverFor, spineIndex } from '../covers.js';
 import { formatWhenShort, formatDay, plural } from '../format.js';
 import { canEdit } from '../permissions.js';
-import { coverArt, shelf } from './covers.js';
+import { coverArt, isThemed, layoutOf, lineIcon, shelf, shelfBooksArt } from './covers.js';
 import { emptyState } from './states.js';
 
 const lastPreachedText = item => item.last ? `Last preached ${formatWhenShort(item.last.date, item.last.precision)}` : 'Not yet preached';
@@ -57,11 +57,190 @@ function table(items) {
         h('td', { 'data-label': 'Added' }, item.created_at ? formatDay(item.created_at.slice(0, 10)) : '—'))))));
 }
 
+function themedRow(item) {
+  const swatch = spineIndex(item);
+  const lastText = item.last ? formatWhenShort(item.last.date, item.last.precision) : 'Not preached yet';
+  const countText = plural(item.preachCount, 'time');
+  const versions = versionText(item);
+  return h('li', { class: 'sermon-row' },
+    h('span', { class: `row-spine spine-${swatch}`, 'aria-hidden': 'true' }),
+    h('div', { class: 'row-primary' },
+      h('div', { class: 'row-title-line' },
+        h('a', { class: 'row-link', href: sermonHref(item.id) }, item.title),
+        statusChip(item)),
+      h('div', { class: 'row-sub' },
+        item.scripture_references?.length
+          ? h('span', { class: 'row-scripture' }, item.scripture_references.join(' · '))
+          : h('span', null, 'No Scripture'),
+        item.series_name ? h('span', null, `· ${item.series_name}`) : null)),
+    h('span', { class: 'row-col row-col-date' },
+      lastText,
+      h('span', { class: 'mobile-only-inline' }, ` · ${countText} · ${versions}`)),
+    h('span', { class: 'row-col row-col-right row-col-count' }, countText),
+    h('span', { class: 'row-col row-col-right row-col-versions' }, versions),
+    h('span', { class: 'row-chevron', 'aria-hidden': 'true' }, lineIcon('chevronRight', 16)));
+}
+
+function themedRows(items) {
+  return h('div', { class: 'panel edge-list-mobile' },
+    h('div', { class: 'list-head-row', 'aria-hidden': 'true' },
+      h('span'),
+      h('span', null, 'Sermon'),
+      h('span', null, 'Last preached'),
+      h('span', { class: 'row-col-right' }, 'Preached'),
+      h('span', { class: 'row-col-right' }, 'Versions'),
+      h('span')),
+    h('ul', { class: 'sermon-list' }, ...items.map(themedRow)));
+}
+
+function themedTable(items) {
+  const head = [
+    ['Title', false], ['Scripture', false], ['Series', false], ['Tags', false],
+    ['Last preached', false], ['Preachings', true], ['Versions', true], ['Added', false]
+  ];
+  return h('div', { class: 'panel edge-list-mobile' },
+    h('div', { class: 'table-scroll' },
+      h('table', { class: 'sermon-table data-table' },
+        h('caption', { class: 'sr-only' }, 'Sermons'),
+        h('thead', null, h('tr', null, ...head.map(([label, num]) => h('th', { scope: 'col', class: num ? 'num' : null }, label)))),
+        h('tbody', null, ...items.map(item => h('tr', null,
+          h('th', { scope: 'row', 'data-label': 'Title' },
+            h('a', { href: sermonHref(item.id) }, item.title),
+            item.archived_at ? h('span', { class: 'pill pill-warn' }, 'Archived') : null),
+          h('td', { 'data-label': 'Scripture' }, item.scripture_references?.join(', ') || '—'),
+          h('td', { 'data-label': 'Series' }, item.series_name || 'Standalone'),
+          h('td', { 'data-label': 'Tags' }, item.tags?.join(', ') || '—'),
+          h('td', { 'data-label': 'Last preached', class: 'tabular' }, item.last ? formatWhenShort(item.last.date, item.last.precision) : 'Not preached yet'),
+          h('td', { 'data-label': 'Preachings', class: 'num' }, String(item.preachCount)),
+          h('td', { 'data-label': 'Versions', class: 'num' }, String(item.version_count ?? 0)),
+          h('td', { 'data-label': 'Added', class: 'tabular' }, item.created_at ? formatDay(item.created_at.slice(0, 10)) : '—')))))));
+}
+
+function filterSeries(items, series) {
+  if (!series || series === 'all') return items;
+  if (series === '__none__') return items.filter(item => !item.series_name);
+  return items.filter(item => item.series_name === series);
+}
+
+function themedLibraryPage(ctx, layout) {
+  const { state, view } = ctx;
+  const totals = libraryTotals(state.items);
+  const editor = canEdit(state.role);
+  const seriesNames = [...new Set(state.items.map(item => item.series_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const hasStandalone = state.items.some(item => !item.series_name);
+  let activeSeries = state.series || 'all';
+  if (activeSeries !== 'all' && activeSeries !== '__none__' && !seriesNames.includes(activeSeries)) {
+    activeSeries = 'all';
+    state.series = 'all';
+  }
+
+  const results = h('div', { class: 'results', id: 'results' });
+  const count = h('p', { class: 'result-count', id: 'result-count' });
+  const scopeLabel = h('span', { class: 'results-scope' });
+  const search = h('input', {
+    id: 'sermon-search', class: 'input', type: 'search', placeholder: 'Filter by title, Scripture, series, or tag',
+    value: state.query, autocomplete: 'off', 'aria-controls': 'results',
+    oninput: event => { state.query = event.target.value; refresh(); }
+  });
+  const archiveButtons = ['active', 'archived'].map(key => h('button', {
+    type: 'button', 'aria-pressed': String(state.archive === key),
+    onclick: () => { state.archive = key; refresh(); }
+  }, key === 'active' ? 'Active' : 'Archived'));
+  const sortSelect = h('select', {
+    id: 'sermon-sort', class: 'select', 'aria-label': 'Sort sermons',
+    onchange: event => { state.sort = event.target.value; refresh(); }
+  }, ...SORTS.map(([value, label]) => h('option', { value, selected: state.sort === value }, label)));
+
+  const setSeries = value => { activeSeries = value; state.series = value; refresh(); };
+  const seriesOptions = [
+    ['all', 'All series'],
+    ...seriesNames.map(name => [name, name]),
+    ...(hasStandalone ? [['__none__', 'Standalone']] : [])
+  ];
+  const seriesSelect = layout === 'a'
+    ? h('select', {
+      id: 'sermon-series', class: 'select', 'aria-label': 'Filter by series',
+      onchange: event => setSeries(event.target.value)
+    }, ...seriesOptions.map(([value, label]) => h('option', { value, selected: activeSeries === value }, label)))
+    : null;
+  const seriesPills = layout === 'c'
+    ? seriesOptions.map(([value, label]) => h('button', {
+      type: 'button', class: 'series-pill', 'aria-pressed': String(activeSeries === value),
+      onclick: () => setSeries(value)
+    }, label))
+    : [];
+
+  function refresh() {
+    const shown = filterSeries(filterAndSort(state.items, state), activeSeries);
+    archiveButtons.forEach((button, i) => button.setAttribute('aria-pressed', String(state.archive === ['active', 'archived'][i])));
+    seriesPills.forEach((button, i) => button.setAttribute('aria-pressed', String(activeSeries === seriesOptions[i][0])));
+    if (seriesSelect) seriesSelect.value = activeSeries;
+    count.textContent = `Showing ${plural(shown.length, 'sermon')}` + (state.query ? ` matching “${state.query}”` : '');
+    scopeLabel.textContent = state.archive === 'active' ? 'Active library' : 'Archived sermons';
+    ctx.announce(count.textContent);
+    if (!shown.length) {
+      const hasFilter = Boolean(state.query) || activeSeries !== 'all';
+      results.replaceChildren(state.items.length === 0
+        ? emptyState({
+          title: 'No sermons in this workspace',
+          body: editor ? 'Start with a draft title. Scripture references, preaching dates, and notes can be added later.' : 'Nothing has been added to this workspace yet. Editors and owners can add sermons.',
+          actions: editor ? [h('button', { type: 'button', class: 'btn', onclick: ctx.newDraft }, 'Create first draft')] : []
+        })
+        : emptyState({
+          title: hasFilter ? 'No sermons match this filter' : state.archive === 'archived' ? 'No archived sermons' : 'No active sermons',
+          body: hasFilter ? 'Clear the search text or switch between Active and Archived sermons.' : state.archive === 'archived' ? 'Archived sermons keep their history and can be restored.' : 'Everything here has been archived. Switch to Archived to restore one.',
+          actions: hasFilter ? [h('button', {
+            type: 'button', class: 'btn',
+            onclick: () => { state.query = ''; state.series = 'all'; activeSeries = 'all'; search.value = ''; refresh(); }
+          }, 'Clear filters')] : []
+        }));
+      return;
+    }
+    if (view === 'rows') results.replaceChildren(themedRows(shown));
+    else if (view === 'table') results.replaceChildren(themedTable(shown));
+    else results.replaceChildren(h('div', { class: 'cards-grid' }, ...shown.map(card)));
+  }
+
+  const page = h('div', { class: `library library-${view} browse-page` },
+    h('header', { class: 'page-head' },
+      h('div', { class: 'page-head-left' },
+        shelfBooksArt(),
+        h('div', { class: 'page-head-copy' },
+          h('h1', { class: 'page-title', id: 'page-title', tabindex: '-1' }, 'Library'),
+          h('p', { class: 'page-summary' },
+            `${plural(totals.sermons, 'active sermon')} · ${plural(totals.preachings, 'preaching')}`,
+            totals.latest ? ` · last preached ${formatWhenShort(totals.latest.date, totals.latest.precision)}` : ''))),
+      h('div', { class: 'page-head-actions' },
+        editor
+          ? h('button', { type: 'button', class: 'btn btn-primary', onclick: ctx.newDraft }, lineIcon('plus', 18), 'New draft')
+          : h('span', { class: 'pill' }, 'View-only access'))),
+    layout === 'c' && seriesPills.length > 1
+      ? h('div', { class: 'series-strip', role: 'group', 'aria-label': 'Filter by series' }, ...seriesPills)
+      : null,
+    h('div', { class: 'filter-bar' },
+      h('div', { class: 'filter-left' },
+        h('div', { class: 'search-input-wrap filter-search' },
+          h('label', { class: 'sr-only', for: 'sermon-search' }, 'Search sermons'),
+          lineIcon('search', 16),
+          search),
+        h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show' }, ...archiveButtons)),
+      h('div', { class: 'filter-right' },
+        h('div', { class: 'filter-selects' }, seriesSelect, sortSelect),
+        libraryTabs(view, true))),
+    h('div', { class: 'results-meta' }, count, scopeLabel),
+    results);
+  refresh();
+  return page;
+}
+
 /**
  * Build the library page. The toolbar is built once and only the results area is rebuilt while
  * typing, so the search box keeps focus. `ctx` supplies state and actions from app.js.
  */
 export function libraryPage(ctx) {
+  const layout = layoutOf(ctx.state?.layout);
+  if (layout !== 'original') return themedLibraryPage(ctx, layout);
+
   const { state, view } = ctx;
   const totals = libraryTotals(state.items);
   const editor = canEdit(state.role);
@@ -128,7 +307,8 @@ export function libraryPage(ctx) {
   return page;
 }
 
-export function libraryTabs(active) {
+export function libraryTabs(active, themed = isThemed()) {
   return h('nav', { class: 'view-tabs', 'aria-label': 'Library views' },
-    ...VIEWS.map(view => h('a', { href: hrefFor({ name: 'library', view }), 'aria-current': view === active ? 'page' : null }, VIEW_LABELS[view])));
+    ...VIEWS.map(view => h('a', { href: hrefFor({ name: 'library', view }), 'aria-current': view === active ? 'page' : null },
+      themed ? lineIcon(view, 15) : null, VIEW_LABELS[view])));
 }
