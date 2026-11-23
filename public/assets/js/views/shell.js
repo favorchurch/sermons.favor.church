@@ -9,13 +9,14 @@ const NAV = [
   ['settings', 'Settings', { name: 'settings', section: 'places' }]
 ];
 
-function mainNav(route, className = 'main-nav') {
+function mainNav(route, className = 'main-nav', extra = null) {
   const active = ['library', 'sermon'].includes(route.name) ? 'library' : route.name;
   return h('nav', { class: className, 'aria-label': 'Main' },
     ...NAV.map(([key, label, target]) => h('a', {
       href: hrefFor(target),
       'aria-current': key === active ? 'page' : null
-    }, className === 'theme-nav' ? h('span', { class: 'theme-tab-label' }, label) : label)));
+    }, className === 'theme-nav' ? h('span', { class: 'theme-tab-label' }, label) : label)),
+    extra);
 }
 
 function headerSearch(ctx) {
@@ -25,15 +26,59 @@ function headerSearch(ctx) {
     h('button', { type: 'submit', class: 'btn btn-quiet' }, 'Search'));
 }
 
-function workspaceSwitcher(ctx, current, { className = 'switcher', themed = false } = {}) {
+function createMenuCoordinator() {
+  let closeCurrent = null;
+  return {
+    open(closeFn, container) {
+      if (closeCurrent && closeCurrent !== closeFn) closeCurrent();
+      closeCurrent = closeFn;
+      const onPointerDown = event => {
+        if (container.isConnected === false) { cleanup(); return; }
+        if (!container.contains?.(event.target)) {
+          cleanup();
+          closeFn();
+        }
+      };
+      const onKeyDown = event => {
+        if (container.isConnected === false) { cleanup(); return; }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cleanup();
+          closeFn(true);
+        }
+      };
+      const cleanup = () => {
+        if (closeCurrent === closeFn) closeCurrent = null;
+        document.removeEventListener?.('pointerdown', onPointerDown);
+        document.removeEventListener?.('keydown', onKeyDown);
+      };
+      document.addEventListener?.('pointerdown', onPointerDown);
+      document.addEventListener?.('keydown', onKeyDown);
+      return cleanup;
+    }
+  };
+}
+
+function workspaceSwitcher(ctx, current, { className = 'switcher', themed = false, menus = null } = {}) {
   const { state } = ctx;
   if (!state.account || !current) return null;
   const menuId = uid('workspace-menu');
   let menu;
   let toggle;
-  const setOpen = open => {
-    if (open) menu.removeAttribute('hidden'); else menu.setAttribute('hidden', '');
-    toggle.setAttribute('aria-expanded', String(open));
+  let container;
+  let cleanup = null;
+  const setOpen = (open, restoreFocus = false) => {
+    if (open) {
+      menu.removeAttribute('hidden');
+      toggle.setAttribute('aria-expanded', 'true');
+      if (menus) cleanup = menus.open(focusToggle => setOpen(false, focusToggle), container);
+    } else {
+      cleanup?.();
+      cleanup = null;
+      menu.setAttribute('hidden', '');
+      toggle.setAttribute('aria-expanded', 'false');
+      if (restoreFocus) toggle.focus();
+    }
   };
   menu = h('ul', { class: 'menu', id: menuId, hidden: true },
     ...state.workspaces.map(w => h('li', null, h('button', {
@@ -48,7 +93,8 @@ function workspaceSwitcher(ctx, current, { className = 'switcher', themed = fals
     }, 'New workspace')));
   toggle = themed
     ? h('button', {
-      type: 'button', class: 'btn btn-quiet workspace-toggle', 'aria-expanded': 'false', 'aria-controls': menuId,
+      type: 'button', class: 'btn btn-quiet workspace-toggle', 'data-test': 'workspace-switcher',
+      'aria-expanded': 'false', 'aria-controls': menuId,
       onclick: () => setOpen(menu.hasAttribute('hidden'))
     },
     h('span', { class: 'workspace-toggle-text' },
@@ -59,27 +105,88 @@ function workspaceSwitcher(ctx, current, { className = 'switcher', themed = fals
       type: 'button', class: 'btn btn-quiet', 'aria-expanded': 'false', 'aria-controls': menuId,
       onclick: () => setOpen(menu.hasAttribute('hidden'))
     }, 'Switch workspace ▾');
-  return h('div', {
+  container = h('div', {
     class: className,
     onkeydown: event => {
       if (event.key === 'Escape' && !menu.hasAttribute('hidden')) {
         event.preventDefault();
-        setOpen(false);
-        toggle.focus();
+        setOpen(false, true);
       }
     }
   }, toggle, menu);
+  return container;
 }
 
-function layoutToggle(ctx, placement) {
-  return h('div', { class: `theme-layout-toggle ${placement}`, role: 'group', 'aria-label': 'Quick layout switch' },
+function layoutToggle(ctx, placement, { options = [['a', 'Side rail'], ['c', 'Top bar']], label = 'Quick layout switch', attr = 'data-quick-layout', source = 'header', onPick = null } = {}) {
+  return h('div', { class: `theme-layout-toggle ${placement}`, role: 'group', 'aria-label': label },
     h('span', { class: 'theme-layout-caption' }, 'Layout'),
     h('div', { class: 'theme-layout-buttons' },
-      ...[['a', 'Side rail'], ['c', 'Top bar']].map(([value, label]) => h('button', {
-        type: 'button', 'data-quick-layout': value, 'aria-pressed': String(ctx.state.layout === value),
+      ...options.map(([value, text]) => h('button', {
+        type: 'button', [attr]: value, 'aria-pressed': String(ctx.state.layout === value),
         disabled: Boolean(ctx.state.layoutSaving),
-        'aria-label': label, onclick: () => ctx.changeLayout(value, 'header')
-      }, label))));
+        'aria-label': text,
+        onclick: () => { onPick?.(); ctx.changeLayout(value, source); }
+      }, text))));
+}
+
+function personBlock(state, current, extraClass = '') {
+  const detail = state.account?.email_normalized || (current ? ROLE_LABELS[current.role] || current.role : null);
+  return h('div', { class: extraClass ? `theme-person ${extraClass}` : 'theme-person' },
+    h('span', { class: 'theme-person-name' }, state.account.display_name),
+    detail ? h('span', { class: 'theme-person-role' }, detail) : null);
+}
+
+function accountMenu(ctx, current, { tab = false, menus = null } = {}) {
+  const { state } = ctx;
+  const menuId = uid('account-menu');
+  let menu;
+  let toggle;
+  let container;
+  let cleanup = null;
+  const setOpen = (open, restoreFocus = false) => {
+    if (open) {
+      menu.removeAttribute('hidden');
+      toggle.setAttribute('aria-expanded', 'true');
+      if (menus) cleanup = menus.open(focusToggle => setOpen(false, focusToggle), container);
+    } else {
+      cleanup?.();
+      cleanup = null;
+      menu.setAttribute('hidden', '');
+      toggle.setAttribute('aria-expanded', 'false');
+      if (restoreFocus) toggle.focus();
+    }
+  };
+  const person = personBlock(state, current, 'theme-mobile-person');
+  const mobileLayout = layoutToggle(ctx, 'mobile', {
+    options: [['a', 'Side rail'], ['c', 'Top bar'], ['original', 'Original']],
+    label: 'Mobile layout switch',
+    attr: 'data-mobile-layout',
+    source: 'mobile-menu',
+    onPick: () => setOpen(false, true)
+  });
+  const signout = h('button', {
+    type: 'button', class: 'theme-signout theme-mobile-signout',
+    onclick: () => { setOpen(false, true); ctx.signOut(); }
+  }, 'Sign out');
+  menu = h('div', { class: 'theme-mobile-menu', id: menuId, hidden: true }, person, mobileLayout, signout);
+  toggle = h('button', {
+    type: 'button',
+    class: 'theme-more-toggle',
+    'data-test': 'account-menu',
+    'aria-expanded': 'false',
+    'aria-controls': menuId,
+    onclick: () => setOpen(menu.hasAttribute('hidden'))
+  }, tab ? h('span', { class: 'theme-tab-label' }, 'Menu') : 'Menu');
+  container = h('div', {
+    class: 'theme-more',
+    onkeydown: event => {
+      if (event.key === 'Escape' && !menu.hasAttribute('hidden')) {
+        event.preventDefault();
+        setOpen(false, true);
+      }
+    }
+  }, toggle, menu);
+  return container;
 }
 
 function originalHeader(ctx, current) {
@@ -110,19 +217,19 @@ export function header(ctx) {
   const brand = h('a', { class: 'theme-brand', href: hrefFor({ name: 'library', view: 'covers' }), 'aria-label': 'Sermon Bank, Library' },
     h('img', { class: 'theme-book-mark', src: '/assets/icon.svg', alt: '', width: 32, height: 32 }),
     h('span', { class: 'theme-brand-name' }, 'Sermon Bank'));
-  const switcher = signedIn ? workspaceSwitcher(ctx, current, { className: 'theme-switcher', themed: true }) : null;
-  const detail = state.account?.email_normalized || (current ? ROLE_LABELS[current.role] || current.role : null);
-  const person = authenticated ? h('div', { class: 'theme-person' },
-    h('span', { class: 'theme-person-name' }, state.account.display_name),
-    detail ? h('span', { class: 'theme-person-role' }, detail) : null) : null;
+  const menus = createMenuCoordinator();
+  const switcher = signedIn ? workspaceSwitcher(ctx, current, { className: 'theme-switcher', themed: true, menus }) : null;
+  const person = authenticated ? personBlock(state, current) : null;
   const signout = authenticated ? h('button', { type: 'button', class: 'theme-signout', onclick: ctx.signOut }, 'Sign out') : null;
   const quickLayout = authenticated ? layoutToggle(ctx, state.layout === 'a' ? 'rail' : 'topbar') : null;
   if (state.layout === 'a') {
-    return h('aside', { class: 'theme-shell theme-rail', 'aria-label': 'Workspace navigation' },
-      brand, switcher, signedIn ? mainNav(ctx.route, 'theme-nav') : null,
+    const mobileMenu = authenticated ? accountMenu(ctx, current, { tab: signedIn, menus }) : null;
+    return h('aside', { class: authenticated ? 'theme-shell theme-rail has-mobile-menu' : 'theme-shell theme-rail', 'aria-label': 'Workspace navigation' },
+      brand, switcher, signedIn ? mainNav(ctx.route, 'theme-nav', mobileMenu) : mobileMenu,
       authenticated ? h('div', { class: 'theme-rail-footer' }, quickLayout, person, signout) : null);
   }
+  const mobileMenu = authenticated ? accountMenu(ctx, current, { menus }) : null;
   return h('div', { class: 'theme-shell theme-topbar' },
     brand, switcher, signedIn ? mainNav(ctx.route, 'theme-nav') : null,
-    h('div', { class: 'theme-topbar-right' }, quickLayout, person, signout));
+    h('div', { class: 'theme-topbar-right' }, quickLayout, person, signout, mobileMenu));
 }
