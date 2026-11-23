@@ -119,7 +119,11 @@ function themedTable(items) {
 function filterSeries(items, series) {
   if (!series || series === 'all') return items;
   if (series === '__none__') return items.filter(item => !item.series_name);
-  return items.filter(item => item.series_name === series);
+  if (series.startsWith('series:')) {
+    const name = series.slice('series:'.length);
+    return items.filter(item => item.series_name === name);
+  }
+  return items;
 }
 
 function themedLibraryPage(ctx, layout) {
@@ -128,8 +132,19 @@ function themedLibraryPage(ctx, layout) {
   const editor = canEdit(state.role);
   const seriesNames = [...new Set(state.items.map(item => item.series_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const hasStandalone = state.items.some(item => !item.series_name);
+  const workspaceKey = state.workspaceId ?? null;
+  if (state.seriesWorkspaceId !== workspaceKey) {
+    state.seriesWorkspaceId = workspaceKey;
+    state.series = 'all';
+  }
+  const seriesOptions = [
+    ['all', 'All series'],
+    ...seriesNames.map(name => [`series:${name}`, name]),
+    ...(hasStandalone ? [['__none__', 'Standalone']] : [])
+  ];
+  const validSeries = new Set(seriesOptions.map(([value]) => value));
   let activeSeries = state.series || 'all';
-  if (activeSeries !== 'all' && activeSeries !== '__none__' && !seriesNames.includes(activeSeries)) {
+  if (!validSeries.has(activeSeries)) {
     activeSeries = 'all';
     state.series = 'all';
   }
@@ -152,11 +167,6 @@ function themedLibraryPage(ctx, layout) {
   }, ...SORTS.map(([value, label]) => h('option', { value, selected: state.sort === value }, label)));
 
   const setSeries = value => { activeSeries = value; state.series = value; refresh(); };
-  const seriesOptions = [
-    ['all', 'All series'],
-    ...seriesNames.map(name => [name, name]),
-    ...(hasStandalone ? [['__none__', 'Standalone']] : [])
-  ];
   const seriesSelect = layout === 'a'
     ? h('select', {
       id: 'sermon-series', class: 'select', 'aria-label': 'Filter by series',

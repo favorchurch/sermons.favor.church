@@ -1270,8 +1270,51 @@ html[data-layout="a"] .panel-loading, html[data-layout="c"] .panel-loading {
   html[data-layout="a"] .cal-grid-layout, html[data-layout="c"] .cal-grid-layout {
     grid-template-columns: minmax(0, 1fr);
   }
+  html[data-layout="a"] .detail-grid, html[data-layout="c"] .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
   html[data-layout="a"] .year-months, html[data-layout="c"] .year-months {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Responsive: Layout A side rail narrows canvas below 960px, so stack rows early */
+@media (max-width: 960px) {
+  html[data-layout="a"] .list-head-row {
+    display: none;
+  }
+  html[data-layout="a"] .sermon-row {
+    grid-template-columns: 4px minmax(0, 1fr) 18px;
+    gap: 4px 12px;
+    padding: 12px 16px 12px 0;
+    align-items: start;
+  }
+  html[data-layout="a"] .sermon-row .row-spine {
+    grid-row: 1 / span 2;
+  }
+  html[data-layout="a"] .sermon-row .row-primary {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  html[data-layout="a"] .sermon-row .row-chevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  html[data-layout="a"] .sermon-row .row-col-date {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 13px;
+    color: var(--theme-muted);
+    white-space: normal;
+  }
+  html[data-layout="a"] .sermon-row .row-col-count,
+  html[data-layout="a"] .sermon-row .row-col-versions {
+    display: none;
+  }
+  html[data-layout="a"] .mobile-only-inline {
+    display: inline;
   }
 }
 
@@ -1317,9 +1360,15 @@ html[data-layout="a"] .panel-loading, html[data-layout="c"] .panel-loading {
     display: grid;
     gap: 8px;
   }
-  html[data-layout="a"] .filter-selects, html[data-layout="c"] .filter-selects {
+  html[data-layout="a"] .filter-selects {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  html[data-layout="c"] .filter-selects {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     width: 100%;
   }
@@ -1467,6 +1516,29 @@ html[data-layout="a"] .panel-loading, html[data-layout="c"] .panel-loading {
   html[data-layout="a"] .notes-panel .search-row .btn, html[data-layout="c"] .notes-panel .search-row .btn {
     width: 100%;
     margin-top: 0;
+  }
+}
+
+/* Responsive: narrow phones & 200% zoom — prevent view-tabs and segmented overflow */
+@media (max-width: 420px) {
+  html[data-layout="a"] .view-tabs, html[data-layout="c"] .view-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+  html[data-layout="a"] .view-tabs a, html[data-layout="c"] .view-tabs a {
+    border-right: 0;
+    border-bottom: 1px solid var(--theme-line);
+  }
+  html[data-layout="a"] .view-tabs a:nth-child(odd), html[data-layout="c"] .view-tabs a:nth-child(odd) {
+    border-right: 1px solid var(--theme-line);
+  }
+  html[data-layout="a"] .view-tabs a:nth-last-child(-n+2), html[data-layout="c"] .view-tabs a:nth-last-child(-n+2) {
+    border-bottom: 0;
+  }
+  html[data-layout="a"] .segmented, html[data-layout="c"] .segmented {
+    flex-wrap: wrap;
+    overflow: visible;
   }
 }
 

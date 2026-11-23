@@ -118,7 +118,11 @@ function themedCalendarPage({ y, m, month, year, selected, selectedEvents, prev,
           : [
             h('div', { class: 'inspector-head' },
               h('h2', { class: 'section-heading' }, 'Select a day')),
-            h('p', { class: 'inspector-empty' }, month.count ? 'Choose a marked day to see what was preached.' : `Nothing recorded for ${formatMonth(y, m)}.`)
+            h('p', { class: 'inspector-empty' }, datedCount
+              ? 'Choose a marked day to see what was preached.'
+              : month.monthOnly.length
+                ? `Preachings recorded for ${formatMonth(y, m)} without a day are listed below.`
+                : `Nothing recorded for ${formatMonth(y, m)}.`)
           ])),
     undatedGroups.length || index.undated.length
       ? h('div', { class: 'imprecise-section' },
