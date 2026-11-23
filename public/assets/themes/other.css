@@ -252,6 +252,8 @@ html[data-layout="c"] .dialog form { gap: 16px; }
 html[data-layout="a"] .dialog-actions,
 html[data-layout="c"] .dialog-actions { gap: 8px; padding-top: 8px; margin-top: 0; }
 
+html[data-layout="a"] .state-empty:not(.state-panel) h2,
+html[data-layout="c"] .state-empty:not(.state-panel) h2 { font-family: var(--o-display); font-weight: 700; letter-spacing: -.02em; }
 html[data-layout="a"] .state-form,
 html[data-layout="c"] .state-form { gap: 16px; width: min(400px, 100%); }
 html[data-layout="a"] .join-form .btn,

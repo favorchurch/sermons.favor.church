@@ -327,6 +327,16 @@ test('the join form renders the same markup in every layout', () => {
   assert.match(shapes[0], /form\.state-form\.join-form/);
 });
 
+test('the join / no-workspace heading uses the theme sans in A and C and keeps the serif in Original', () => {
+  assert.match(appCss, /\.state h2 \{[^}]*font-family:\s*var\(--serif\)/);
+  for (const layout of THEMED) {
+    const rule = rulesOf(otherCss).find(r => r.selector === `html[data-layout="${layout}"] .state-empty:not(.state-panel) h2`);
+    assert.ok(rule, `layout ${layout} restyles the no-workspace heading`);
+    const body = new RegExp(`html\\[data-layout="${layout}"\\] \\.state-empty:not\\(\\.state-panel\\) h2[^{]*\\{([^}]*)\\}`).exec(otherCss)[1];
+    assert.match(body, /font-family:\s*var\(--o-display\)/);
+  }
+});
+
 test('every Settings section renders the same markup in every layout', async () => {
   for (const section of SECTIONS) {
     const seen = {};
