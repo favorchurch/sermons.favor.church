@@ -3,7 +3,7 @@
 // storage, clock) is injected so the whole flow can run under a fake DOM in tests.
 import { h, mount, rememberFocus, restoreFocus } from './dom.js';
 import { ApiError, describeError } from './api.js';
-import { applyLayout, isLayout, LAYOUT_LABELS } from './layout.js';
+import { applyLayout, isLayout, LAYOUT_LABELS, readLayoutCookie } from './layout.js';
 import { createLibraryClient } from './data.js';
 import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
 import { summarise } from './library-model.js';
@@ -21,9 +21,10 @@ import { newDraftDialog, newWorkspaceDialog, editSermonDialog, logPreachingDialo
 
 const WORKSPACE_KEY = 'sermon-bank.workspace';
 
-export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate }) {
+export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate, initialLayout }) {
+  const bootLayout = isLayout(initialLayout) ? initialLayout : readLayoutCookie();
   const state = {
-    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null, layout: 'original', layoutSaving: false, layoutError: null,
+    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null, layout: bootLayout, layoutSaving: false, layoutError: null,
     items: [], events: [], index: indexEvents([]), query: '', archive: 'active', sort: 'recent', error: null
   };
   let client = null;
@@ -99,6 +100,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   async function start() {
+    applyLayout(state.layout);
     renderHeader();
     render();
     let me, list;
@@ -117,9 +119,12 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
 
   async function changeLayout(layout, source = null) {
     if (!state.account || state.phase === 'signedout' || !isLayout(layout) || layout === state.layout || state.layoutSaving) return;
-    const fromHeader = source === 'header' || Boolean(document.activeElement?.getAttribute?.('data-quick-layout'));
-    const fromMobileMenu = source === 'mobile-menu' || Boolean(document.activeElement?.getAttribute?.('data-mobile-layout'));
-    const fromSettings = source === 'settings' || Boolean(document.activeElement?.getAttribute?.('data-layout-option'));
+    const active = document.activeElement;
+    const origin = source ?? (
+      active?.getAttribute?.('data-layout-option') ? 'settings'
+        : active?.getAttribute?.('data-mobile-layout') ? 'mobile-menu'
+          : active?.getAttribute?.('data-quick-layout') ? 'header' : null
+    );
     const previous = state.layout;
     state.layout = layout;
     state.layoutSaving = true;
@@ -141,9 +146,9 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       state.layoutSaving = false;
       renderHeader();
       render();
-      if (fromSettings) root.querySelector(`[data-layout-option="${state.layout}"]`)?.focus();
-      else if (fromMobileMenu) (headerRoot.querySelector('[data-test="account-menu"]') || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
-      else if (fromHeader) (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
+      if (origin === 'settings') root.querySelector(`[data-layout-option="${state.layout}"]`)?.focus();
+      else if (origin === 'mobile-menu') (headerRoot.querySelector('[data-test="account-menu"]') || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
+      else if (origin === 'header') (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
     }
   }
 

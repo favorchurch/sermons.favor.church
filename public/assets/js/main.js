@@ -1,6 +1,9 @@
 import { createApi } from './api.js';
 import { createApp } from './app.js';
 import { localToday } from './format.js';
+import { initLayout } from './layout.js';
+
+const initialLayout = initLayout();
 
 const storage = {
   get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
@@ -17,7 +20,8 @@ const app = createApp({
   setHash: hash => { location.hash = hash; },
   storage,
   today: () => localToday(),
-  navigate: url => location.assign(url)
+  navigate: url => location.assign(url),
+  initialLayout
 });
 
 window.addEventListener('hashchange', app.render);
