@@ -27,10 +27,9 @@ export function settingsPage(ctx) {
   return h('div', { class: 'settings' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Settings'),
     h('div', { class: 'settings-layout' },
-      h('div', { class: 'settings-index' },
+      h('div', { class: 'settings-nav settings-index' },
         h('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' },
           ...visible.map(([key, text]) => h('a', { href: hrefFor({ name: 'settings', section: key }), 'aria-current': key === route.section ? 'page' : null }, text))),
-        h('div', { class: 'settings-nav settings-nav-extra' },
-          h('a', { class: 'settings-layout-link', href: hrefFor({ name: 'settings', section: 'layout' }), 'aria-current': route.section === 'layout' ? 'page' : null }, 'Layout'))),
+        h('a', { class: 'settings-layout-link', href: hrefFor({ name: 'settings', section: 'layout' }), 'aria-current': route.section === 'layout' ? 'page' : null }, 'Layout')),
       h('div', { class: 'settings-body' }, body)));
 }

@@ -320,7 +320,7 @@ html[data-layout="a"] .settings-index, html[data-layout="c"] .settings-index {
 html[data-layout="c"] .settings-index {
   top: 84px;
 }
-html[data-layout="a"] .settings-nav, html[data-layout="c"] .settings-nav {
+html[data-layout="a"] .settings-index > .settings-nav, html[data-layout="c"] .settings-index > .settings-nav {
   position: static;
 }
 html[data-layout="a"] .theme-layout-settings, html[data-layout="c"] .theme-layout-settings {

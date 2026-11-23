@@ -470,8 +470,10 @@ test('Settings > Layout works in all three themes, PATCHes /api/me with exact pa
     await app.start();
     await settle();
 
-    // Original highlights active option with btn-primary so it is visually distinct without changing app.css.
+    // Original highlights active option with btn-primary and keeps settings-nav on the settings index column.
     assert.equal(doc.documentElement.getAttribute('data-layout'), 'original');
+    const settingsIndex = findOne(rootEl, el => (el.getAttribute('class') || '').includes('settings-index'));
+    assert.ok((settingsIndex.getAttribute('class') || '').includes('settings-nav'));
     const origBtn = findOne(rootEl, el => el.getAttribute('data-layout-option') === 'original');
     assert.equal(origBtn.getAttribute('aria-pressed'), 'true');
     assert.ok((origBtn.getAttribute('class') || '').includes('btn-primary'));
