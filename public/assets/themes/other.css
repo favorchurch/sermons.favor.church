@@ -58,12 +58,13 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state)
   border: 1px solid var(--o-edge);
   border-radius: 6px;
   background: var(--theme-paper);
-  color: var(--theme-text);
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
   transition: background-color .15s ease, border-color .15s ease;
 }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):not(.btn-primary):not(.btn-danger),
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):not(.btn-primary):not(.btn-danger) { color: var(--theme-text); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):hover,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):hover { background: var(--o-subtle); border-color: var(--o-ink2); transform: none; }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):not(.btn-primary):not(.btn-danger):active,
@@ -71,11 +72,11 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state)
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):disabled,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):disabled { opacity: .55; cursor: not-allowed; }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)),
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)) { background: var(--theme-accent); border-color: var(--theme-accent); color: var(--theme-accent-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)) { background: var(--theme-accent); border-color: var(--theme-accent); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)):hover,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)):hover { background: var(--theme-accent-strong); border-color: var(--theme-accent-strong); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)),
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)) { background: var(--o-bad-text); border-color: var(--o-bad-text); color: #fff; }
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)) { background: var(--o-bad-text); border-color: var(--o-bad-text); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)):hover,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)):hover { background: #7f2121; border-color: #7f2121; }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet:where(:not(.layout-option)),
@@ -100,7 +101,7 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .field 
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .hint,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .hint { font-size: 13px; color: var(--theme-muted); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) :is(.field-error, .form-error),
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) :is(.field-error, .form-error) { font-size: 13px; font-weight: 600; color: var(--o-bad-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) :is(.field-error, .form-error) { font-size: 13px; font-weight: 600; }
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .form-error,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .form-error { background: var(--o-bad-bg); border: 1px solid var(--o-bad-edge); border-radius: 6px; padding: 10px 12px; }
 
@@ -114,19 +115,19 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill {
   font-weight: 600;
 }
 html[data-layout="a"] :is(.search-page, .settings, .dialog) .pill-good,
-html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-good { background: var(--o-good-bg); border-color: var(--o-good-edge); color: var(--o-good-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-good { background: var(--o-good-bg); border-color: var(--o-good-edge); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog) .pill-warn,
-html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-warn { background: var(--o-warn-bg); border-color: var(--o-warn-edge); color: var(--o-warn-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-warn { background: var(--o-warn-bg); border-color: var(--o-warn-edge); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog) .pill-bad,
-html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-bad { background: var(--o-bad-bg); border-color: var(--o-bad-edge); color: var(--o-bad-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-bad { background: var(--o-bad-bg); border-color: var(--o-bad-edge); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog) .pill-neutral,
-html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-neutral { background: var(--o-neutral-bg); border-color: var(--theme-line); color: var(--o-neutral-text); }
+html[data-layout="c"] :is(.search-page, .settings, .dialog) .pill-neutral { background: var(--o-neutral-bg); border-color: var(--theme-line); }
 html[data-layout="a"] :is(.search-page, .settings, .dialog) .muted,
 html[data-layout="c"] :is(.search-page, .settings, .dialog) .muted { color: var(--theme-muted); }
 html[data-layout="a"] :is(.search-page, .settings) .notice,
 html[data-layout="c"] :is(.search-page, .settings) .notice { background: var(--theme-active); border: 1px solid var(--o-accent-border); border-radius: 10px; }
 html[data-layout="a"] :is(.search-page, .settings) .inline-error,
-html[data-layout="c"] :is(.search-page, .settings) .inline-error { background: var(--o-bad-bg); border: 1px solid var(--o-bad-edge); border-radius: 10px; color: var(--o-bad-text); }
+html[data-layout="c"] :is(.search-page, .settings) .inline-error { background: var(--o-bad-bg); border: 1px solid var(--o-bad-edge); border-radius: 10px; }
 
 html[data-layout="a"] .search-page .search-form,
 html[data-layout="c"] .search-page .search-form { gap: 12px; }
@@ -167,7 +168,7 @@ html[data-layout="c"] .search-options .segmented button:hover { background: var(
 html[data-layout="a"] .search-options .segmented button[aria-pressed="true"],
 html[data-layout="c"] .search-options .segmented button[aria-pressed="true"] { background: var(--theme-active); color: var(--theme-accent-strong); box-shadow: inset 0 -2px 0 var(--theme-accent); }
 html[data-layout="a"] .search-options .check,
-html[data-layout="c"] .search-options .check { min-height: 42px; color: var(--o-ink2); font-size: 14px; }
+html[data-layout="c"] .search-options .check { min-height: 42px; color: var(--theme-text); font-size: 14px; }
 html[data-layout="a"] .search-options .check input,
 html[data-layout="c"] .search-options .check input { width: 20px; height: 20px; accent-color: var(--theme-accent); }
 html[data-layout="a"] .search-art,
@@ -294,7 +295,7 @@ html[data-layout="c"] .settings-section .hint,
 html[data-layout="a"] .settings-section .muted,
 html[data-layout="c"] .settings-section .muted { font-size: 14px; }
 html[data-layout="a"] .settings .impact,
-html[data-layout="c"] .settings .impact { border: 1px solid var(--o-warn-edge); border-radius: 10px; background: var(--o-warn-bg); color: var(--o-warn-text); }
+html[data-layout="c"] .settings .impact { border: 1px solid var(--o-warn-edge); border-radius: 10px; background: var(--o-warn-bg); }
 html[data-layout="a"] .settings .upload-card,
 html[data-layout="c"] .settings .upload-card,
 html[data-layout="a"] .settings .version-card,
