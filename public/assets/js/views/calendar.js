@@ -67,7 +67,7 @@ function themedCalendarPage({ y, m, month, year, selected, selectedEvents, prev,
       },
       h('span', { class: 'cal-day-num' }, String(cell.day)),
       h('span', { class: `cal-day-tag${hasReview ? ' is-review' : ''}` },
-        h('span', { class: 'cal-tag-desktop' }, hasReview ? 'Review' : plural(events.length, 'sermon')),
+        h('span', { class: 'cal-tag-desktop' }, hasReview ? 'Review' : plural(events.length, 'preaching')),
         h('span', { class: 'cal-tag-mobile' }, hasReview ? '!' : `${events.length}×`))));
     })))));
 
