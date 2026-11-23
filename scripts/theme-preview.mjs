@@ -67,7 +67,7 @@ export async function createPreviewServer(options = {}) {
     seedPreviewData(db, { empty: store === 'empty', layout, noWorkspace: store === 'no-workspace' });
     const token = randomToken();
     db.execute('INSERT INTO auth_sessions(token_hash,account_id,expires_at) VALUES (?,?,?)', [await sha256(token), PREVIEW_OWNER.id, Math.floor(Date.now() / 1000) + 3600]);
-    return { db, token };
+    return { db, token, keepSaved: false };
   }
 
   // Each fixture that needs different data gets its own database, opened on first use.
@@ -113,12 +113,13 @@ export async function createPreviewServer(options = {}) {
       const fixtureName = queryFixture ?? (FIXTURES.includes(cookieFixture) ? cookieFixture : 'default');
       const requested = queryLayout ?? (LAYOUTS.includes(cookieLayout) ? cookieLayout : settings.layout);
       const fixture = await fixtureFor(fixtureName, requested);
-      // Only ?preview_layout writes the stored layout. A cookie never does: the browser may hold a stale one
-      // (or none) after Settings saved a layout through PATCH /api/me, and the saved choice wins.
-      if (queryLayout !== null) fixture.db.execute('UPDATE user_accounts SET layout_theme = ? WHERE id = ?', [queryLayout, PREVIEW_OWNER.id]);
-      // Signed in, the app reads the saved layout, so the forwarded cookie matches it. Signed out, the cookie decides.
+      // The chosen layout (?preview_layout, else the cookie, else --layout) follows the browser into every fixture, so the
+      // empty and no-workspace fixtures render the same layout as the default one. The exception is a layout saved through
+      // PATCH /api/me in this fixture: that saved choice wins over a stale or missing cookie until ?preview_layout sets one.
+      if (queryLayout !== null) fixture.keepSaved = false;
       const saved = fixture.db.query('SELECT layout_theme FROM user_accounts WHERE id = ?', [PREVIEW_OWNER.id])[0]?.layout_theme;
-      const layout = settings.signedOut || !LAYOUTS.includes(saved) ? requested : saved;
+      if (!fixture.keepSaved && saved !== requested) fixture.db.execute('UPDATE user_accounts SET layout_theme = ? WHERE id = ?', [requested, PREVIEW_OWNER.id]);
+      const layout = fixture.keepSaved && !settings.signedOut && LAYOUTS.includes(saved) ? saved : requested;
 
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
@@ -144,6 +145,7 @@ export async function createPreviewServer(options = {}) {
       const body = chunks.length ? Buffer.concat(chunks) : undefined;
       const request = new Request(origin + incoming.url, { method: incoming.method, headers, body });
       const response = await handleRequest(request, env(fixture.db));
+      if (incoming.method === 'PATCH' && url.pathname === '/api/me' && response.status === 200) fixture.keepSaved = true;
       const responseHeaders = Object.fromEntries(response.headers);
       delete responseHeaders['content-length'];
       delete responseHeaders['set-cookie'];
