@@ -9,7 +9,8 @@
 - `GET /auth/google/start`: one-time state and nonce in D1, PKCE S256, HTTP-only callback cookie, redirect to Google's server-side authorization-code flow.
 - `GET /auth/google/callback`: one-time state consumption, server code exchange, Google JWKS RSA verification, issuer/audience/nonce/time/email-verified checks, allowlist/invitation eligibility, hashed session token and host-only cookie. Never stores OAuth access tokens or authorization codes.
 - `POST /auth/logout`: requires exact Origin header, revokes server session and clears cookie.
-- `GET /api/me`: authenticated account identity only.
+- `GET /api/me`: authenticated account identity, plus the account's saved `layout` and view `prefs` (an object).
+- `PATCH /api/me`: accepts `{layout}`, `{prefs: <partial object>}` or both, and returns the full account. `prefs` keys come from a closed list: `libraryView` (`covers`, `rows`, `table`, `calendar`), `sort` (`recent`, `title`, `added`), `archive` (`active`, `archived`), `series` (string up to 200 characters, or null), `searchScope` (`everything`, `bible`, `notes`) and `workspaceId` (string up to 64 characters, or null). Partial prefs merge into the stored object, and a key set to null clears it. An unknown key or a bad value returns `400` with nothing written. The stored JSON is capped at 2 KB. A prefs-only patch never writes the layout.
 - `GET /api/workspaces`: accepted, active memberships only.
 - `POST /api/workspaces`: only a verified Google user whose email is privately included in `PILOT_OWNER_EMAILS` can create the first personal workspace (Owner role).
 - `GET /api/workspaces/:uuid/sermons` and every other path under `/api/workspaces/:uuid/` (library, search, imports, PDFs): session plus active membership check, and an explicit `workspace_id = ?` parameter is **also** included in each SQL query. Sermon lists return only metadata, not note contents or links.
