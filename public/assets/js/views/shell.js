@@ -1,19 +1,20 @@
 // Persistent app navigation. The Original branch preserves the origin/main shell markup.
 import { h, uid } from '../dom.js';
 import { ROLE_LABELS } from '../permissions.js';
-import { hrefFor } from '../router.js';
+import { hrefFor, LIBRARY_HREF, SEARCH_HREF } from '../router.js';
 
+// Library and Search name no view or scope, so what the person last chose opens.
 const NAV = [
-  ['library', 'Library', { name: 'library', view: 'covers' }],
-  ['search', 'Search', { name: 'search', q: '', scope: 'everything' }],
-  ['settings', 'Settings', { name: 'settings', section: 'places' }]
+  ['library', 'Library', LIBRARY_HREF],
+  ['search', 'Search', SEARCH_HREF],
+  ['settings', 'Settings', hrefFor({ name: 'settings', section: 'places' })]
 ];
 
 function mainNav(route, className = 'main-nav', extra = null) {
   const active = ['library', 'sermon'].includes(route.name) ? 'library' : route.name;
   return h('nav', { class: className, 'aria-label': 'Main' },
     ...NAV.map(([key, label, target]) => h('a', {
-      href: hrefFor(target),
+      href: target,
       'aria-current': key === active ? 'page' : null
     }, className === 'theme-nav' ? h('span', { class: 'theme-tab-label' }, label) : label)),
     extra);
@@ -214,7 +215,7 @@ export function header(ctx) {
 
   const authenticated = Boolean(state.account) && state.phase !== 'signedout';
   const signedIn = Boolean(authenticated && current);
-  const brand = h('a', { class: 'theme-brand', href: hrefFor({ name: 'library', view: 'covers' }), 'aria-label': 'Sermon Bank, Library' },
+  const brand = h('a', { class: 'theme-brand', href: LIBRARY_HREF, 'aria-label': 'Sermon Bank, Library' },
     h('img', { class: 'theme-book-mark', src: '/assets/icon.svg', alt: '', width: 32, height: 32 }),
     h('span', { class: 'theme-brand-name' }, 'Sermon Bank'));
   const menus = createMenuCoordinator();

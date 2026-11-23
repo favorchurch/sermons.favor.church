@@ -1,7 +1,7 @@
 import { h } from '../dom.js';
 import { describeError } from '../api.js';
 import { LAYOUTS, LAYOUT_LABELS } from '../layout.js';
-import { hrefFor } from '../router.js';
+import { LIBRARY_HREF } from '../router.js';
 
 const DESCRIPTIONS = {
   a: 'Navigation on the side',
@@ -26,5 +26,5 @@ export function layoutSection({ state, changeLayout }) {
       h('span', { class: 'layout-option-description' }, DESCRIPTIONS[value])))),
     state.layoutSaving ? h('p', { class: 'layout-saving', role: 'status' }, 'Saving layout…') : null,
     state.layoutError ? h('p', { class: 'form-error', role: 'alert' }, describeError(state.layoutError)) : null,
-    state.phase === 'no-workspace' ? h('a', { href: hrefFor({ name: 'library', view: 'covers' }) }, 'Back to workspace setup') : null);
+    state.phase === 'no-workspace' ? h('a', { href: LIBRARY_HREF }, 'Back to workspace setup') : null);
 }

@@ -134,8 +134,8 @@ function themedLibraryPage(ctx, layout) {
   const hasStandalone = state.items.some(item => !item.series_name);
   const workspaceKey = state.workspaceId ?? null;
   if (state.seriesWorkspaceId !== workspaceKey) {
+    if (state.seriesWorkspaceId !== undefined) state.series = 'all'; // a first render keeps the saved series
     state.seriesWorkspaceId = workspaceKey;
-    state.series = 'all';
   }
   const quoteSeries = seriesNames.includes('All series') || (hasStandalone && seriesNames.includes('Standalone'));
   const seriesOptions = [
@@ -160,14 +160,14 @@ function themedLibraryPage(ctx, layout) {
   });
   const archiveButtons = ['active', 'archived'].map(key => h('button', {
     type: 'button', 'aria-pressed': String(state.archive === key),
-    onclick: () => { state.archive = key; refresh(); }
+    onclick: () => { state.archive = key; ctx.remember?.({ archive: key }); refresh(); }
   }, key === 'active' ? 'Active' : 'Archived'));
   const sortSelect = h('select', {
     id: 'sermon-sort', class: 'select', 'aria-label': 'Sort sermons',
-    onchange: event => { state.sort = event.target.value; refresh(); }
+    onchange: event => { state.sort = event.target.value; ctx.remember?.({ sort: state.sort }); refresh(); }
   }, ...SORTS.map(([value, label]) => h('option', { value, selected: state.sort === value }, label)));
 
-  const setSeries = value => { activeSeries = value; state.series = value; refresh(); };
+  const setSeries = value => { activeSeries = value; state.series = value; ctx.remember?.({ series: value }); refresh(); };
   const seriesSelect = layout === 'a'
     ? h('select', {
       id: 'sermon-series', class: 'select', 'aria-label': 'Filter by series',
@@ -270,9 +270,9 @@ export function libraryPage(ctx) {
   });
   const archiveButtons = ['active', 'archived'].map(key => h('button', {
     type: 'button', 'aria-pressed': String(state.archive === key),
-    onclick: () => { state.archive = key; refresh(); }
+    onclick: () => { state.archive = key; ctx.remember?.({ archive: key }); refresh(); }
   }, key === 'active' ? 'Active' : 'Archived'));
-  const sortSelect = h('select', { id: 'sermon-sort', onchange: event => { state.sort = event.target.value; refresh(); } },
+  const sortSelect = h('select', { id: 'sermon-sort', onchange: event => { state.sort = event.target.value; ctx.remember?.({ sort: state.sort }); refresh(); } },
     ...SORTS.map(([value, label]) => h('option', { value, selected: state.sort === value }, label)));
 
   function refresh() {

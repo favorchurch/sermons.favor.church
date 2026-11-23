@@ -48,7 +48,7 @@ function noteItem(hit, q) {
 }
 
 /**
- * ctx: { route, quick, deep, search(route), retryQuick(), retryDeep() }. `quick` and `deep` are each
+ * ctx: { route, quick, deep, search(route), rememberScope?(scope), retryQuick(), retryDeep() }. `quick` and `deep` are each
  * {phase, data?, error?}, or null when the scope did not ask for that stage.
  */
 export function searchPage(ctx) {
@@ -58,7 +58,7 @@ export function searchPage(ctx) {
   const go = scope => ctx.search({ q: input.value, scope, archived: Boolean(archived.checked) });
   const scopes = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Search in' },
     ...SCOPES.map(([key, label]) => h('button', {
-      type: 'button', 'aria-pressed': String(route.scope === key), 'data-scope': key, onclick: () => go(key)
+      type: 'button', 'aria-pressed': String(route.scope === key), 'data-scope': key, onclick: () => { ctx.rememberScope?.(key); go(key); }
     }, label)));
   const form = h('form', { class: 'search-form', role: 'search', onsubmit: event => { event.preventDefault(); go(route.scope); } },
     h('div', { class: 'search-row' },

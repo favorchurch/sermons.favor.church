@@ -26,11 +26,29 @@ export function cleanQuery(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY);
 }
 
+function splitHash(hash) {
+  const [path, query = ''] = String(hash || '').replace(/^#\/?/, '').split('?');
+  return { parts: path.split('/').filter(Boolean), params: new URLSearchParams(query) };
+}
+
+// Links that name no view or scope, so the saved choice fills it in. Spelling one out saves it as the new choice.
+export const LIBRARY_HREF = '#/library';
+export const SEARCH_HREF = '#/search';
+
+/** True when the address itself names a Library view (#/library/rows), not just #/library or #/. */
+export function hasLibraryView(hash) {
+  const { parts } = splitHash(hash);
+  return parts[0] === 'library' && parts[1] !== undefined;
+}
+
+/** True when the address itself names a search scope. */
+export function hasSearchScope(hash) {
+  const { parts, params } = splitHash(hash);
+  return parts[0] === 'search' && params.has('scope');
+}
+
 export function parseRoute(hash) {
-  const raw = String(hash || '').replace(/^#\/?/, '');
-  const [path, query = ''] = raw.split('?');
-  const parts = path.split('/').filter(Boolean);
-  const params = new URLSearchParams(query);
+  const { parts, params } = splitHash(hash);
   if (parts[0] === 'sermons') {
     if (!isUuid(parts[1]) || parts.length !== 2) return { name: 'missing' };
     const id = parts[1].toLowerCase();

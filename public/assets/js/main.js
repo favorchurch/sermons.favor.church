@@ -1,24 +1,25 @@
 import { createApi } from './api.js';
 import { createApp } from './app.js';
 import { localToday } from './format.js';
-import { initLayout } from './layout.js';
+import { createPrefs } from './prefs.js';
 
-const initialLayout = initLayout();
+// Reading window.localStorage itself can throw (blocked storage), so it is looked up inside a try.
+const localStore = () => { try { return window.localStorage; } catch { return null; } };
 
-const storage = {
-  get(key) { try { return sessionStorage.getItem(key); } catch { return null; } },
-  set(key, value) { try { sessionStorage.setItem(key, value); } catch { /* storage unavailable: the choice just won't persist */ } }
-};
+const api = createApi();
+const prefs = createPrefs({ storage: localStore(), api, win: window });
+// The saved layout is on the page, and the saved Library view is known, before the first render.
+const { layout: initialLayout } = prefs.boot();
 
 const app = createApp({
-  api: createApi(),
+  api,
+  prefs,
   root: document.getElementById('main'),
   headerRoot: document.getElementById('app-header'),
   announcer: document.getElementById('announcer'),
   toastRoot: document.getElementById('toast'),
   getHash: () => location.hash,
   setHash: hash => { location.hash = hash; },
-  storage,
   today: () => localToday(),
   navigate: url => location.assign(url),
   initialLayout
