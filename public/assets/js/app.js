@@ -356,7 +356,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       h('h2', null, 'You don’t have a workspace yet'),
       h('p', null, 'Create your own private workspace, or use the invitation code an owner gave you.'),
       form,
-      joinForm({ join: joinWithCode }));
+      joinForm({ join: joinWithCode }),
+      h('a', { href: hrefFor({ name: 'settings', section: 'layout' }) }, 'Layout settings'));
   }
 
   function readyView(route) {
@@ -411,7 +412,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         title: 'The library could not be loaded', body: describeError(state.error?.error),
         actions: [h('button', { type: 'button', class: 'btn btn-primary', onclick: () => (state.error?.retry || start)() }, 'Try again')]
       });
-    } else if (state.phase === 'no-workspace') view = noWorkspaceView();
+    } else if (state.phase === 'no-workspace' && !(route.name === 'settings' && route.section === 'layout')) view = noWorkspaceView();
     else view = readyView(route);
     loadingShown = loadingNext;
 

@@ -152,19 +152,20 @@ test('every theme selector is layout-scoped, text sizes meet the floor, and layo
     for (const selector of selectors) {
       assert.match(selector, /^html\[data-layout="(?:a|c)"\](?:\s|$|[.#:[>+~])/,
         `${path.slice(root.length + 1)} selector is not scoped: ${selector}`);
+      const sizeFloor = selector.endsWith('.theme-tab-label') ? 11 : 13;
       for (const [rawProp, value] of declarations) {
         const property = rawProp.toLowerCase();
         if (property === 'font-size') {
           const px = /^(\d+(?:\.\d+)?)px$/.exec(value);
           assert.ok(px, `${selector} font-size must be an explicit px value: ${value}`);
           const size = Number(px[1]);
-          assert.ok(size >= 13 || (size >= 11 && selector.includes('.theme-tab-label')),
+          assert.ok(size >= sizeFloor,
             `${selector} font-size ${value} is below the 13px floor (11px is allowed only for tab labels)`);
         } else if (property === 'font' && value.toLowerCase() !== 'inherit') {
           const px = /(\d+(?:\.\d+)?)px/.exec(value);
           assert.ok(px, `${selector} font shorthand must use explicit px or inherit: ${value}`);
           const size = Number(px[1]);
-          assert.ok(size >= 13 || (size >= 11 && selector.includes('.theme-tab-label')),
+          assert.ok(size >= sizeFloor,
             `${selector} font shorthand size ${px[0]} is below the 13px floor`);
         }
         const cleanVal = stripImportant(value).toLowerCase();
@@ -230,25 +231,24 @@ test('every theme selector is layout-scoped, text sizes meet the floor, and layo
 });
 
 test('theme text palettes meet WCAG AA contrast on their surfaces', () => {
+  const textTokens = ['--theme-text', '--theme-muted', '--theme-accent', '--theme-accent-strong'];
+  const lightSurfaces = ['--theme-paper', '--theme-rail', '--theme-ground', '--theme-active'];
+  const textColors = new Set(textTokens.map(token => `var(${token})`));
   let checked = 0;
   for (const [path, rules] of allRules) {
     for (const rule of rules) {
+      for (const [property, value] of rule.declarations) {
+        if (property.toLowerCase() === 'color') {
+          assert.ok(textColors.has(stripImportant(value)), `${path}: ${rule.selectors.join(', ')} uses unchecked text color ${value}`);
+        }
+      }
       const palette = Object.fromEntries(rule.declarations.filter(([property]) => property.startsWith('--theme-')));
       if (!Object.keys(palette).length) continue;
       checked++;
-      assert.ok(palette['--theme-text'], `${path}: palette block must declare --theme-text`);
       const ratio = (foreground, background) => contrast(hex(palette[foreground]), hex(palette[background]));
-      assert.ok(ratio('--theme-text', '--theme-paper') >= 4.5, `${path}: text on paper`);
-      assert.ok(ratio('--theme-text', '--theme-rail') >= 4.5, `${path}: text on rail`);
-      assert.ok(ratio('--theme-text', '--theme-ground') >= 4.5, `${path}: text on ground`);
-      assert.ok(ratio('--theme-muted', '--theme-paper') >= 4.5, `${path}: muted text on paper`);
-      assert.ok(ratio('--theme-muted', '--theme-rail') >= 4.5, `${path}: muted text on rail`);
-      assert.ok(ratio('--theme-muted', '--theme-ground') >= 4.5, `${path}: muted text on ground`);
-      assert.ok(ratio('--theme-accent-strong', '--theme-paper') >= 4.5, `${path}: strong accent on paper`);
-      assert.ok(ratio('--theme-accent-strong', '--theme-active') >= 4.5, `${path}: strong accent on active surface`);
-      assert.ok(ratio('--theme-text', '--theme-active') >= 4.5, `${path}: text on active surface`);
-      assert.ok(ratio('--theme-muted', '--theme-active') >= 4.5, `${path}: muted text on active surface`);
-      assert.ok(ratio('--theme-accent', '--theme-active') >= 4.5, `${path}: accent text on active surface`);
+      for (const foreground of textTokens) for (const background of lightSurfaces) {
+        assert.ok(ratio(foreground, background) >= 4.5, `${path}: ${foreground} on ${background}`);
+      }
       assert.ok(ratio('--theme-accent-text', '--theme-accent') >= 4.5, `${path}: inverse text on accent`);
     }
   }
@@ -785,6 +785,46 @@ test('Settings > Layout works in all three themes, PATCHes /api/me with exact pa
   }
 });
 
+test('Layout settings remain reachable before joining a workspace in all three themes', async () => {
+  const doc = installFakeDom();
+  const f = await fixture();
+  try {
+    const { createApp } = await import('../public/assets/js/app.js');
+    const api = {
+      async get(path) { return (await f.call('GET', path, 'outsider')).json; },
+      async patch(path, body) { return (await f.call('PATCH', path, 'outsider', body)).json; }
+    };
+    const rootEl = doc.createElement('main');
+    const headerRoot = doc.createElement('header');
+    doc.body.replaceChildren(headerRoot, rootEl);
+    let hash = '#/library';
+    const app = createApp({
+      api, root: rootEl, headerRoot, announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+      getHash: () => hash, setHash(next) { hash = next; }, storage: { get: () => null, set() {} },
+      today: () => '2026-11-23', navigate() {}
+    });
+    await app.start();
+    for (const [current, next] of [['original', 'a'], ['a', 'c'], ['c', 'original']]) {
+      assert.match(rootEl.textContent, /You don’t have a workspace yet/);
+      const link = findOne(rootEl, el => el.getAttribute('href') === '#/settings/layout');
+      assert.ok(link, `Layout settings link in ${current}`);
+      hash = link.getAttribute('href');
+      app.render();
+      assert.equal(rootEl.querySelector(`[data-layout-option="${current}"]`)?.getAttribute('aria-pressed'), 'true');
+      rootEl.querySelector(`[data-layout-option="${next}"]`).dispatch('click');
+      await settle();
+      assert.equal((await f.call('GET', '/api/me', 'outsider')).json.account.layout, next);
+      const back = findOne(rootEl, el => el.tagName === 'A' && el.textContent === 'Back to workspace setup');
+      assert.ok(back, `return to workspace setup in ${next}`);
+      hash = back.getAttribute('href');
+      app.render();
+    }
+  } finally {
+    f.db.close();
+    delete globalThis.document;
+  }
+});
+
 test('startup applies validated sb_layout cookie with fallback a before /api/me resolves, then overrides with account.layout', async () => {
   const doc = installFakeDom();
   const f = await fixture();
@@ -846,11 +886,14 @@ test('startup applies validated sb_layout cookie with fallback a before /api/me 
         getHash: () => '#/library', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-23', navigate() {}
       });
       const started = app.start();
-      assert.equal(doc.documentElement.getAttribute('data-layout'), tc.expectInitial, `before /api/me for cookie "${tc.cookie}"`);
-      assert.equal(app.state.layout, tc.expectInitial);
-      assert.ok(findOne(headerRoot, el => (el.getAttribute('class') || '').includes(tc.expectInitialClass)));
-      releaseMe();
-      await started;
+      try {
+        assert.equal(doc.documentElement.getAttribute('data-layout'), tc.expectInitial, `before /api/me for cookie "${tc.cookie}"`);
+        assert.equal(app.state.layout, tc.expectInitial);
+        assert.ok(findOne(headerRoot, el => (el.getAttribute('class') || '').includes(tc.expectInitialClass)));
+      } finally {
+        releaseMe();
+        await started;
+      }
       assert.equal(doc.documentElement.getAttribute('data-layout'), tc.expectFinal, `after /api/me for dbLayout "${tc.dbLayout}"`);
       assert.equal(app.state.layout, tc.expectFinal);
       assert.ok(findOne(headerRoot, el => (el.getAttribute('class') || '').includes(tc.expectFinalClass)));
@@ -917,13 +960,16 @@ test('startup applies validated sb_layout cookie with fallback a before /api/me 
       const res = await f.call(init.method || 'GET', path, 'owner', init.body ? JSON.parse(init.body) : undefined);
       return new Response(res.text, { status: res.status, headers: res.headers });
     };
-    await import('../public/assets/js/main.js');
-    assert.equal(layoutBeforeCreateApp, 'c', 'main.js applies sb_layout via initLayout() before createApp/app.start runs');
-    assert.equal(doc.documentElement.getAttribute('data-layout'), 'c', 'main.js applies sb_layout before /api/me resolves');
-    assert.ok(findOne(headerEl, el => (el.getAttribute('class') || '').includes('theme-topbar')));
-    releaseMainMe();
-    await settle();
-    await settle();
+    try {
+      await import('../public/assets/js/main.js');
+      assert.equal(layoutBeforeCreateApp, 'c', 'main.js applies sb_layout via initLayout() before createApp/app.start runs');
+      assert.equal(doc.documentElement.getAttribute('data-layout'), 'c', 'main.js applies sb_layout before /api/me resolves');
+      assert.ok(findOne(headerEl, el => (el.getAttribute('class') || '').includes('theme-topbar')));
+    } finally {
+      releaseMainMe();
+      await settle();
+      await settle();
+    }
     assert.equal(doc.documentElement.getAttribute('data-layout'), 'original', 'main.js overrides with /api/me account layout');
     assert.ok(findOne(headerEl, el => el.getAttribute('class') === 'header-inner'));
   } finally {
