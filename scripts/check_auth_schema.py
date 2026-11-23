@@ -22,6 +22,12 @@ for statement in [
   except sqlite3.IntegrityError: blocked+=1
   else: raise AssertionError('Invalid membership or credential write succeeded')
 assert blocked == 6
+assert connection.execute("SELECT layout_theme FROM user_accounts WHERE id='owner'").fetchone()[0] == 'a'
+try: connection.execute("UPDATE user_accounts SET layout_theme='invalid' WHERE id='owner'")
+except sqlite3.IntegrityError: pass
+else: raise AssertionError('Invalid layout preference was accepted')
+connection.execute("UPDATE user_accounts SET layout_theme='c' WHERE id='owner'")
+assert connection.execute("SELECT layout_theme FROM user_accounts WHERE id='owner'").fetchone()[0] == 'c'
 # An Owner may hold several active workspaces (migration 0007).
 connection.execute("INSERT INTO workspaces(id,name,owner_account_id) VALUES('second','Second Archive','owner')")
 assert connection.execute("SELECT COUNT(*) FROM workspaces WHERE owner_account_id='owner' AND deleted_at IS NULL").fetchone()[0]==2
