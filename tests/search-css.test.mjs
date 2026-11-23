@@ -9,7 +9,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const read = name => readFileSync(new URL(`../public/assets/${name}`, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-const SHEETS = ['app.css', 'themes/layout.css', 'themes/other.css']; // the order index.html links them
+// The stylesheets in the order index.html links them, so a dropped or reordered <link> changes what is tested.
+const SHEETS = [...readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
+  .matchAll(/<link rel="stylesheet" href="\/assets\/([^"]+)">/g)].map(m => m[1]);
 const LAYOUT_PREFIX = /^html\[data-layout="(a|c)"\]\s*/;
 
 /** Top-level comma split that leaves :is(...) lists whole. */
@@ -188,6 +190,10 @@ test('layouts A and C join the cascade and Original does not (guards against a p
 test(':is() lists expand into one selector each', () => {
   assert.deepEqual(expandIs('.a :is(.b, .c .d) .e'), ['.a .b .e', '.a .c .d .e']);
   assert.deepEqual(splitList('.a :is(.b, .c), .d'), ['.a :is(.b, .c)', '.d']);
+});
+
+test('index.html links app.css, then layout.css, then other.css', () => {
+  assert.deepEqual(SHEETS, ['app.css', 'themes/layout.css', 'themes/other.css']);
 });
 
 test('the cascade resolver sees the stylesheet (guards against a parser that finds nothing)', () => {

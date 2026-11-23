@@ -23,8 +23,8 @@ html[data-layout="c"] {
   --o-neutral-text: #47594b;
   --o-display: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif;
 }
-html[data-layout="a"] :focus-visible,
-html[data-layout="c"] :focus-visible { outline: 2.5px solid var(--o-focus); outline-offset: 2px; border-radius: 6px; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) :focus-visible,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) :focus-visible { outline: 2.5px solid var(--o-focus); outline-offset: 2px; border-radius: 6px; }
 
 html[data-layout="a"] .search-page h1,
 html[data-layout="c"] .search-page h1,
@@ -51,8 +51,8 @@ html[data-layout="c"] .search-sub {
   line-height: 1.5;
 }
 
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn {
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn {
   min-height: 44px;
   padding: 0 18px;
   border: 1px solid var(--o-edge);
@@ -64,22 +64,22 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn {
   line-height: 1;
   transition: background-color .15s ease, border-color .15s ease;
 }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn:hover { background: var(--o-subtle); border-color: var(--o-ink2); transform: none; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn:active,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn:active { background: var(--o-hover); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn:disabled,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn:disabled { opacity: .55; cursor: not-allowed; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn-primary,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn-primary { background: var(--theme-accent); border-color: var(--theme-accent); color: var(--theme-accent-text); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn-primary:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn-primary:hover { background: var(--theme-accent-strong); border-color: var(--theme-accent-strong); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn-danger,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn-danger { background: var(--o-bad-text); border-color: var(--o-bad-text); color: #fff; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn-danger:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn-danger:hover { background: #7f2121; border-color: #7f2121; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .btn-quiet,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .btn-quiet { border-color: transparent; background: transparent; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:hover { background: var(--o-subtle); border-color: var(--o-ink2); transform: none; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:not(.btn-primary):not(.btn-danger):active,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:not(.btn-primary):not(.btn-danger):active { background: var(--o-hover); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:disabled,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:disabled { opacity: .55; cursor: not-allowed; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary { background: var(--theme-accent); border-color: var(--theme-accent); color: var(--theme-accent-text); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:hover { background: var(--theme-accent-strong); border-color: var(--theme-accent-strong); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger { background: var(--o-bad-text); border-color: var(--o-bad-text); color: #fff; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:hover { background: #7f2121; border-color: #7f2121; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet { border-color: transparent; background: transparent; }
 
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .field label,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .field label { font-size: 14px; font-weight: 600; color: var(--theme-text); }
@@ -128,12 +128,12 @@ html[data-layout="c"] :is(.search-page, .settings) .notice { background: var(--t
 html[data-layout="a"] :is(.search-page, .settings) .inline-error,
 html[data-layout="c"] :is(.search-page, .settings) .inline-error { background: var(--o-bad-bg); border: 1px solid var(--o-bad-edge); border-radius: 10px; color: var(--o-bad-text); }
 
-html[data-layout="a"] .search-form,
-html[data-layout="c"] .search-form { gap: 12px; }
-html[data-layout="a"] .search-row,
-html[data-layout="c"] .search-row { gap: 8px; align-items: flex-end; }
-html[data-layout="a"] .search-row .btn::before,
-html[data-layout="c"] .search-row .btn::before {
+html[data-layout="a"] .search-page .search-form,
+html[data-layout="c"] .search-page .search-form { gap: 12px; }
+html[data-layout="a"] .search-page .search-row,
+html[data-layout="c"] .search-page .search-row { gap: 8px; align-items: flex-end; }
+html[data-layout="a"] .search-page .search-row .btn::before,
+html[data-layout="c"] .search-page .search-row .btn::before {
   content: '';
   flex: none;
   width: 16px;
@@ -335,8 +335,6 @@ html[data-layout="a"] .settings .table-box,
 html[data-layout="c"] .settings .table-box { border: 1px solid var(--theme-line); border-radius: 10px; background: var(--theme-paper); }
 html[data-layout="a"] .settings .sermon-table,
 html[data-layout="c"] .settings .sermon-table { font-size: 14px; }
-html[data-layout="a"] .settings .sermon-table :is(th, td),
-html[data-layout="c"] .settings .sermon-table :is(th, td) { padding: 12px 16px; border-bottom: 1px solid var(--o-rule2); }
 html[data-layout="a"] .settings .sermon-table thead th,
 html[data-layout="c"] .settings .sermon-table thead th {
   background: var(--o-subtle);
@@ -346,6 +344,8 @@ html[data-layout="c"] .settings .sermon-table thead th {
   letter-spacing: 0;
   text-transform: none;
 }
+html[data-layout="a"] .settings .sermon-table tbody tr:last-child > *,
+html[data-layout="c"] .settings .sermon-table tbody tr:last-child > * { border-bottom: 0; }
 html[data-layout="a"] .settings .sermon-table tbody tr:hover,
 html[data-layout="c"] .settings .sermon-table tbody tr:hover { background: var(--theme-rail); }
 html[data-layout="a"] .settings .sermon-table tbody th a,
@@ -366,11 +366,17 @@ html[data-layout="a"] .settings .join-box .join-form,
 html[data-layout="c"] .settings .join-box .join-form { width: min(400px, 100%); }
 html[data-layout="a"] .settings .field input[type="file"],
 html[data-layout="c"] .settings .field input[type="file"] { height: auto; padding: 8px 12px; font-size: 14px; }
+@media (min-width: 721px) {
+  html[data-layout="a"] .settings .sermon-table :is(th, td),
+html[data-layout="c"] .settings .sermon-table :is(th, td) { padding: 12px 16px; border-bottom: 1px solid var(--o-rule2); }
+}
 @media (max-width: 900px) {
   html[data-layout="a"] .settings-layout,
 html[data-layout="c"] .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  html[data-layout="a"] .settings-nav,
-html[data-layout="c"] .settings-nav { display: flex; flex-wrap: wrap; }
+  html[data-layout="a"] .settings-index,
+html[data-layout="c"] .settings-index { position: static; }
+  html[data-layout="a"] .settings-index > nav.settings-nav,
+html[data-layout="c"] .settings-index > nav.settings-nav { display: flex; flex-wrap: wrap; }
   html[data-layout="a"] .settings-nav a[aria-current="page"]::before,
 html[data-layout="c"] .settings-nav a[aria-current="page"]::before { display: none; }
 }
@@ -379,14 +385,14 @@ html[data-layout="c"] .settings-nav a[aria-current="page"]::before { display: no
 html[data-layout="c"] .search-page h1,
 html[data-layout="a"] .settings h1,
 html[data-layout="c"] .settings h1 { font-size: 24px; }
-  html[data-layout="a"] .search-row,
-html[data-layout="c"] .search-row { flex-direction: column; align-items: stretch; flex-wrap: wrap; }
-  html[data-layout="a"] .search-row .field,
-html[data-layout="c"] .search-row .field { flex: 0 0 auto; width: 100%; }
-  html[data-layout="a"] .search-row .field label,
-html[data-layout="c"] .search-row .field label { position: static; width: auto; height: auto; clip: auto; overflow: visible; }
-  html[data-layout="a"] .search-row .btn,
-html[data-layout="c"] .search-row .btn { width: 100%; }
+  html[data-layout="a"] .search-page .search-row,
+html[data-layout="c"] .search-page .search-row { flex-direction: column; align-items: stretch; flex-wrap: wrap; }
+  html[data-layout="a"] .search-page .search-row .field,
+html[data-layout="c"] .search-page .search-row .field { flex: 0 0 auto; width: 100%; }
+  html[data-layout="a"] .search-page .search-row .field label,
+html[data-layout="c"] .search-page .search-row .field label { position: static; width: auto; height: auto; clip: auto; overflow: visible; }
+  html[data-layout="a"] .search-page .search-row .btn,
+html[data-layout="c"] .search-page .search-row .btn { width: 100%; }
   html[data-layout="a"] .search-options .segmented,
 html[data-layout="c"] .search-options .segmented { width: 100%; }
   html[data-layout="a"] .search-options .segmented button,

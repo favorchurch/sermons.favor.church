@@ -156,7 +156,12 @@ const searchDone = dom => all(dom.root, e => e.hasClass('result-group')).length 
 const LAYOUTS = ['original', 'a', 'c'];
 const THEMED = ['a', 'c'];
 const SECTIONS = ['places', 'people', 'import', 'docs', 'workspace'];
-const otherCss = readFileSync(new URL('../public/assets/themes/other.css', import.meta.url), 'utf8');
+const otherCss = readFileSync(new URL('../public/assets/themes/other.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+/** Rules of other.css that declare something: { selector, layout } for each selector in each rule's list. */
+const otherRules = [...otherCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .filter(([, prelude, body]) => !prelude.trim().startsWith('@') && /[\w-]+\s*:\s*\S/.test(body))
+  .flatMap(([, prelude]) => prelude.split(/,(?![^(]*\))/).map(selector => selector.trim()))
+  .map(selector => ({ selector, layout: /^html\[data-layout="(a|c)"\]/.exec(selector)?.[1] }));
 const appCss = readFileSync(new URL('../public/assets/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const classesOf = node => (node.getAttribute('class') || '').split(/\s+/).filter(Boolean);
@@ -226,6 +231,18 @@ test('A and C add a subtitle and book art to the idle search page and nothing el
   }
   assert.equal(shapes.a, shapes.original, 'A keeps the same markup under the added nodes');
   assert.equal(shapes.c, shapes.original, 'C keeps the same markup under the added nodes');
+});
+
+test('an unknown data-layout value renders the Original search page', async () => {
+  const { dom, f } = await mountAs('original', '#/library');
+  try {
+    for (const value of ['b', '', 'A']) {
+      dom.document.documentElement.setAttribute('data-layout', value);
+      dom.go('#/search');
+      const page = one(dom.root, e => e.hasClass('search-page'));
+      assert.equal(all(page, e => isThemeOnly(e)).length, 0, `data-layout="${value}"`);
+    }
+  } finally { f.db.close(); }
 });
 
 test('the two-stage search renders the same groups and results in every layout, without the idle art', async () => {
@@ -305,6 +322,27 @@ test('every Settings section renders the same markup in every layout', async () 
 
 // ---------------------------------------------------------------- stylesheet coverage
 
+test('the narrow-screen Settings rules do not restyle the outer nav wrapper that layout.css makes a sticky grid', async () => {
+  const { dom, f } = await mountAs('a', '#/settings/places');
+  try {
+    await until(() => all(dom.root, e => e.hasClass('settings-index')).length > 0, 'settings nav');
+    const wrapper = one(dom.root, e => e.hasClass('settings-index'));
+    const start = otherCss.indexOf('@media (max-width: 900px)');
+    assert.ok(start >= 0, 'the 900px block exists');
+    let depth = 0, end = otherCss.indexOf('{', start);
+    for (let i = end; i < otherCss.length; i++) {
+      if (otherCss[i] === '{') depth++;
+      else if (otherCss[i] === '}' && --depth === 0) { end = i; break; }
+    }
+    const block = otherCss.slice(otherCss.indexOf('{', start) + 1, end);
+    const offenders = [...block.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .flatMap(([, prelude, body]) => prelude.split(',').map(selector => [selector.trim().replace(/^html\[data-layout="[ac]"\]\s*/, ''), body]))
+      .filter(([selector, body]) => /^[.\w-]+$/.test(selector) && matches(wrapper, selector) && /(^|;|\s)(display|flex-wrap)\s*:/.test(body))
+      .map(([selector]) => selector);
+    assert.deepEqual(offenders, [], 'a bare compound selector here also matches the wrapper (.settings-nav.settings-index) and turns it into a flex row');
+  } finally { f.db.close(); }
+});
+
 /** Classes the pages render that app.css styles and that look the same in a layout, so other.css need not restyle them. */
 const SHARED_LOOK = new Set([
   'panel-body', 'section-actions', 'settings-body', // spacing and min-width only
@@ -328,7 +366,9 @@ test('other.css carries a rule for every class the themed pages render that app.
   }
   collect(renderedClasses(joinForm({ join: async () => {} })));
   const styledByApp = name => new RegExp(`\\.${name}(?![\\w-])`).test(appCss);
-  const styledHere = name => new RegExp(`\\.${name}(?![\\w-])`).test(otherCss);
-  const unthemed = [...rendered].filter(name => styledByApp(name) && !styledHere(name) && !SHARED_LOOK.has(name)).sort();
-  assert.deepEqual(unthemed, [], 'style each class in other.css, or list it in SHARED_LOOK when it should look the same');
+  const styledIn = (name, layout) => otherRules.some(rule => rule.layout === layout && new RegExp(`\\.${name}(?![\\w-])`).test(rule.selector));
+  const unthemed = [...rendered]
+    .filter(name => styledByApp(name) && !SHARED_LOOK.has(name))
+    .flatMap(name => ['a', 'c'].filter(layout => !styledIn(name, layout)).map(layout => `${name} (${layout})`)).sort();
+  assert.deepEqual(unthemed, [], 'give each class a rule with declarations in other.css for both layouts, or list it in SHARED_LOOK when it should look the same');
 });
