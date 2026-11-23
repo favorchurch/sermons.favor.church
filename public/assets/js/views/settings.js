@@ -8,15 +8,16 @@ import { peopleSection } from './settings-people.js';
 import { importSection } from './settings-import.js';
 import { docsSection } from './settings-docs.js';
 import { workspaceSection } from './settings-workspace.js';
+import { layoutSection } from './settings-layout.js';
 
-const SECTIONS = { places: placesSection, people: peopleSection, import: importSection, docs: docsSection, workspace: workspaceSection };
+const SECTIONS = { places: placesSection, people: peopleSection, import: importSection, docs: docsSection, workspace: workspaceSection, layout: layoutSection };
 
 /** ctx: { route, state, client, toast, setHash, refreshLibrary } */
 export function settingsPage(ctx) {
   const { route, state } = ctx;
-  const visible = SETTINGS_SECTIONS.filter(([key]) => canSeeSection(state.role, key));
+  const visible = SETTINGS_SECTIONS.filter(([key]) => key !== 'layout' && canSeeSection(state.role, key));
   const label = (SETTINGS_SECTIONS.find(([key]) => key === route.section) || [])[1];
-  const allowed = canSeeSection(state.role, route.section);
+  const allowed = route.section === 'layout' || canSeeSection(state.role, route.section);
   const body = allowed
     ? SECTIONS[route.section](ctx)
     : h('div', { class: 'notice', role: 'status' },
@@ -26,7 +27,10 @@ export function settingsPage(ctx) {
   return h('div', { class: 'settings' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Settings'),
     h('div', { class: 'settings-layout' },
-      h('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' },
-        ...visible.map(([key, text]) => h('a', { href: hrefFor({ name: 'settings', section: key }), 'aria-current': key === route.section ? 'page' : null }, text))),
+      h('div', { class: 'settings-index' },
+        h('nav', { class: 'settings-nav', 'aria-label': 'Settings sections' },
+          ...visible.map(([key, text]) => h('a', { href: hrefFor({ name: 'settings', section: key }), 'aria-current': key === route.section ? 'page' : null }, text))),
+        h('div', { class: 'settings-nav settings-nav-extra' },
+          h('a', { class: 'settings-layout-link', href: hrefFor({ name: 'settings', section: 'layout' }), 'aria-current': route.section === 'layout' ? 'page' : null }, 'Layout'))),
       h('div', { class: 'settings-body' }, body)));
 }

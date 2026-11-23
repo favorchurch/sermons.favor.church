@@ -61,7 +61,8 @@ const CODE_TEXT = {
   revoked: 'Access to this version has been revoked.',
   place_changed: 'That place changed while you were working. Reload and try again.',
   label_in_use: 'This sermon already has a version with that name.',
-  source_locked: 'This version’s source can no longer be changed.'
+  source_locked: 'This version’s source can no longer be changed.',
+  invalid_layout: 'That layout option is not available.'
 };
 
 /** Plain-language message for an ApiError. Only the status and a known code ever shape the text. */

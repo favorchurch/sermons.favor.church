@@ -3,6 +3,7 @@
 // storage, clock) is injected so the whole flow can run under a fake DOM in tests.
 import { h, mount, rememberFocus, restoreFocus } from './dom.js';
 import { ApiError, describeError } from './api.js';
+import { applyLayout, isLayout, LAYOUT_LABELS } from './layout.js';
 import { createLibraryClient } from './data.js';
 import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
 import { summarise } from './library-model.js';
@@ -22,7 +23,7 @@ const WORKSPACE_KEY = 'sermon-bank.workspace';
 
 export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate }) {
   const state = {
-    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null,
+    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null, layout: 'original', layoutSaving: false, layoutError: null,
     items: [], events: [], index: indexEvents([]), query: '', archive: 'active', sort: 'recent', error: null
   };
   let client = null;
@@ -63,7 +64,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function renderHeader() {
-    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
+    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, changeLayout, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
   }
 
   async function signOut() {
@@ -105,11 +106,43 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       [me, list] = await Promise.all([api.get('/api/me'), api.get('/api/workspaces')]);
     } catch (error) { return fail(error, start); }
     state.account = me.account;
+    state.layout = isLayout(me.account?.layout) ? me.account.layout : 'original';
+    applyLayout(state.layout);
     state.workspaces = list.workspaces || [];
     if (!state.workspaces.length) { state.phase = 'no-workspace'; renderHeader(); render(); return; }
     const saved = storage.get(WORKSPACE_KEY);
     state.workspaceId = (state.workspaces.find(w => w.id === saved) || state.workspaces[0]).id;
     await loadWorkspace();
+  }
+
+  async function changeLayout(layout, source = null) {
+    if (!state.account || state.phase === 'signedout' || !isLayout(layout) || layout === state.layout || state.layoutSaving) return;
+    const fromHeader = source === 'header' || Boolean(document.activeElement?.getAttribute?.('data-quick-layout'));
+    const fromSettings = source === 'settings' || Boolean(document.activeElement?.getAttribute?.('data-layout-option'));
+    const previous = state.layout;
+    state.layout = layout;
+    state.layoutSaving = true;
+    state.layoutError = null;
+    applyLayout(layout);
+    renderHeader();
+    render();
+    try {
+      const result = await api.patch('/api/me', { layout });
+      state.layout = isLayout(result?.account?.layout) ? result.account.layout : layout;
+      applyLayout(state.layout);
+      announce(`Layout changed to ${LAYOUT_LABELS[state.layout]}.`);
+    } catch (error) {
+      state.layout = previous;
+      state.layoutError = error;
+      applyLayout(previous);
+      toast(describeError(error));
+    } finally {
+      state.layoutSaving = false;
+      renderHeader();
+      render();
+      if (fromSettings) root.querySelector(`[data-layout-option="${state.layout}"]`)?.focus();
+      else if (fromHeader) (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#page-title'))?.focus();
+    }
   }
 
   function switchWorkspace(id) {
@@ -323,12 +356,13 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     // A result is only kept while its page is open, so coming back always shows what the server holds now.
     if (route.name !== 'search') search = null;
     if (!(route.name === 'sermon' && route.tab === 'notes')) notes = null;
+    if (!(route.name === 'settings' && route.section === 'layout')) state.layoutError = null;
     if (route.name === 'sermon') return sermonView(route);
     detail = null;
     if (route.name === 'search') return searchView(route);
     if (route.name === 'settings') {
       document.title = 'Settings · Sermon Bank';
-      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
+      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode, changeLayout });
     }
     if (route.name !== 'library') {
       return emptyState({
