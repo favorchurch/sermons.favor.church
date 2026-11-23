@@ -1167,6 +1167,10 @@ html[data-layout="a"] .notes-panel mark, html[data-layout="c"] .notes-panel mark
 }
 
 /* Loading, Empty, Error, Denied states & Panel errors */
+/* C's main has no top padding (A's does), so state views get it here and the card clears the top bar. */
+html[data-layout="c"] main:has(> .state) {
+  padding-top: 28px;
+}
 html[data-layout="a"] .state-panel, html[data-layout="c"] .state-panel {
   max-width: 1120px;
   margin: 0 auto;
@@ -1319,6 +1323,9 @@ html[data-layout="a"] .panel-body > .muted[role="status"], html[data-layout="c"]
   html[data-layout="a"] main, html[data-layout="c"] main {
     padding-left: 16px;
     padding-right: 16px;
+  }
+  html[data-layout="c"] main:has(> .state) {
+    padding-top: 16px;
   }
   html[data-layout="a"] .page-title, html[data-layout="c"] .page-title {
     font-size: 24px;

@@ -606,6 +606,19 @@ test('browse.css is linked in index.html, scopes all selectors, defines responsi
   }
 });
 
+test('theme C gives state views top padding so the card clears the top bar, and Original is untouched', async () => {
+  const rawCss = await readFile(join(root, 'public/assets/themes/browse.css'), 'utf8');
+  const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  const [, rules] = css.match(/html\[data-layout="c"\] main:has\(> \.state\)\s*\{([^}]+)\}/) || [];
+  assert.ok(rules, 'C state-view top padding rule exists');
+  assert.match(rules, /padding-top:\s*28px;/);
+  const mobile = extractMediaBlock(css, '@media (max-width: 720px)');
+  assert.match(mobile, /html\[data-layout="c"\] main:has\(> \.state\)\s*\{[^}]*padding-top:\s*16px;/);
+  for (const [, selector] of css.matchAll(/([^{}]*main:has\(> \.state\)[^{}]*)\{/g)) {
+    assert.match(selector.trim(), /^html\[data-layout="c"\] main:has/, 'every state padding rule is scoped to C');
+  }
+});
+
 test('A and C let long sermon detail text wrap within the available width', async () => {
   const css = await readFile(join(root, 'public/assets/themes/browse.css'), 'utf8');
   assert.match(css, /html\[data-layout="a"\] \.detail, html\[data-layout="c"\] \.detail\s*\{[^}]*overflow-wrap:\s*anywhere;/);
