@@ -63,7 +63,7 @@ function themedCalendarPage({ y, m, month, year, selected, selectedEvents, prev,
         class: `cal-day has-event${isSelected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}`,
         href: calendarHref(y, m, cell.date), 'data-focus-key': 'day-' + cell.date,
         'aria-current': isSelected ? 'true' : null,
-        'aria-label': `${formatLongDay(cell.date)}, ${plural(events.length, 'preaching')}`
+        'aria-label': `${formatLongDay(cell.date)}, ${plural(events.length, 'preaching')}${hasReview ? ', date needs review' : ''}`
       },
       h('span', { class: 'cal-day-num' }, String(cell.day)),
       h('span', { class: `cal-day-tag${hasReview ? ' is-review' : ''}` },

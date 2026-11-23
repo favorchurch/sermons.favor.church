@@ -16,10 +16,11 @@ const SERMONS = [
   ['Named Before You Achieved Anything','Unshaken','Matthew 3:16-17','2026-12-06','Tagaytay Camp Hall','The Father speaks delight before a single miracle is performed.']
 ];
 
-export function seedPreviewData(db, { empty = false, layout = 'a' } = {}) {
+export function seedPreviewData(db, { empty = false, layout = 'a', noWorkspace = false } = {}) {
   if (!['a', 'c', 'original'].includes(layout)) throw new Error('Unsupported preview layout');
   const owner = PREVIEW_OWNER;
   db.execute('INSERT INTO user_accounts(id,email_normalized,display_name,layout_theme) VALUES (?,?,?,?)', [owner.id, owner.email, owner.name, layout]);
+  if (noWorkspace) return;
   const workspaces = [
     { id: 'c1000000-0000-4000-8000-000000000001', name: 'Riverbend Church', records: SERMONS.slice(0, 10) },
     { id: 'c1000000-0000-4000-8000-000000000002', name: 'Youth & Young Adults', records: SERMONS.slice(10) }
