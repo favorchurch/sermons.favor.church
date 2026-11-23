@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPreviewServer } from '../scripts/theme-preview.mjs';
+import { createPreviewServer, LOADING_HOLD_MS } from '../scripts/theme-preview.mjs';
 
 async function withPreview(options, run) {
   const preview = await createPreviewServer({ loadingDelayMs: 200, ...options });
@@ -70,6 +70,28 @@ test('the loading fixture holds the library list calls, then answers normally', 
     assert.equal(response.status, 200);
     assert.ok((await response.json()).sermons.length >= 5);
   });
+});
+
+test('the loading fixture holds by default for far longer than a capture step takes', async () => {
+  assert.ok(LOADING_HOLD_MS >= 300000, 'the default hold outlasts slow capture steps');
+  const preview = await createPreviewServer({});
+  try {
+    await new Promise(resolve => preview.server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${preview.server.address().port}`;
+    const login = await fetch(`${base}/?preview=loading`);
+    const cookie = login.headers.getSetCookie().map(line => line.split(';')[0]).join('; ');
+    const workspaces = await (await fetch(`${base}/api/workspaces`, { headers: { cookie } })).json();
+    const controller = new AbortController();
+    const held = fetch(`${base}/api/workspaces/${workspaces.workspaces[0].id}/sermons?archived=include&limit=100&offset=0`, { headers: { cookie }, signal: controller.signal })
+      .then(() => 'answered', () => 'aborted');
+    const outcome = await Promise.race([held, new Promise(resolve => setTimeout(() => resolve('still held'), 1500))]);
+    controller.abort();
+    assert.equal(outcome, 'still held');
+  } finally {
+    preview.server.closeAllConnections();
+    await new Promise(resolve => preview.server.close(resolve));
+    preview.db.close();
+  }
 });
 
 test('an abandoned held request does not keep the server open', async () => {
