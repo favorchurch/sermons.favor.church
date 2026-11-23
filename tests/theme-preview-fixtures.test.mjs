@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPreviewServer } from '../scripts/theme-preview.mjs';
 
-async function withPreview(options, run) {
+async function withPreview(options, run, { secureCookies = true } = {}) {
   const preview = await createPreviewServer(options);
   try {
     await new Promise(resolve => preview.server.listen(0, '127.0.0.1', resolve));
@@ -13,6 +13,8 @@ async function withPreview(options, run) {
       const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
       const response = await fetch(base + path, { ...init, headers: { ...(cookie ? { cookie } : {}), ...init.headers } });
       for (const line of response.headers.getSetCookie()) {
+        // A browser on local http drops Secure cookies: secureCookies: false behaves like that browser.
+        if (!secureCookies && /;\s*Secure\s*(;|$)/i.test(line)) continue;
         const [pair] = line.split(';');
         const [name, ...value] = pair.split('=');
         jar.set(name, value.join('='));
@@ -135,6 +137,38 @@ test('preview_layout sets sb_layout, works signed out, and keeps the account lay
   await withPreview({ layout: 'a' }, async ({ get }) => {
     await get('/?preview_layout=c');
     assert.equal((await (await get('/api/me')).json()).account.layout, 'c');
+    await get('/?preview_layout=original');
+    assert.equal((await (await get('/api/me')).json()).account.layout, 'original');
+  });
+});
+
+test('a layout saved through PATCH /api/me survives a reload, even when the browser drops Secure cookies', async () => {
+  await withPreview({ layout: 'a' }, async ({ get, jar }) => {
+    const saved = await get('/api/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ layout: 'c' }) });
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).account.layout, 'c');
+    const layoutCookie = saved.headers.getSetCookie().find(line => line.startsWith('sb_layout='));
+    assert.ok(layoutCookie, 'the app sets sb_layout on PATCH');
+    assert.ok(!/Secure/i.test(layoutCookie), 'the proxy sends it without Secure for local http');
+    // A browser that dropped the cookie, a stale one, and a normal reload all keep c.
+    for (const stale of [undefined, 'sb_layout=a']) {
+      const reloaded = await get('/', stale ? { headers: { cookie: stale } } : {});
+      assert.equal(reloaded.status, 200);
+      assert.equal((await (await get('/api/me', stale ? { headers: { cookie: stale } } : {})).json()).account.layout, 'c');
+    }
+    assert.equal(jar.get('sb_layout'), 'c');
+    assert.equal((await (await get('/api/me')).json()).account.layout, 'c');
+  });
+  // Same flow with a browser that drops Secure cookies: the saved choice is still c after a fresh GET of / and GET /api/me.
+  await withPreview({ layout: 'a' }, async ({ get, jar }) => {
+    await get('/api/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ layout: 'c' }) });
+    assert.equal(jar.get('sb_layout'), 'c', 'the cookie the proxy sent was kept');
+    assert.equal((await get('/')).status, 200);
+    assert.equal((await (await get('/api/me')).json()).account.layout, 'c');
+  }, { secureCookies: false });
+  // ?preview_layout still sets the layout explicitly.
+  await withPreview({ layout: 'a' }, async ({ get }) => {
+    await get('/api/me', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ layout: 'c' }) });
     await get('/?preview_layout=original');
     assert.equal((await (await get('/api/me')).json()).account.layout, 'original');
   });
