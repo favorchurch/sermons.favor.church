@@ -1,7 +1,7 @@
 // Sermon detail: metadata, versions with indexing status, preaching events, and the write
 // actions (edit, log preaching, archive/restore) which only editors, admins and owners see.
 import { h } from '../dom.js';
-import { hrefFor, sermonHref, notesHref } from '../router.js';
+import { hrefFor, sermonHref, notesHref, LIBRARY_HREF } from '../router.js';
 import { SOURCE_LABELS, formatStamp, formatWhen, indexingStatus, plural } from '../format.js';
 import { canEdit } from '../permissions.js';
 import { coverFor, spineIndex } from '../covers.js';
@@ -59,7 +59,7 @@ function themedSermonPage(ctx, { editor, labels, events }) {
 
   return h('article', { class: 'detail browse-page' },
     h('div', { class: 'back-bar' },
-      h('a', { class: 'back-link', href: hrefFor({ name: 'library', view: ctx.backView || 'covers' }) },
+      h('a', { class: 'back-link', href: LIBRARY_HREF },
         lineIcon('arrowLeft', 16), 'Library')),
     h('header', { class: `detail-header spine-${swatch}` },
       h('div', { class: 'detail-header-identity' },
@@ -116,7 +116,7 @@ export function sermonPage(ctx) {
 
   const cover = coverFor(sermon);
   return h('article', { class: 'detail' },
-    h('a', { class: 'back-link', href: hrefFor({ name: 'library', view: ctx.backView || 'covers' }) }, '← Library'),
+    h('a', { class: 'back-link', href: LIBRARY_HREF }, '← Library'),
     h('header', { class: `detail-head cover-${cover.palette}` },
       h('div', { class: 'detail-titles' },
         sermon.series_name ? h('p', { class: 'eyebrow' }, sermon.series_name) : null,

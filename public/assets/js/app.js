@@ -5,7 +5,8 @@ import { h, mount, rememberFocus, restoreFocus } from './dom.js';
 import { ApiError, describeError } from './api.js';
 import { applyLayout, isLayout, LAYOUT_LABELS, readLayoutCookie } from './layout.js';
 import { createLibraryClient } from './data.js';
-import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
+import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery, hasLibraryView, hasSearchScope, LIBRARY_HREF } from './router.js';
+import { createPrefs } from './prefs.js';
 import { summarise } from './library-model.js';
 import { indexEvents } from './calendar-model.js';
 import { header } from './views/shell.js';
@@ -19,14 +20,20 @@ import { joinForm } from './views/join.js';
 import { loadingState, emptyState, errorState, deniedState } from './views/states.js';
 import { newDraftDialog, newWorkspaceDialog, editSermonDialog, logPreachingDialog, confirmArchiveDialog, workspaceNameField, workspaceNameError } from './views/dialogs.js';
 
-const WORKSPACE_KEY = 'sermon-bank.workspace';
-
-export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate, initialLayout }) {
-  const bootLayout = isLayout(initialLayout) ? initialLayout : readLayoutCookie();
+export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, today, navigate, initialLayout, prefs = createPrefs({ api }) }) {
+  const savedLayout = prefs.get('layout');
+  const bootLayout = isLayout(savedLayout) ? savedLayout : isLayout(initialLayout) ? initialLayout : readLayoutCookie();
   const state = {
     phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null, layout: bootLayout, layoutSaving: false, layoutError: null,
-    items: [], events: [], index: indexEvents([]), query: '', archive: 'active', sort: 'recent', error: null
+    items: [], events: [], index: indexEvents([]), query: '', archive: 'active', sort: 'recent', series: 'all', error: null
   };
+  // The saved choices that sit on the page state, read again whenever the account's copy is taken in.
+  const loadViewPrefs = () => {
+    state.archive = prefs.get('archive') ?? 'active';
+    state.sort = prefs.get('sort') ?? 'recent';
+    state.series = prefs.get('series') ?? 'all';
+  };
+  loadViewPrefs();
   let client = null;
   let detail = null;
   let search = null; // { key, scope, quick, deep } for the search page; each stage is { phase, data?, error? }
@@ -64,8 +71,17 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     render();
   }
 
+  /** The route for the current address. An address that leaves out the Library view or search scope gets the saved one. */
+  function currentRoute() {
+    const hash = getHash();
+    const route = parseRoute(hash);
+    if (route.name === 'library' && !hasLibraryView(hash) && prefs.get('libraryView')) return parseRoute(`#/library/${prefs.get('libraryView')}`);
+    if (route.name === 'search' && !hasSearchScope(hash) && prefs.get('searchScope')) return { ...route, scope: prefs.get('searchScope') };
+    return route;
+  }
+
   function renderHeader() {
-    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, changeLayout, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
+    mount(headerRoot, header({ state, route: currentRoute(), switchWorkspace, newWorkspace, signOut, changeLayout, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
   }
 
   async function signOut() {
@@ -108,11 +124,15 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       [me, list] = await Promise.all([api.get('/api/me'), api.get('/api/workspaces')]);
     } catch (error) { return fail(error, start); }
     state.account = me.account;
-    state.layout = isLayout(me.account?.layout) ? me.account.layout : 'original';
+    prefs.merge(me.account);
+    state.layout = isLayout(prefs.get('layout')) ? prefs.get('layout') : 'original';
     applyLayout(state.layout);
+    loadViewPrefs();
+    prefs.flush(); // sends what an earlier visit could not
     state.workspaces = list.workspaces || [];
     if (!state.workspaces.length) { state.phase = 'no-workspace'; renderHeader(); render(); return; }
-    const saved = storage.get(WORKSPACE_KEY);
+    // A saved workspace the account no longer belongs to is ignored.
+    const saved = prefs.get('workspaceId');
     state.workspaceId = (state.workspaces.find(w => w.id === saved) || state.workspaces[0]).id;
     await loadWorkspace();
   }
@@ -133,15 +153,19 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     renderHeader();
     render();
     try {
-      const result = await api.patch('/api/me', { layout });
-      state.layout = isLayout(result?.account?.layout) ? result.account.layout : layout;
-      applyLayout(state.layout);
-      announce(`Layout changed to ${LAYOUT_LABELS[state.layout]}.`);
-    } catch (error) {
-      state.layout = previous;
-      state.layoutError = error;
-      applyLayout(previous);
-      toast(describeError(error));
+      // The choice is kept on this device at once. The account may take it later if it cannot now.
+      const saved = await prefs.set({ layout });
+      if (saved.rejected) {
+        state.layout = previous;
+        state.layoutError = saved.error;
+        applyLayout(previous);
+        toast(describeError(saved.error));
+      } else {
+        state.layout = isLayout(saved.result?.account?.layout) ? saved.result.account.layout : layout;
+        applyLayout(state.layout);
+        announce(`Layout changed to ${LAYOUT_LABELS[state.layout]}.`);
+        if (!saved.ok) toast('Layout saved on this device. It will sync to your account when you are back online.');
+      }
     } finally {
       state.layoutSaving = false;
       renderHeader();
@@ -154,13 +178,14 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
 
   function switchWorkspace(id) {
     if (id === state.workspaceId) return;
-    storage.set(WORKSPACE_KEY, id);
     state.workspaceId = id;
     state.query = '';
     state.archive = 'active';
+    state.series = 'all'; // series names belong to one workspace
+    prefs.set({ workspaceId: id, archive: 'active', series: 'all' });
     search = null;
     notes = null;
-    setHash(hrefFor({ name: 'library', view: 'covers' }));
+    setHash(LIBRARY_HREF);
     loadWorkspace();
   }
 
@@ -199,7 +224,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       if (quiet && detail.phase === 'ready') { toast(describeError(error)); return; }
       detail = { id, phase: 'failed', error };
     }
-    if (parseRoute(getHash()).id === id) render();
+    if (currentRoute().id === id) render();
   }
 
   /** Redeem a one-time invitation code, then reload the list of workspaces. The server checks it against the signed-in email. */
@@ -230,7 +255,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       error => { entry.phase = 'failed'; entry.error = error; }
     ).then(() => {
       if (search !== run) return;
-      const current = parseRoute(getHash());
+      const current = currentRoute();
       if (current.name !== 'search') return;
       if (entry.phase === 'ready') announceSearch(run, current);
       render();
@@ -259,7 +284,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     }
     const retry = stage => () => { if (run) run[stage] = null; render(); };
     return searchPage({
-      route, quick: run?.quick ?? null, deep: run?.deep ?? null, search: runSearch,
+      route, quick: run?.quick ?? null, deep: run?.deep ?? null, search: runSearch, rememberScope: searchScope => prefs.set({ searchScope }),
       retryQuick: retry('quick'), retryDeep: retry('deep')
     });
   }
@@ -272,7 +297,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     } catch (error) {
       if (notes?.key === key) notes = { key, phase: 'failed', error };
     }
-    const current = parseRoute(getHash());
+    const current = currentRoute();
     if (notes?.key === key && current.name === 'sermon' && current.tab === 'notes') render();
   }
 
@@ -311,7 +336,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         return emptyState({
           title: 'Sermon not found',
           body: 'It may have been removed, or it may belong to a workspace you don’t have access to.',
-          actions: [h('a', { class: 'btn', href: hrefFor({ name: 'library', view: 'covers' }) }, 'Back to the library')]
+          actions: [h('a', { class: 'btn', href: LIBRARY_HREF }, 'Back to the library')]
         });
       }
       return errorState({
@@ -343,8 +368,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         const invalid = workspaceNameError(name.control.value);
         name.setError(invalid);
         if (invalid) { name.control.focus(); return; }
-        try {
-          await api.post('/api/workspaces', { name: name.control.value.trim() });
+        try {          await api.post('/api/workspaces', { name: name.control.value.trim() });
           await start();
         } catch (error) {
           message.textContent = describeError(error);
@@ -357,8 +381,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       h('p', null, 'Create your own private workspace, or use the invitation code an owner gave you.'),
       form,
       joinForm({ join: joinWithCode }),
-      h('a', { href: hrefFor({ name: 'settings', section: 'layout' }) }, 'Layout settings'));
-  }
+      h('a', { href: hrefFor({ name: 'settings', section: 'layout' }) }, 'Layout settings'));  }
 
   function readyView(route) {
     // A result is only kept while its page is open, so coming back always shows what the server holds now.
@@ -375,18 +398,20 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
     if (route.name !== 'library') {
       return emptyState({
         title: 'That page doesn’t exist', body: 'Check the address, or head back to the library.',
-        actions: [h('a', { class: 'btn btn-primary', href: hrefFor({ name: 'library', view: 'covers' }) }, 'Go to the library')]
+        actions: [h('a', { class: 'btn btn-primary', href: LIBRARY_HREF }, 'Go to the library')]
       });
     }
     document.title = 'Library · Sermon Bank';
-    const common = { state, announce, newDraft };
+    // A view the address names wins for this visit and becomes the saved one.
+    if (hasLibraryView(getHash())) prefs.set({ libraryView: route.view });
+    const common = { state, announce, newDraft, remember: changes => prefs.set(changes) };
     return route.view === 'calendar'
       ? calendarPage({ route, today: today(), index: state.index })
       : libraryPage({ ...common, view: route.view });
   }
 
   function render() {
-    const route = parseRoute(getHash());
+    const route = currentRoute();
     const signature = `${route.name}|${route.view || ''}|${route.id || ''}|${route.section || ''}|${route.tab || ''}`;
     // The header only shows which page is current, so it is rebuilt when the page changes. A result that
     // arrives later re-renders the page but must not wipe what the person is typing in the header box.
