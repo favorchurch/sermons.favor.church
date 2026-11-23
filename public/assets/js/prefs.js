@@ -100,7 +100,9 @@ export function createPrefs({ storage = null, api, win = null } = {}) {
     return queued;
   }
 
-  win?.addEventListener?.('online', () => { flush(); });
+  // Until the account has been merged, what is pending may belong to someone else who used this browser.
+  let merged = false;
+  win?.addEventListener?.('online', () => { if (merged) flush(); });
 
   return {
     get: key => values[key],
@@ -121,7 +123,7 @@ export function createPrefs({ storage = null, api, win = null } = {}) {
     set(changes) {
       let changed = false;
       for (const [key, value] of Object.entries(changes)) {
-        if (!accept(key, value) || (values[key] === value && !pending.has(key))) continue;
+        if (!accept(key, value) || values[key] === value) continue; // already held, and already on its way if pending
         values[key] = value;
         pending.add(key);
         changed = true;
@@ -139,6 +141,7 @@ export function createPrefs({ storage = null, api, win = null } = {}) {
         pending.clear();
       }
       if (id) account = id;
+      merged = true;
       const theirs = isObject(remote?.prefs) ? remote.prefs : {};
       for (const key of KEYS) {
         if (pending.has(key)) continue;

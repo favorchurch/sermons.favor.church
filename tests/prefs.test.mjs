@@ -130,11 +130,12 @@ test('a failed send marks the keys pending, then the online event sends them (la
   const api = fakeApi({ patchError: network() });
   const win = fakeWindow();
   const prefs = createPrefs({ storage, api, win });
+  prefs.merge(api.account); // the app merges /api/me on load, before anything can be sent
   const first = await prefs.set({ layout: 'c', sort: 'title' });
   assert.equal(first.ok, false);
   assert.equal(first.rejected, false);
   assert.deepEqual(prefs.pendingKeys().sort(), ['layout', 'sort']);
-  assert.deepEqual(saved(storage), { account: null, values: { layout: 'c', sort: 'title' }, pending: ['layout', 'sort'] });
+  assert.deepEqual(saved(storage), { account: 'acct-1', values: { layout: 'c', sort: 'title' }, pending: ['layout', 'sort'] });
 
   api.patchError = null;
   win.fire('online');
@@ -142,6 +143,31 @@ test('a failed send marks the keys pending, then the online event sends them (la
   assert.deepEqual(api.patches.at(-1), { layout: 'c', prefs: { sort: 'title' } });
   assert.deepEqual(prefs.pendingKeys(), []);
   assert.deepEqual(saved(storage).pending, []);
+});
+
+test('the online event does not send a previous person\'s pending choices before the account is known', async () => {
+  const storage = memoryStorage({ account: 'acct-1', values: { sort: 'title' }, pending: ['sort'] });
+  const api = fakeApi({ account: { id: 'acct-2', layout: 'original', prefs: {} } });
+  const win = fakeWindow();
+  const prefs = createPrefs({ storage, api, win });
+  win.fire('online');
+  await settle();
+  assert.equal(api.patches.length, 0, 'nothing is sent before /api/me has been merged');
+  prefs.merge(api.account);
+  win.fire('online');
+  await settle();
+  assert.equal(api.patches.length, 0, 'and the other person\'s choice is gone once it has');
+  assert.equal(prefs.get('sort'), undefined);
+});
+
+test('setting the value that is already pending sends nothing more', async () => {
+  const api = fakeApi({ patchError: network() });
+  const prefs = createPrefs({ storage: memoryStorage(), api });
+  await prefs.set({ libraryView: 'rows' });
+  await prefs.set({ libraryView: 'rows' });
+  await prefs.set({ libraryView: 'rows' });
+  assert.equal(api.patches.length, 1);
+  assert.deepEqual(prefs.pendingKeys(), ['libraryView']);
 });
 
 test('a choice the account refuses goes back to what it holds and is not retried', async () => {

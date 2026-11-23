@@ -164,7 +164,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         state.layout = isLayout(saved.result?.account?.layout) ? saved.result.account.layout : layout;
         applyLayout(state.layout);
         announce(`Layout changed to ${LAYOUT_LABELS[state.layout]}.`);
-        if (!saved.ok) toast('Layout saved on this device. It will sync to your account when you are back online.');
+        if (!saved.ok) toast('Layout saved on this device. It will sync to your account later.');
       }
     } finally {
       state.layoutSaving = false;
