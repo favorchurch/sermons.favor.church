@@ -400,6 +400,19 @@ test('Original sign-in page retains its name, copy and single-column structure',
   } finally { f.db.close(); }
 });
 
+test('the A and C sign-in note uses the same words as the Original sign-in note', async () => {
+  const f = await fixture();
+  try {
+    const noteOf = html => html.match(/<p class="note">([^<]*)<\/p>/)[1];
+    const original = noteOf((await f.call('GET', '/', null, undefined, { cookie: 'sb_layout=original' })).text);
+    assert.equal(original, 'Any Google account can sign in. If you were invited, use the account the invitation was made for.');
+    for (const cookie of [undefined, 'sb_layout=a', 'sb_layout=c']) {
+      const page = await f.call('GET', '/', null, undefined, cookie ? { cookie } : undefined);
+      assert.equal(noteOf(page.text), original, cookie ?? 'no cookie');
+    }
+  } finally { f.db.close(); }
+});
+
 test('signed-in users get the icon files with private caching', async () => {
   const f = await fixture();
   try {

@@ -62,22 +62,22 @@ export async function createPreviewServer(options = {}) {
   const settings = { port: 4181, signedOut: false, layout: 'a', empty: false, ...options };
   const origin = 'https://preview.example.test';
 
-  async function openFixture(store) {
+  async function openFixture(store, layout) {
     const db = new DatabaseMock();
-    seedPreviewData(db, { empty: store === 'empty', layout: settings.layout, noWorkspace: store === 'no-workspace' });
+    seedPreviewData(db, { empty: store === 'empty', layout, noWorkspace: store === 'no-workspace' });
     const token = randomToken();
     db.execute('INSERT INTO auth_sessions(token_hash,account_id,expires_at) VALUES (?,?,?)', [await sha256(token), PREVIEW_OWNER.id, Math.floor(Date.now() / 1000) + 3600]);
-    return { db, token, layout: settings.layout };
+    return { db, token };
   }
 
   // Each fixture that needs different data gets its own database, opened on first use.
   // The default one (empty with --empty) is the returned `db`.
   const defaultStore = settings.empty ? 'empty' : 'full';
-  const primary = await openFixture(defaultStore);
+  const primary = await openFixture(defaultStore, settings.layout);
   const stores = new Map([[defaultStore, primary]]);
-  const fixtureFor = name => {
+  const fixtureFor = (name, layout) => {
     const store = name === 'empty' || name === 'no-workspace' ? name : defaultStore;
-    if (!stores.has(store)) stores.set(store, openFixture(store));
+    if (!stores.has(store)) stores.set(store, openFixture(store, layout));
     return stores.get(store);
   };
 
@@ -111,13 +111,14 @@ export async function createPreviewServer(options = {}) {
       const cookieFixture = readCookie(incoming.headers.cookie, FIXTURE_COOKIE);
       const cookieLayout = readCookie(incoming.headers.cookie, LAYOUT_COOKIE);
       const fixtureName = queryFixture ?? (FIXTURES.includes(cookieFixture) ? cookieFixture : 'default');
-      const layout = queryLayout ?? (LAYOUTS.includes(cookieLayout) ? cookieLayout : settings.layout);
-      const fixture = await fixtureFor(fixtureName);
-      // Keep the signed-in account's stored layout in step with the chosen layout.
-      if (fixture.layout !== layout) {
-        fixture.db.execute('UPDATE user_accounts SET layout_theme = ? WHERE id = ?', [layout, PREVIEW_OWNER.id]);
-        fixture.layout = layout;
-      }
+      const requested = queryLayout ?? (LAYOUTS.includes(cookieLayout) ? cookieLayout : settings.layout);
+      const fixture = await fixtureFor(fixtureName, requested);
+      // Only ?preview_layout writes the stored layout. A cookie never does: the browser may hold a stale one
+      // (or none) after Settings saved a layout through PATCH /api/me, and the saved choice wins.
+      if (queryLayout !== null) fixture.db.execute('UPDATE user_accounts SET layout_theme = ? WHERE id = ?', [queryLayout, PREVIEW_OWNER.id]);
+      // Signed in, the app reads the saved layout, so the forwarded cookie matches it. Signed out, the cookie decides.
+      const saved = fixture.db.query('SELECT layout_theme FROM user_accounts WHERE id = ?', [PREVIEW_OWNER.id])[0]?.layout_theme;
+      const layout = settings.signedOut || !LAYOUTS.includes(saved) ? requested : saved;
 
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
@@ -146,7 +147,9 @@ export async function createPreviewServer(options = {}) {
       const responseHeaders = Object.fromEntries(response.headers);
       delete responseHeaders['content-length'];
       delete responseHeaders['set-cookie'];
-      const setCookies = response.headers.getSetCookie();
+      // The app's layout cookie is Secure, which a browser on local http can drop. Strip it so the saved layout survives a reload.
+      const setCookies = response.headers.getSetCookie()
+        .map(line => (line.startsWith(`${LAYOUT_COOKIE}=`) ? line.replace(/;\s*Secure\s*(?=;|$)/gi, '') : line));
       // Preview-only cookies skip Secure so every browser keeps them over local http.
       if (queryFixture !== null) setCookies.push(`${FIXTURE_COOKIE}=${queryFixture}; Path=/; SameSite=Lax; Max-Age=3600`);
       if (queryLayout !== null) setCookies.push(`${LAYOUT_COOKIE}=${queryLayout}; Path=/; SameSite=Lax; Max-Age=3600`);
