@@ -173,3 +173,146 @@ test('sign-in defaults to prototype A except for the byte-identical Original pag
     assert.equal(createHash('sha256').update(original.text).digest('hex'), 'bc6fd0b9da1abed92c0656cfb0b2baf361d377f2a1b544b20379c684138d7d31');
   } finally { f.db.close(); }
 });
+
+// ---- view prefs (migration 0009) ----
+const savedPrefs = (f, id) => f.db.query('SELECT view_prefs FROM user_accounts WHERE id=?', [id])[0].view_prefs;
+
+test('migration 0009 adds view_prefs additively and existing rows read an empty object', async () => {
+  const f = await fixture();
+  try {
+    const columns = f.db.query("SELECT name, type, \"notnull\" AS required, dflt_value FROM pragma_table_info('user_accounts') WHERE name='view_prefs'");
+    assert.deepEqual(columns.map(c => ({ ...c })), [{ name: 'view_prefs', type: 'TEXT', required: 1, dflt_value: "'{}'" }]);
+    assert.equal(savedPrefs(f, ids.owner), '{}');
+    const me = await f.call('GET', '/api/me', 'owner');
+    assert.deepEqual(me.json.account.prefs, {});
+    assert.equal(me.json.account.layout, 'original');
+    assert.equal(cookieValue(me), expectedLayoutCookie('original'));
+  } finally { f.db.close(); }
+});
+
+test('PATCH /api/me prefs validates the closed allow-list and writes nothing on 400', async () => {
+  const f = await fixture();
+  try {
+    const bad = [
+      { prefs: { libraryView: 'grid' } }, { prefs: { sort: 'oldest' } }, { prefs: { archive: 'all' } },
+      { prefs: { searchScope: 'web' } }, { prefs: { series: 'x'.repeat(201) } }, { prefs: { workspaceId: 'w'.repeat(65) } },
+      { prefs: { series: 5 } }, { prefs: { libraryView: 'rows', unknown: 1 } }, { prefs: { __proto__x: 1 } }, { prefs: { constructor: 'x' } },
+      { prefs: [] }, { prefs: 'rows' }, { prefs: null }, { prefs: { libraryView: 'rows' }, extra: true },
+      { layout: 'bad', prefs: { libraryView: 'rows' } }, { layout: 'c', prefs: { libraryView: 'nope' } }
+    ];
+    for (const body of bad) assert.equal((await f.call('PATCH', '/api/me', 'owner', body)).status, 400, JSON.stringify(body));
+    const raw = await handleRequest(f.request('PATCH', '/api/me', 'owner', undefined), f.env);
+    assert.equal(raw.status, 400);
+    assert.equal(savedPrefs(f, ids.owner), '{}');
+    assert.equal(savedLayout(f, ids.owner), 'original');
+    for (const prefs of [{ libraryView: 'covers' }, { libraryView: 'rows' }, { libraryView: 'table' }, { libraryView: 'calendar' }, { sort: 'recent' }, { sort: 'title' }, { sort: 'added' },
+      { archive: 'active' }, { archive: 'archived' }, { searchScope: 'everything' }, { searchScope: 'bible' }, { searchScope: 'notes' }, { series: 'x'.repeat(200) }, { workspaceId: 'w'.repeat(64) }, {}]) {
+      assert.equal((await f.call('PATCH', '/api/me', 'owner', { prefs })).status, 200, JSON.stringify(prefs).slice(0, 60));
+    }
+  } finally { f.db.close(); }
+});
+
+test('PATCH /api/me prefs merges into the stored object, null clears, layout is untouched', async () => {
+  const f = await fixture();
+  try {
+    const first = await f.call('PATCH', '/api/me', 'owner', { prefs: { libraryView: 'table', sort: 'title', series: 'Romans' } });
+    assert.equal(first.status, 200);
+    assert.deepEqual(first.json.account.prefs, { libraryView: 'table', sort: 'title', series: 'Romans' });
+    assert.equal(first.json.account.layout, 'original');
+    assert.equal(cookieValue(first), expectedLayoutCookie('original'));
+    const second = await f.call('PATCH', '/api/me', 'owner', { prefs: { sort: 'added', archive: 'archived' } });
+    assert.deepEqual(second.json.account.prefs, { libraryView: 'table', sort: 'added', series: 'Romans', archive: 'archived' });
+    const cleared = await f.call('PATCH', '/api/me', 'owner', { prefs: { series: null, archive: null, workspaceId: null } });
+    assert.deepEqual(cleared.json.account.prefs, { libraryView: 'table', sort: 'added' });
+    const read = await f.call('GET', '/api/me', 'owner');
+    assert.deepEqual(read.json.account.prefs, { libraryView: 'table', sort: 'added' });
+    assert.deepEqual(JSON.parse(savedPrefs(f, ids.owner)), { libraryView: 'table', sort: 'added' });
+    const both = await f.call('PATCH', '/api/me', 'owner', { layout: 'c', prefs: { searchScope: 'bible' } });
+    assert.equal(both.json.account.layout, 'c');
+    assert.equal(cookieValue(both), expectedLayoutCookie('c'));
+    assert.deepEqual(both.json.account.prefs, { libraryView: 'table', sort: 'added', searchScope: 'bible' });
+    const layoutOnly = await f.call('PATCH', '/api/me', 'owner', { layout: 'a' });
+    assert.deepEqual(layoutOnly.json.account.prefs, { libraryView: 'table', sort: 'added', searchScope: 'bible' });
+    assert.equal(savedLayout(f, ids.owner), 'a');
+  } finally { f.db.close(); }
+});
+
+test('stored prefs are capped at 2 KB and a rejected patch leaves them unchanged', async () => {
+  const f = await fixture();
+  try {
+    const stored = JSON.stringify({ libraryView: 'rows', series: 'S'.repeat(200), workspaceId: 'w'.repeat(64) });
+    assert.ok(stored.length < 2048);
+    // A tampered or legacy row that is already near the cap: a further key must be refused, not truncated.
+    const near = JSON.stringify({ legacy: 'z'.repeat(2030) });
+    f.db.execute('UPDATE user_accounts SET view_prefs=? WHERE id=?', [near, ids.owner]);
+    const refused = await f.call('PATCH', '/api/me', 'owner', { prefs: { series: 'Romans' } });
+    assert.equal(refused.status, 400);
+    assert.equal(refused.json.error, 'prefs_too_large');
+    assert.equal(savedPrefs(f, ids.owner), near);
+    f.db.execute('UPDATE user_accounts SET view_prefs=? WHERE id=?', ['{}', ids.owner]);
+    const full = await f.call('PATCH', '/api/me', 'owner', { prefs: JSON.parse(stored) });
+    assert.equal(full.status, 200);
+    assert.ok(new TextEncoder().encode(savedPrefs(f, ids.owner)).length <= 2048);
+  } finally { f.db.close(); }
+});
+
+test('an unreadable stored prefs value reads as empty and is replaced by the next patch', async () => {
+  const f = await fixture();
+  try {
+    for (const junk of ['not json', '[1,2]', 'null', '"x"']) {
+      f.db.execute('UPDATE user_accounts SET view_prefs=? WHERE id=?', [junk, ids.owner]);
+      assert.deepEqual((await f.call('GET', '/api/me', 'owner')).json.account.prefs, {}, junk);
+      const patched = await f.call('PATCH', '/api/me', 'owner', { prefs: { sort: 'title' } });
+      assert.equal(patched.status, 200, junk);
+      assert.deepEqual(JSON.parse(savedPrefs(f, ids.owner)), { sort: 'title' });
+    }
+  } finally { f.db.close(); }
+});
+
+test('PATCH prefs uses CSRF, needs a session, and changes only the caller', async () => {
+  const f = await fixture();
+  try {
+    const body = { prefs: { libraryView: 'rows' } };
+    assert.equal((await f.call('PATCH', '/api/me', 'owner', body, { origin: 'https://evil.example' })).status, 403);
+    assert.equal((await f.call('PATCH', '/api/me', null, body)).status, 401);
+    assert.equal(savedPrefs(f, ids.owner), '{}');
+    assert.equal((await f.call('PATCH', '/api/me', 'owner', body)).status, 200);
+    assert.equal(savedPrefs(f, ids.outsider), '{}');
+    assert.deepEqual((await f.call('GET', '/api/me', 'outsider')).json.account.prefs, {});
+    assert.equal((await f.call('PATCH', '/api/me', 'outsider', { prefs: { sort: 'title' } })).status, 200);
+    assert.deepEqual((await f.call('GET', '/api/me', 'owner')).json.account.prefs, { libraryView: 'rows' });
+    assert.deepEqual(JSON.parse(savedPrefs(f, ids.outsider)), { sort: 'title' });
+  } finally { f.db.close(); }
+});
+
+test('a disabled account cannot write prefs, even with a session that was valid a moment ago', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await f.call('PATCH', '/api/me', 'editor', { prefs: { sort: 'title' } })).status, 200);
+    f.db.execute('UPDATE user_accounts SET disabled_at=CURRENT_TIMESTAMP WHERE id=?', [ids.editor]);
+    const denied = await f.call('PATCH', '/api/me', 'editor', { prefs: { sort: 'added' } });
+    assert.equal(denied.status, 401);
+    assert.deepEqual(JSON.parse(savedPrefs(f, ids.editor)), { sort: 'title' });
+    assert.equal((await f.call('GET', '/api/me', 'editor')).status, 401);
+  } finally { f.db.close(); }
+});
+
+test('a prefs write that lands between the read and the update is merged, not overwritten', async () => {
+  const f = await fixture();
+  try {
+    const realPrepare = f.env.DB.prepare.bind(f.env.DB);
+    let injected = false;
+    f.env.DB.prepare = sql => {
+      if (!injected && sql.startsWith('UPDATE user_accounts SET layout_theme')) {
+        injected = true;
+        f.db.execute('UPDATE user_accounts SET view_prefs=? WHERE id=?', [JSON.stringify({ sort: 'added' }), ids.owner]);
+      }
+      return realPrepare(sql);
+    };
+    const res = await f.call('PATCH', '/api/me', 'owner', { prefs: { archive: 'archived' } });
+    assert.ok(injected);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json.account.prefs, { sort: 'added', archive: 'archived' });
+    assert.deepEqual(JSON.parse(savedPrefs(f, ids.owner)), { sort: 'added', archive: 'archived' });
+  } finally { f.db.close(); }
+});
