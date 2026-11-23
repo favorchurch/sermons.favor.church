@@ -153,15 +153,17 @@ async function updateMe(request: Request, env: Env, actor: SessionAccount): Prom
   if (Object.hasOwn(body, 'layout') && !isLayoutPreference(body.layout)) return reply(400, { error: 'invalid_layout' });
   const patch = Object.hasOwn(body, 'prefs') ? parsePrefsPatch(body.prefs) : {};
   if (!patch) return reply(400, { error: 'invalid_prefs' });
-  const layout = isLayoutPreference(body.layout) ? body.layout : actor.layout_theme;
+  // A prefs-only patch must not write layout_theme: the session read may be stale and would revert a concurrent layout change.
+  const newLayout = isLayoutPreference(body.layout) ? body.layout : null;
   // Compare-and-set on the stored JSON so two concurrent patches cannot drop each other's keys.
   let stored = actor.view_prefs;
   for (let attempt = 0; attempt < 3; attempt++) {
     const merged = mergePrefs(readStoredPrefs(stored), patch);
     if (!merged) return reply(400, { error: 'prefs_too_large' });
-    const written = await env.DB.prepare('UPDATE user_accounts SET layout_theme = ?, view_prefs = ? WHERE id = ? AND view_prefs = ? AND disabled_at IS NULL')
-      .bind(layout, merged.json, actor.id, stored).run();
+    const written = await env.DB.prepare('UPDATE user_accounts SET layout_theme = COALESCE(?, layout_theme), view_prefs = ? WHERE id = ? AND view_prefs = ? AND disabled_at IS NULL')
+      .bind(newLayout, merged.json, actor.id, stored).run();
     if (written.meta.changes === 1) {
+      const layout = newLayout ?? (await env.DB.prepare('SELECT layout_theme FROM user_accounts WHERE id = ?').bind(actor.id).first<{ layout_theme: LayoutPreference }>())?.layout_theme ?? actor.layout_theme;
       const response = reply(200, { account: { id: actor.id, email_normalized: actor.email_normalized, display_name: actor.display_name, layout, prefs: merged.prefs } });
       response.headers.append('set-cookie', layoutCookie(layout));
       return response;

@@ -316,3 +316,24 @@ test('a prefs write that lands between the read and the update is merged, not ov
     assert.deepEqual(JSON.parse(savedPrefs(f, ids.owner)), { sort: 'added', archive: 'archived' });
   } finally { f.db.close(); }
 });
+
+test('a prefs-only patch does not revert a layout change made after the session was read', async () => {
+  const f = await fixture();
+  try {
+    const realPrepare = f.env.DB.prepare.bind(f.env.DB);
+    let injected = false;
+    f.env.DB.prepare = sql => {
+      if (!injected && sql.startsWith('UPDATE user_accounts SET layout_theme')) {
+        injected = true;
+        f.db.execute("UPDATE user_accounts SET layout_theme='c' WHERE id=?", [ids.owner]);
+      }
+      return realPrepare(sql);
+    };
+    const res = await f.call('PATCH', '/api/me', 'owner', { prefs: { sort: 'title' } });
+    assert.ok(injected);
+    assert.equal(res.status, 200);
+    assert.equal(res.json.account.layout, 'c');
+    assert.equal(cookieValue(res), expectedLayoutCookie('c'));
+    assert.equal(savedLayout(f, ids.owner), 'c');
+  } finally { f.db.close(); }
+});
