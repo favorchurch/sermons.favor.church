@@ -428,6 +428,7 @@ mark { background: #f6e3a1; color: var(--ink); border-radius: 3px; padding: 0 2p
   .header-inner { gap: 6px 10px; padding: 6px 12px; min-height: 0; }
   .header-right { display: contents; }
   .brand { order: 1; flex: 1 1 0; }
+  .brand-workspace { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .switcher { order: 2; }
   .header-right > .btn { order: 3; min-height: 36px; padding: 6px 12px; }
   .header-search { order: 4; flex: 1 1 100%; }
