@@ -118,6 +118,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   async function changeLayout(layout, source = null) {
     if (!state.account || state.phase === 'signedout' || !isLayout(layout) || layout === state.layout || state.layoutSaving) return;
     const fromHeader = source === 'header' || Boolean(document.activeElement?.getAttribute?.('data-quick-layout'));
+    const fromMobileMenu = source === 'mobile-menu' || Boolean(document.activeElement?.getAttribute?.('data-mobile-layout'));
     const fromSettings = source === 'settings' || Boolean(document.activeElement?.getAttribute?.('data-layout-option'));
     const previous = state.layout;
     state.layout = layout;
@@ -141,7 +142,8 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       renderHeader();
       render();
       if (fromSettings) root.querySelector(`[data-layout-option="${state.layout}"]`)?.focus();
-      else if (fromHeader) (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#page-title'))?.focus();
+      else if (fromMobileMenu) (headerRoot.querySelector('[data-test="account-menu"]') || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
+      else if (fromHeader) (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
     }
   }
 
