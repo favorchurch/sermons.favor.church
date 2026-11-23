@@ -157,12 +157,16 @@ const searchDone = dom => all(dom.root, e => e.hasClass('result-group')).length 
 const LAYOUTS = ['original', 'a', 'c'];
 const THEMED = ['a', 'c'];
 const SECTIONS = ['places', 'people', 'import', 'docs', 'workspace'];
-const otherCss = readFileSync(new URL('../public/assets/themes/other.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-/** Rules of other.css that declare something: { selector, layout } for each selector in each rule's list. */
-const otherRules = [...otherCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+const themeCss = name => readFileSync(new URL(`../public/assets/themes/${name}.css`, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const otherCss = themeCss('other');
+/** Rules of a theme stylesheet that declare something: { selector, layout } for each selector in each rule's list. */
+const rulesOf = css => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
   .filter(([, prelude, body]) => !prelude.trim().startsWith('@') && /[\w-]+\s*:\s*\S/.test(body))
   .flatMap(([, prelude]) => prelude.split(/,(?![^(]*\))/).map(selector => selector.trim()))
   .map(selector => ({ selector, layout: /^html\[data-layout="(a|c)"\]/.exec(selector)?.[1] }));
+const otherRules = rulesOf(otherCss);
+/** Every theme stylesheet except layout.css, which owns the Settings > Layout cards. */
+const nonLayoutThemeRules = { 'browse.css': rulesOf(themeCss('browse')), 'other.css': otherRules };
 const appCss = readFileSync(new URL('../public/assets/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
 const classesOf = node => (node.getAttribute('class') || '').split(/\s+/).filter(Boolean);
@@ -389,7 +393,7 @@ test('the selector matcher finds an unguarded button rule and passes a guarded o
   assert.ok(!selectorReaches('html[data-layout="a"] .settings .btn::before', card, chain));
 });
 
-test('other.css has no rule that matches the Settings > Layout option cards, so layout.css styles them alone', () => {
+test('no theme stylesheet but layout.css (browse.css, other.css) has a rule that matches the Settings > Layout option cards', () => {
   const cards = [];
   globalThis.document = new FakeDocument();
   for (const active of ['original', 'a', 'c']) {
@@ -407,7 +411,9 @@ test('other.css has no rule that matches the Settings > Layout option cards, so 
     ];
     for (const card of cards) {
       const node = describeNode('button', card.getAttribute('class'), { type: 'button', 'aria-pressed': card.getAttribute('aria-pressed'), 'data-layout-option': card.getAttribute('data-layout-option') });
-      for (const rule of otherRules) if (rule.layout === layout && selectorReaches(rule.selector, node, chain)) offenders.add(rule.selector);
+      for (const [sheet, rules] of Object.entries(nonLayoutThemeRules)) {
+        for (const rule of rules) if (rule.layout === layout && selectorReaches(rule.selector, node, chain)) offenders.add(`${sheet}: ${rule.selector}`);
+      }
     }
   }
   assert.deepEqual([...offenders], []);

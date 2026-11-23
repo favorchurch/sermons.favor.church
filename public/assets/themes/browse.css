@@ -94,7 +94,7 @@ html[data-layout="a"] .body-copy, html[data-layout="c"] .body-copy {
 }
 
 /* Buttons & pills */
-html[data-layout="a"] .btn, html[data-layout="c"] .btn {
+html[data-layout="a"] .btn:where(:not(.layout-option)), html[data-layout="c"] .btn:where(:not(.layout-option)) {
   min-height: 44px;
   padding: 0 16px;
   border-radius: 6px;
@@ -103,25 +103,25 @@ html[data-layout="a"] .btn, html[data-layout="c"] .btn {
   line-height: 1;
   gap: 8px;
 }
-html[data-layout="a"] .btn:not(.btn-primary, .btn-danger, .btn-quiet),
-html[data-layout="c"] .btn:not(.btn-primary, .btn-danger, .btn-quiet) {
+html[data-layout="a"] .btn:where(:not(.layout-option)):not(.btn-primary, .btn-danger, .btn-quiet),
+html[data-layout="c"] .btn:where(:not(.layout-option)):not(.btn-primary, .btn-danger, .btn-quiet) {
   border-color: var(--browse-edge);
   background: var(--theme-paper);
   color: var(--theme-text);
 }
-html[data-layout="a"] .btn:not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled),
-html[data-layout="c"] .btn:not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled) {
+html[data-layout="a"] .btn:where(:not(.layout-option)):not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled),
+html[data-layout="c"] .btn:where(:not(.layout-option)):not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled) {
   background: var(--browse-subtle);
   border-color: var(--theme-text);
 }
-html[data-layout="a"] .btn:hover:not(:disabled), html[data-layout="c"] .btn:hover:not(:disabled) {
+html[data-layout="a"] .btn:where(:not(.layout-option)):hover:not(:disabled), html[data-layout="c"] .btn:where(:not(.layout-option)):hover:not(:disabled) {
   transform: none;
 }
-html[data-layout="a"] .btn-primary, html[data-layout="c"] .btn-primary {
+html[data-layout="a"] .btn-primary:where(:not(.layout-option)), html[data-layout="c"] .btn-primary:where(:not(.layout-option)) {
   background: var(--theme-accent);
   border-color: var(--theme-accent);
 }
-html[data-layout="a"] .btn-primary:hover:not(:disabled), html[data-layout="c"] .btn-primary:hover:not(:disabled) {
+html[data-layout="a"] .btn-primary:where(:not(.layout-option)):hover:not(:disabled), html[data-layout="c"] .btn-primary:where(:not(.layout-option)):hover:not(:disabled) {
   background: var(--theme-accent-strong);
   border-color: var(--theme-accent-strong);
 }
