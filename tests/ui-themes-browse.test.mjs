@@ -171,6 +171,9 @@ test('spineIndex and layoutOf handle determinism, series sharing, and fallback n
   assert.ok(Number.isInteger(idxA) && idxA >= 0 && idxA <= 5);
   assert.ok(Number.isInteger(spineIndex({})) && spineIndex({}) >= 0 && spineIndex({}) <= 5);
   assert.equal(spineIndex({ id: 'x', title: 'Only Title' }), spineIndex({ id: 'y', title: 'Only Title' }));
+  assert.notEqual(idxA, spineIndex({ series_name: 'Hope' }));
+  assert.notEqual(spineIndex({ title: 'Only Title' }), spineIndex({ title: 'Another Title' }));
+  assert.notEqual(spineIndex({ id: 'x' }), spineIndex({ id: 'y' }));
 
   installFakeDom('c');
   try {
@@ -227,7 +230,9 @@ test('Library covers, rows, and table views render under layouts A and C with in
       const selectSeries = (value, label) => {
         if (layout === 'a') {
           const select = findOne(rowsPage, n => n.getAttribute('id') === 'sermon-series');
-          select.value = value;
+          const option = findOne(select, n => n.tag === 'option' && n.textContent === label, `option for ${label}`);
+          assert.equal(option.value, value);
+          select.value = option.value;
           select.dispatch('change');
         } else {
           const pill = findOne(rowsPage, n => n.hasClass('series-pill') && n.textContent === label);
@@ -253,6 +258,10 @@ test('Library covers, rows, and table views render under layouts A and C with in
       assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 0);
       assert.ok(findOne(rowsPage, n => n.tag === 'svg' && n.hasClass('empty-books-art')));
       const clearBtn = findOne(rowsPage, n => n.tag === 'button' && n.textContent === 'Clear filters');
+      if (layout === 'a') {
+        const select = findOne(rowsPage, n => n.getAttribute('id') === 'sermon-series');
+        assert.equal(findOne(select, n => n.tag === 'option' && n.textContent === 'All series').value, 'all');
+      }
       clearBtn.focus();
       clearBtn.dispatch('click');
       assert.equal(state.query, '');
@@ -278,6 +287,21 @@ test('Library covers, rows, and table views render under layouts A and C with in
       assert.equal(findAll(rowsPage, n => n.hasClass('sermon-row')).length, 2);
       selectSeries('series:all', 'all');
       assert.deepEqual(findAll(rowsPage, n => n.hasClass('row-link')).map(n => n.textContent), ['Archived Message']);
+
+      const collisionItems = [
+        { ...sampleItems[0], series_name: 'All series' },
+        sampleItems[1],
+        { ...sampleItems[2], series_name: 'Standalone' }
+      ];
+      const collisionPage = libraryPage({
+        state: { ...state, items: collisionItems, series: 'all' },
+        view: 'rows', announce() {}, newDraft() {}
+      });
+      const labels = findAll(collisionPage, n => layout === 'a'
+        ? n.tag === 'option' && n.parent.getAttribute('id') === 'sermon-series'
+        : n.hasClass('series-pill')).map(n => n.textContent);
+      assert.equal(new Set(labels).size, 4);
+      assert.ok(labels.includes('All series') && labels.includes('Standalone'));
 
       // Stale '__none__' resets when no standalone sermons exist, and workspace switch resets state.series.
       const onlySeriesItems = [sampleItems[0]];
@@ -308,11 +332,16 @@ test('Library covers, rows, and table views render under layouts A and C with in
 test('Preaching Calendar renders under layouts A and C with needs_review, imprecise dates, empty states, and year bounds', async () => {
   const { indexEvents, MIN_YEAR, MAX_YEAR } = await import('../public/assets/js/calendar-model.js');
   const { calendarPage } = await import('../public/assets/js/views/calendar.js');
+  const { parseRoute } = await import('../public/assets/js/router.js');
   const index = indexEvents([
     { id: 'e1', sermon_id: sampleSermon.id, sermon_title: sampleSermon.title, preached_on: '2026-11-08', date_precision: 'needs_review', raw_date: 'Nov 2026?', place_name: 'Riverbend Chapel', occasion: 'Sunday morning', sermon_archived: true },
     { id: 'e2', sermon_id: sampleSermon.id, sermon_title: 'Month Only Sermon', preached_on: '2026-10-01', date_precision: 'month', sermon_archived: false },
     { id: 'e3', sermon_id: sampleSermon.id, sermon_title: 'Year Only Sermon', preached_on: '2026-01-01', date_precision: 'year', sermon_archived: false },
-    { id: 'e4', sermon_id: sampleSermon.id, sermon_title: sampleSermon.title, preached_on: null, date_precision: 'unknown', sermon_archived: false }
+    { id: 'e4', sermon_id: sampleSermon.id, sermon_title: sampleSermon.title, preached_on: null, date_precision: 'unknown', sermon_archived: false },
+    ...['e5', 'e6'].map(id => ({
+      id, sermon_id: sampleSermon.id, sermon_title: sampleSermon.title,
+      preached_on: '2026-11-15', date_precision: 'exact', sermon_archived: false
+    }))
   ]);
   for (const layout of ['a', 'c']) {
     installFakeDom(layout);
@@ -324,12 +353,18 @@ test('Preaching Calendar renders under layouts A and C with needs_review, imprec
       assert.equal(findAll(page, n => n.hasClass('month-tile')).length, 12);
       assert.equal(findOne(page, n => n.hasClass('month-tile') && n.getAttribute('aria-current') === 'true').getAttribute('data-focus-key'), 'month-11');
       const activeDay = findOne(page, n => n.getAttribute('data-focus-key') === 'day-2026-11-08');
+      assert.equal(activeDay.tag, 'a');
+      assert.deepEqual(parseRoute(activeDay.getAttribute('href')), {
+        name: 'library', view: 'calendar', y: 2026, m: 11, d: '2026-11-08'
+      });
       assert.ok(activeDay.hasClass('is-today') && activeDay.hasClass('is-selected'));
       assert.equal(activeDay.getAttribute('aria-current'), 'true');
       assert.match(activeDay.getAttribute('aria-label'), /date needs review/i);
       const reviewTag = findOne(activeDay, n => n.hasClass('cal-day-tag') && n.hasClass('is-review'));
       assert.match(reviewTag.textContent, /Review/);
       assert.match(reviewTag.textContent, /!/);
+      const repeatedDay = findOne(page, n => n.getAttribute('data-focus-key') === 'day-2026-11-15');
+      assert.equal(findOne(repeatedDay, n => n.hasClass('cal-tag-desktop')).textContent, '2 preachings');
 
       const inspector = findOne(page, n => n.hasClass('inspector-panel') && n.hasClass('edge-list-mobile'));
       assert.match(inspector.textContent, /Grace Enough for Today/);
@@ -551,7 +586,10 @@ test('browse.css is linked in index.html, scopes all selectors, defines responsi
   assert.match(mobile, /html\[data-layout="c"\]\s+\.filter-selects[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
 
   const narrow = extractMediaBlock(css, '@media (max-width: 420px)');
-  assert.match(narrow, /\.view-tabs[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)[\s\S]*overflow:\s*visible/);
+  const [, tabRules] = narrow.match(/html\[data-layout="a"\] \.view-tabs,\s*html\[data-layout="c"\] \.view-tabs\s*\{([^}]+)\}/) || [];
+  assert.ok(tabRules, 'narrow tab rules apply to A and C');
+  assert.match(tabRules, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(tabRules, /overflow:\s*visible;/);
 
   for (const rel of [
     'public/assets/js/covers.js',
@@ -566,6 +604,12 @@ test('browse.css is linked in index.html, scopes all selectors, defines responsi
     const source = await readFile(join(root, rel), 'utf8');
     assert.doesNotMatch(source, /\p{Emoji_Presentation}|[\u2605\u2606\u2736-\u273f]/u, rel);
   }
+});
+
+test('A and C let long sermon detail text wrap within the available width', async () => {
+  const css = await readFile(join(root, 'public/assets/themes/browse.css'), 'utf8');
+  assert.match(css, /html\[data-layout="a"\] \.detail, html\[data-layout="c"\] \.detail\s*\{[^}]*overflow-wrap:\s*anywhere;/);
+  assert.match(css, /html\[data-layout="a"\] \.detail-chips > li, html\[data-layout="c"\] \.detail-chips > li\s*\{[^}]*max-width:\s*100%;/);
 });
 
 test('layout C series filter pills constrain and wrap long labels', async () => {

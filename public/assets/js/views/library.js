@@ -137,9 +137,10 @@ function themedLibraryPage(ctx, layout) {
     state.seriesWorkspaceId = workspaceKey;
     state.series = 'all';
   }
+  const quoteSeries = seriesNames.includes('All series') || (hasStandalone && seriesNames.includes('Standalone'));
   const seriesOptions = [
     ['all', 'All series'],
-    ...seriesNames.map(name => [`series:${name}`, name]),
+    ...seriesNames.map(name => [`series:${name}`, quoteSeries ? `“${name}”` : name]),
     ...(hasStandalone ? [['__none__', 'Standalone']] : [])
   ];
   const validSeries = new Set(seriesOptions.map(([value]) => value));

@@ -839,6 +839,7 @@ html[data-layout="a"] .imprecise-section, html[data-layout="c"] .imprecise-secti
 /* Sermon detail */
 html[data-layout="a"] .detail, html[data-layout="c"] .detail {
   padding-top: 0;
+  overflow-wrap: anywhere;
 }
 html[data-layout="a"] .back-bar, html[data-layout="c"] .back-bar {
   margin-bottom: 12px;
@@ -910,6 +911,9 @@ html[data-layout="a"] .detail-chips, html[data-layout="c"] .detail-chips {
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 4px;
+}
+html[data-layout="a"] .detail-chips > li, html[data-layout="c"] .detail-chips > li {
+  max-width: 100%;
 }
 html[data-layout="a"] .chip-scripture, html[data-layout="c"] .chip-scripture {
   display: inline-flex;
