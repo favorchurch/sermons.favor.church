@@ -12,14 +12,25 @@ const root = resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 const LAYOUTS = ['a', 'c', 'original'];
-// The loading fixture holds the library list until the browser leaves or this long passes. It must outlast any
-// capture step (navigation, settle waits, retries), so the loading screen is still up when a screenshot is taken.
-export const LOADING_HOLD_MS = 600000;
 const FIXTURES = ['default', 'empty', 'error', 'loading', 'no-workspace'];
 const FIXTURE_COOKIE = 'sb_preview';
 const LAYOUT_COOKIE = 'sb_layout';
 /** The library list calls the Library view makes: GET /api/workspaces/<id>/sermons and /events. */
 const LIBRARY_LIST = /^\/api\/workspaces\/[^/]+\/(?:sermons|events)\/?$/;
+
+// The loading fixture holds the library list in the browser, never on the server: a script placed ahead of the app
+// swaps fetch for one whose library list calls never settle. No server request stays open, so the page reaches load
+// and network idle while the loading screen stays up. It is a same-origin file because the app CSP is script-src 'self'.
+const LOADING_STUB_PATH = '/__preview/loading-stub.js';
+const LOADING_STUB = `const libraryList = ${LIBRARY_LIST};
+const realFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  const request = input instanceof Request ? input : null;
+  const url = new URL(request ? request.url : String(input), location.href);
+  const method = (init?.method || request?.method || 'GET').toUpperCase();
+  return method === 'GET' && libraryList.test(url.pathname) ? new Promise(() => {}) : realFetch(input, init);
+};
+`;
 
 export function parseArgs(args) {
   const options = { port: 4181, signedOut: false, layout: 'a', empty: false };
@@ -48,7 +59,7 @@ function readCookie(header, name) {
 }
 
 export async function createPreviewServer(options = {}) {
-  const settings = { port: 4181, signedOut: false, layout: 'a', empty: false, loadingDelayMs: LOADING_HOLD_MS, ...options };
+  const settings = { port: 4181, signedOut: false, layout: 'a', empty: false, ...options };
   const origin = 'https://preview.example.test';
 
   async function openFixture(store) {
@@ -121,13 +132,10 @@ export async function createPreviewServer(options = {}) {
 
       if (incoming.method === 'GET' && LIBRARY_LIST.test(url.pathname)) {
         if (fixtureName === 'error') return outgoing.writeHead(500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(JSON.stringify({ error: 'preview_error' }));
-        if (fixtureName === 'loading') {
-          await new Promise(release => {
-            const timer = setTimeout(release, settings.loadingDelayMs);
-            outgoing.once('close', () => { clearTimeout(timer); release(); });
-          });
-          if (outgoing.destroyed) return;
-        }
+      }
+
+      if (incoming.method === 'GET' && url.pathname === LOADING_STUB_PATH) {
+        return outgoing.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }).end(LOADING_STUB);
       }
 
       const chunks = [];
@@ -143,8 +151,12 @@ export async function createPreviewServer(options = {}) {
       if (queryFixture !== null) setCookies.push(`${FIXTURE_COOKIE}=${queryFixture}; Path=/; SameSite=Lax; Max-Age=3600`);
       if (queryLayout !== null) setCookies.push(`${LAYOUT_COOKIE}=${queryLayout}; Path=/; SameSite=Lax; Max-Age=3600`);
       if (setCookies.length) responseHeaders['set-cookie'] = setCookies;
+      let payload = Buffer.from(await response.arrayBuffer());
+      if (fixtureName === 'loading' && (response.headers.get('content-type') || '').startsWith('text/html')) {
+        payload = Buffer.from(payload.toString('utf8').replace('<head>', () => `<head><script src="${LOADING_STUB_PATH}"></script>`));
+      }
       outgoing.writeHead(response.status, { ...responseHeaders, 'x-content-type-options': 'nosniff' });
-      outgoing.end(incoming.method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()));
+      outgoing.end(incoming.method === 'HEAD' ? undefined : payload);
     } catch {
       if (!outgoing.headersSent) plain(outgoing, 500, 'Preview request failed');
       else outgoing.destroy();
@@ -161,10 +173,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const { server, db } = await createPreviewServer(options);
     server.on('close', () => db.close());
     server.listen(options.port, '127.0.0.1', () => console.log(`Theme preview at http://127.0.0.1:${options.port}/ (${options.signedOut ? 'signed out' : 'preview owner'}, layout ${options.layout}${options.empty ? ', empty' : ''})`));
-    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
-      server.close();
-      server.closeAllConnections(); // a held loading request would otherwise keep the server open
-    });
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close());
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Unable to start theme preview');
     process.exitCode = 1;
