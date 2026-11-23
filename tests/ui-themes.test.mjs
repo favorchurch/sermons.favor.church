@@ -152,19 +152,20 @@ test('every theme selector is layout-scoped, text sizes meet the floor, and layo
     for (const selector of selectors) {
       assert.match(selector, /^html\[data-layout="(?:a|c)"\](?:\s|$|[.#:[>+~])/,
         `${path.slice(root.length + 1)} selector is not scoped: ${selector}`);
+      const sizeFloor = selector.endsWith('.theme-tab-label') ? 11 : 13;
       for (const [rawProp, value] of declarations) {
         const property = rawProp.toLowerCase();
         if (property === 'font-size') {
           const px = /^(\d+(?:\.\d+)?)px$/.exec(value);
           assert.ok(px, `${selector} font-size must be an explicit px value: ${value}`);
           const size = Number(px[1]);
-          assert.ok(size >= 13 || (size >= 11 && selector.includes('.theme-tab-label')),
+          assert.ok(size >= sizeFloor,
             `${selector} font-size ${value} is below the 13px floor (11px is allowed only for tab labels)`);
         } else if (property === 'font' && value.toLowerCase() !== 'inherit') {
           const px = /(\d+(?:\.\d+)?)px/.exec(value);
           assert.ok(px, `${selector} font shorthand must use explicit px or inherit: ${value}`);
           const size = Number(px[1]);
-          assert.ok(size >= 13 || (size >= 11 && selector.includes('.theme-tab-label')),
+          assert.ok(size >= sizeFloor,
             `${selector} font shorthand size ${px[0]} is below the 13px floor`);
         }
         const cleanVal = stripImportant(value).toLowerCase();
@@ -230,25 +231,24 @@ test('every theme selector is layout-scoped, text sizes meet the floor, and layo
 });
 
 test('theme text palettes meet WCAG AA contrast on their surfaces', () => {
+  const textTokens = ['--theme-text', '--theme-muted', '--theme-accent', '--theme-accent-strong'];
+  const lightSurfaces = ['--theme-paper', '--theme-rail', '--theme-ground', '--theme-active'];
+  const textColors = new Set(textTokens.map(token => `var(${token})`));
   let checked = 0;
   for (const [path, rules] of allRules) {
     for (const rule of rules) {
+      for (const [property, value] of rule.declarations) {
+        if (property.toLowerCase() === 'color') {
+          assert.ok(textColors.has(stripImportant(value)), `${path}: ${rule.selectors.join(', ')} uses unchecked text color ${value}`);
+        }
+      }
       const palette = Object.fromEntries(rule.declarations.filter(([property]) => property.startsWith('--theme-')));
       if (!Object.keys(palette).length) continue;
       checked++;
-      assert.ok(palette['--theme-text'], `${path}: palette block must declare --theme-text`);
       const ratio = (foreground, background) => contrast(hex(palette[foreground]), hex(palette[background]));
-      assert.ok(ratio('--theme-text', '--theme-paper') >= 4.5, `${path}: text on paper`);
-      assert.ok(ratio('--theme-text', '--theme-rail') >= 4.5, `${path}: text on rail`);
-      assert.ok(ratio('--theme-text', '--theme-ground') >= 4.5, `${path}: text on ground`);
-      assert.ok(ratio('--theme-muted', '--theme-paper') >= 4.5, `${path}: muted text on paper`);
-      assert.ok(ratio('--theme-muted', '--theme-rail') >= 4.5, `${path}: muted text on rail`);
-      assert.ok(ratio('--theme-muted', '--theme-ground') >= 4.5, `${path}: muted text on ground`);
-      assert.ok(ratio('--theme-accent-strong', '--theme-paper') >= 4.5, `${path}: strong accent on paper`);
-      assert.ok(ratio('--theme-accent-strong', '--theme-active') >= 4.5, `${path}: strong accent on active surface`);
-      assert.ok(ratio('--theme-text', '--theme-active') >= 4.5, `${path}: text on active surface`);
-      assert.ok(ratio('--theme-muted', '--theme-active') >= 4.5, `${path}: muted text on active surface`);
-      assert.ok(ratio('--theme-accent', '--theme-active') >= 4.5, `${path}: accent text on active surface`);
+      for (const foreground of textTokens) for (const background of lightSurfaces) {
+        assert.ok(ratio(foreground, background) >= 4.5, `${path}: ${foreground} on ${background}`);
+      }
       assert.ok(ratio('--theme-accent-text', '--theme-accent') >= 4.5, `${path}: inverse text on accent`);
     }
   }
@@ -380,9 +380,11 @@ function installFakeDom() {
   const docListeners = {};
   const doc = {
     title: '',
+    cookie: '',
     activeElement: null,
     createElement(tag) { return new FakeElement(tag, doc); },
     createTextNode(text) { return new FakeText(text); },
+    getElementById(id) { return doc.documentElement.querySelector(`#${id}`); },
     addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
     removeEventListener(type, fn) {
       const list = docListeners[type];
@@ -528,13 +530,22 @@ test('shell renders A, C and Original with exact containers, workspace menu, Esc
         moreToggle.dispatch('click');
         assert.equal(moreMenu.hasAttribute('hidden'), true);
         assert.equal(moreToggle.getAttribute('aria-expanded'), 'false');
-        // Outside pointerdown closes the open mobile menu.
+        // Inside pointerdown keeps menu open; outside pointerdown closes the open mobile menu.
         doc.body.replaceChildren(shell);
         moreToggle.dispatch('click');
         assert.equal(moreMenu.hasAttribute('hidden'), false);
+        doc.dispatch('pointerdown', { target: moreMenu });
+        assert.equal(moreMenu.hasAttribute('hidden'), false, 'pointerdown inside menu keeps it open');
         doc.dispatch('pointerdown', { target: doc.body });
         assert.equal(moreMenu.hasAttribute('hidden'), true);
-        // Escape closes and restores focus to toggle.
+        // Document-level Escape closes the open menu and restores focus to toggle.
+        moreToggle.dispatch('click');
+        doc.activeElement = doc.body;
+        doc.dispatch('keydown', { key: 'Escape' });
+        assert.equal(moreMenu.hasAttribute('hidden'), true);
+        assert.equal(moreToggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(doc.activeElement, moreToggle);
+        // Local Escape closes and restores focus to toggle.
         moreToggle.dispatch('click');
         assert.match(moreMenu.textContent, /Rico Santos/);
         assert.match(moreMenu.textContent, /rico@example\.test/);
@@ -612,6 +623,7 @@ test('app hydrates non-default account layout from GET /api/me and falls back to
       });
       return { app, rootEl, headerRoot };
     };
+    doc.cookie = 'sb_layout=original';
     const aBoot = makeApp();
     await aBoot.app.start();
     assert.equal(doc.documentElement.getAttribute('data-layout'), 'a');
@@ -691,12 +703,13 @@ test('Settings > Layout works in all three themes, PATCHes /api/me with exact pa
     let finishFirstPatch;
     releasePatch = resolve => { finishFirstPatch = resolve; };
     const aBtn = findOne(rootEl, el => el.getAttribute('data-layout-option') === 'a');
+    const staleCBtn = findOne(rootEl, el => el.getAttribute('data-layout-option') === 'c');
     aBtn.focus();
     aBtn.dispatch('click');
     assert.equal(doc.documentElement.getAttribute('data-layout'), 'a');
     assert.ok(findOne(rootEl, el => el.getAttribute('data-layout-option') === 'c').hasAttribute('disabled'));
     assert.match(rootEl.textContent, /Saving layout/);
-    findOne(rootEl, el => el.getAttribute('data-layout-option') === 'c').dispatch('click');
+    staleCBtn.dispatch('click');
     assert.equal(patches.length, 1);
     finishFirstPatch();
     await settle();
@@ -769,5 +782,202 @@ test('Settings > Layout works in all three themes, PATCHes /api/me with exact pa
   } finally {
     f.db.close();
     delete globalThis.document;
+  }
+});
+
+test('Layout settings remain reachable before joining a workspace in all three themes', async () => {
+  const doc = installFakeDom();
+  const f = await fixture();
+  try {
+    const { createApp } = await import('../public/assets/js/app.js');
+    const api = {
+      async get(path) { return (await f.call('GET', path, 'outsider')).json; },
+      async patch(path, body) { return (await f.call('PATCH', path, 'outsider', body)).json; }
+    };
+    const rootEl = doc.createElement('main');
+    const headerRoot = doc.createElement('header');
+    doc.body.replaceChildren(headerRoot, rootEl);
+    let hash = '#/library';
+    const app = createApp({
+      api, root: rootEl, headerRoot, announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+      getHash: () => hash, setHash(next) { hash = next; }, storage: { get: () => null, set() {} },
+      today: () => '2026-11-23', navigate() {}
+    });
+    await app.start();
+    for (const [current, next] of [['original', 'a'], ['a', 'c'], ['c', 'original']]) {
+      assert.match(rootEl.textContent, /You don’t have a workspace yet/);
+      const link = findOne(rootEl, el => el.getAttribute('href') === '#/settings/layout');
+      assert.ok(link, `Layout settings link in ${current}`);
+      hash = link.getAttribute('href');
+      app.render();
+      assert.equal(rootEl.querySelector(`[data-layout-option="${current}"]`)?.getAttribute('aria-pressed'), 'true');
+      rootEl.querySelector(`[data-layout-option="${next}"]`).dispatch('click');
+      await settle();
+      assert.equal((await f.call('GET', '/api/me', 'outsider')).json.account.layout, next);
+      const back = findOne(rootEl, el => el.tagName === 'A' && el.textContent === 'Back to workspace setup');
+      assert.ok(back, `return to workspace setup in ${next}`);
+      hash = back.getAttribute('href');
+      app.render();
+    }
+  } finally {
+    f.db.close();
+    delete globalThis.document;
+  }
+});
+
+test('startup applies validated sb_layout cookie with fallback a before /api/me resolves, then overrides with account.layout', async () => {
+  const doc = installFakeDom();
+  const f = await fixture();
+  const origWindow = globalThis.window;
+  const origLocation = globalThis.location;
+  const origStorage = globalThis.sessionStorage;
+  const origFetch = globalThis.fetch;
+  try {
+    const { applyLayout, readLayoutCookie, initLayout } = await import('../public/assets/js/layout.js');
+    assert.equal(readLayoutCookie(''), 'a');
+    assert.equal(readLayoutCookie(undefined), 'a');
+    assert.equal(readLayoutCookie(null), 'a');
+    assert.equal(readLayoutCookie('sb_layout=a'), 'a');
+    assert.equal(readLayoutCookie('sb_layout=c'), 'c');
+    assert.equal(readLayoutCookie('sb_layout=original'), 'original');
+    assert.equal(readLayoutCookie('other=1; sb_layout=c; theme=original'), 'c');
+    assert.equal(readLayoutCookie('not_sb_layout=original; sb_layout=c'), 'c');
+    assert.equal(readLayoutCookie('not_sb_layout=original'), 'a');
+    assert.equal(readLayoutCookie('sb_layout=original; sb_layout=c'), 'a', 'duplicate sb_layout cookies are rejected as ambiguous');
+    assert.equal(readLayoutCookie('sb_layout=invalid'), 'a');
+    assert.equal(readLayoutCookie('sb_layout=%E0%A4%A'), 'a');
+    Object.defineProperty(doc, 'cookie', { configurable: true, get() { throw new Error('blocked'); } });
+    assert.equal(readLayoutCookie(), 'a', 'inaccessible document.cookie falls back to a');
+    Object.defineProperty(doc, 'cookie', { configurable: true, writable: true, value: 'sb_layout=c' });
+    assert.equal(initLayout(), 'c');
+    assert.equal(doc.documentElement.getAttribute('data-layout'), 'c');
+    applyLayout('bogus');
+    applyLayout(null);
+    assert.equal(doc.documentElement.getAttribute('data-layout'), 'c', 'applyLayout ignores invalid values');
+
+    const { createApi } = await import('../public/assets/js/api.js');
+    const { createApp } = await import('../public/assets/js/app.js');
+
+    const cases = [
+      { cookie: 'foo=1; sb_layout=c', dbLayout: 'original', expectInitial: 'c', expectInitialClass: 'theme-topbar', expectFinal: 'original', expectFinalClass: 'header-inner' },
+      { cookie: 'sb_layout=bogus', dbLayout: 'c', expectInitial: 'a', expectInitialClass: 'theme-rail', expectFinal: 'c', expectFinalClass: 'theme-topbar' },
+      { cookie: '', dbLayout: 'original', expectInitial: 'a', expectInitialClass: 'theme-rail', expectFinal: 'original', expectFinalClass: 'header-inner' },
+      { cookie: 'sb_layout=original', dbLayout: 'a', expectInitial: 'original', expectInitialClass: 'header-inner', expectFinal: 'a', expectFinalClass: 'theme-rail' }
+    ];
+
+    for (const tc of cases) {
+      f.db.execute('UPDATE user_accounts SET layout_theme = ? WHERE email_normalized = ?', [tc.dbLayout, 'owner@example.test']);
+      doc.cookie = tc.cookie;
+      doc.documentElement.removeAttribute('data-layout');
+      let releaseMe;
+      const meGate = new Promise(resolve => { releaseMe = resolve; });
+      const api = createApi({
+        fetchImpl: async (path, init = {}) => {
+          if (path === '/api/me') await meGate;
+          const res = await f.call(init.method || 'GET', path, 'owner', init.body ? JSON.parse(init.body) : undefined);
+          return new Response(res.text, { status: res.status, headers: res.headers });
+        }
+      });
+      const rootEl = doc.createElement('main');
+      const headerRoot = doc.createElement('header');
+      doc.body.replaceChildren(headerRoot, rootEl);
+      const app = createApp({
+        api, root: rootEl, headerRoot, announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+        getHash: () => '#/library', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-23', navigate() {}
+      });
+      const started = app.start();
+      try {
+        assert.equal(doc.documentElement.getAttribute('data-layout'), tc.expectInitial, `before /api/me for cookie "${tc.cookie}"`);
+        assert.equal(app.state.layout, tc.expectInitial);
+        assert.ok(findOne(headerRoot, el => (el.getAttribute('class') || '').includes(tc.expectInitialClass)));
+      } finally {
+        releaseMe();
+        await started;
+      }
+      assert.equal(doc.documentElement.getAttribute('data-layout'), tc.expectFinal, `after /api/me for dbLayout "${tc.dbLayout}"`);
+      assert.equal(app.state.layout, tc.expectFinal);
+      assert.ok(findOne(headerRoot, el => (el.getAttribute('class') || '').includes(tc.expectFinalClass)));
+    }
+
+    // Explicit initialLayout overrides document.cookie; invalid initialLayout falls back to document.cookie.
+    doc.cookie = 'sb_layout=original';
+    const overrideApp = createApp({
+      api: createApi({ fetchImpl: async () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401, headers: { 'content-type': 'application/json' } }) }),
+      root: doc.createElement('main'), headerRoot: doc.createElement('header'), announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+      getHash: () => '#/library', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-23', navigate() {},
+      initialLayout: 'c'
+    });
+    assert.equal(overrideApp.state.layout, 'c');
+    doc.cookie = 'sb_layout=c';
+    const invalidInitApp = createApp({
+      api: createApi({ fetchImpl: async () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401, headers: { 'content-type': 'application/json' } }) }),
+      root: doc.createElement('main'), headerRoot: doc.createElement('header'), announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+      getHash: () => '#/library', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-23', navigate() {},
+      initialLayout: 'bogus'
+    });
+    assert.equal(invalidInitApp.state.layout, 'c');
+
+    // When GET /api/me fails with 401, startup preserves cookie layout and renders no authenticated shell controls.
+    doc.cookie = 'sb_layout=c';
+    doc.documentElement.removeAttribute('data-layout');
+    const unauthHeader = doc.createElement('header');
+    const unauthRoot = doc.createElement('main');
+    doc.body.replaceChildren(unauthHeader, unauthRoot);
+    const unauthApp = createApp({
+      api: createApi({ fetchImpl: async () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401, headers: { 'content-type': 'application/json' } }) }),
+      root: unauthRoot, headerRoot: unauthHeader, announcer: doc.createElement('div'), toastRoot: doc.createElement('div'),
+      getHash: () => '#/library', setHash() {}, storage: { get: () => null, set() {} }, today: () => '2026-11-23', navigate() {}
+    });
+    await unauthApp.start();
+    assert.equal(doc.documentElement.getAttribute('data-layout'), 'c');
+    assert.equal(unauthApp.state.phase, 'signedout');
+    assert.equal(findAll(unauthHeader, el => el.getAttribute('aria-label') === 'Quick layout switch').length, 0);
+    assert.equal(findAll(unauthHeader, el => el.getAttribute('data-test') === 'account-menu').length, 0);
+    assert.equal(findAll(unauthHeader, el => el.getAttribute('data-test') === 'workspace-switcher').length, 0);
+
+    // Verify main.js initializes document layout from sb_layout BEFORE createApp/app.start, then applies /api/me.
+    f.db.execute("UPDATE user_accounts SET layout_theme = 'original' WHERE email_normalized = 'owner@example.test'");
+    doc.cookie = 'session=x; sb_layout=c';
+    doc.documentElement.removeAttribute('data-layout');
+    const mainEl = doc.createElement('main'); mainEl.setAttribute('id', 'main');
+    const headerEl = doc.createElement('header'); headerEl.setAttribute('id', 'app-header');
+    const announcerEl = doc.createElement('div'); announcerEl.setAttribute('id', 'announcer');
+    const toastEl = doc.createElement('div'); toastEl.setAttribute('id', 'toast');
+    doc.body.replaceChildren(headerEl, mainEl, announcerEl, toastEl);
+    let layoutBeforeCreateApp = null;
+    const origGetById = doc.getElementById;
+    doc.getElementById = id => {
+      if (id === 'main' && layoutBeforeCreateApp === null) layoutBeforeCreateApp = doc.documentElement.getAttribute('data-layout');
+      return origGetById(id);
+    };
+    let releaseMainMe;
+    const mainMeGate = new Promise(resolve => { releaseMainMe = resolve; });
+    globalThis.window = { addEventListener() {} };
+    globalThis.location = { hash: '#/library', assign() {} };
+    globalThis.sessionStorage = { getItem: () => null, setItem() {} };
+    globalThis.fetch = async (path, init = {}) => {
+      if (path === '/api/me') await mainMeGate;
+      const res = await f.call(init.method || 'GET', path, 'owner', init.body ? JSON.parse(init.body) : undefined);
+      return new Response(res.text, { status: res.status, headers: res.headers });
+    };
+    try {
+      await import('../public/assets/js/main.js');
+      assert.equal(layoutBeforeCreateApp, 'c', 'main.js applies sb_layout via initLayout() before createApp/app.start runs');
+      assert.equal(doc.documentElement.getAttribute('data-layout'), 'c', 'main.js applies sb_layout before /api/me resolves');
+      assert.ok(findOne(headerEl, el => (el.getAttribute('class') || '').includes('theme-topbar')));
+    } finally {
+      releaseMainMe();
+      await settle();
+      await settle();
+    }
+    assert.equal(doc.documentElement.getAttribute('data-layout'), 'original', 'main.js overrides with /api/me account layout');
+    assert.ok(findOne(headerEl, el => el.getAttribute('class') === 'header-inner'));
+  } finally {
+    f.db.close();
+    delete globalThis.document;
+    if (origWindow === undefined) delete globalThis.window; else globalThis.window = origWindow;
+    if (origLocation === undefined) delete globalThis.location; else globalThis.location = origLocation;
+    if (origStorage === undefined) delete globalThis.sessionStorage; else globalThis.sessionStorage = origStorage;
+    if (origFetch === undefined) delete globalThis.fetch; else globalThis.fetch = origFetch;
   }
 });
