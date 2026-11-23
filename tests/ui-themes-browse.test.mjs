@@ -466,11 +466,12 @@ test('Loading, empty, error, denied states and panel render themed states under 
         load: () => new Promise(r => { resolveLoad = r; }),
         render: () => { const el = document.createElement('div'); el.setAttribute('class', 'loaded-ok'); return el; }
       });
-      assert.ok(findOne(p.node, n => n.hasClass('panel-loading')));
+      const loadingStatus = n => n.hasClass('muted') && n.getAttribute('role') === 'status';
+      assert.ok(findOne(p.node, loadingStatus));
       resolveLoad([]);
       await Promise.resolve();
       await Promise.resolve();
-      assert.equal(findAll(p.node, n => n.hasClass('panel-loading')).length, 0);
+      assert.equal(findAll(p.node, loadingStatus).length, 0);
       assert.ok(findOne(p.node, n => n.hasClass('loaded-ok')));
     } finally {
       delete globalThis.document;

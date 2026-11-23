@@ -13,15 +13,11 @@ html[data-layout="a"], html[data-layout="c"] {
   --browse-mark: #f6e3a1;
   --browse-pos-bg: #e3f1e3;
   --browse-pos-border: #c3dfc5;
-  --browse-pos-text: #25552f;
   --browse-warn-bg: #faf4e7;
   --browse-warn-border: #eadbb7;
-  --browse-warn-text: #7a5410;
   --browse-danger-bg: #fbeeee;
   --browse-danger-border: #efc9c9;
-  --browse-danger-text: #9b2c2c;
   --browse-neutral-bg: #eef1ec;
-  --browse-neutral-text: #47594b;
   --book-moss-bg: #42664f;
   --book-moss-fg: #eaf2e7;
   --book-night-bg: #2a4740;
@@ -102,28 +98,32 @@ html[data-layout="a"] .btn, html[data-layout="c"] .btn {
   min-height: 44px;
   padding: 0 16px;
   border-radius: 6px;
-  border: 1px solid var(--browse-edge);
-  background: var(--theme-paper);
-  color: var(--theme-text);
   font-size: 14px;
   font-weight: 600;
   line-height: 1;
   gap: 8px;
 }
-html[data-layout="a"] .btn:hover:not(:disabled), html[data-layout="c"] .btn:hover:not(:disabled) {
+html[data-layout="a"] .btn:not(.btn-primary, .btn-danger, .btn-quiet),
+html[data-layout="c"] .btn:not(.btn-primary, .btn-danger, .btn-quiet) {
+  border-color: var(--browse-edge);
+  background: var(--theme-paper);
+  color: var(--theme-text);
+}
+html[data-layout="a"] .btn:not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled),
+html[data-layout="c"] .btn:not(.btn-primary, .btn-danger, .btn-quiet):hover:not(:disabled) {
   background: var(--browse-subtle);
   border-color: var(--theme-text);
+}
+html[data-layout="a"] .btn:hover:not(:disabled), html[data-layout="c"] .btn:hover:not(:disabled) {
   transform: none;
 }
 html[data-layout="a"] .btn-primary, html[data-layout="c"] .btn-primary {
   background: var(--theme-accent);
   border-color: var(--theme-accent);
-  color: var(--theme-accent-text);
 }
 html[data-layout="a"] .btn-primary:hover:not(:disabled), html[data-layout="c"] .btn-primary:hover:not(:disabled) {
   background: var(--theme-accent-strong);
   border-color: var(--theme-accent-strong);
-  color: var(--theme-accent-text);
 }
 html[data-layout="a"] .icon-btn, html[data-layout="c"] .icon-btn {
   display: inline-flex;
@@ -154,7 +154,6 @@ html[data-layout="a"] .pill, html[data-layout="c"] .pill {
   border-radius: 999px;
   border: 1px solid var(--theme-line);
   background: var(--browse-neutral-bg);
-  color: var(--browse-neutral-text);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
@@ -163,22 +162,18 @@ html[data-layout="a"] .pill, html[data-layout="c"] .pill {
 html[data-layout="a"] .pill-good, html[data-layout="c"] .pill-good {
   background: var(--browse-pos-bg);
   border-color: var(--browse-pos-border);
-  color: var(--browse-pos-text);
 }
 html[data-layout="a"] .pill-warn, html[data-layout="c"] .pill-warn {
   background: var(--browse-warn-bg);
   border-color: var(--browse-warn-border);
-  color: var(--browse-warn-text);
 }
 html[data-layout="a"] .pill-bad, html[data-layout="c"] .pill-bad {
   background: var(--browse-danger-bg);
   border-color: var(--browse-danger-border);
-  color: var(--browse-danger-text);
 }
 html[data-layout="a"] .pill-neutral, html[data-layout="c"] .pill-neutral {
   background: var(--browse-neutral-bg);
   border-color: var(--theme-line);
-  color: var(--browse-neutral-text);
 }
 
 /* Page header */
@@ -754,8 +749,9 @@ html[data-layout="a"] .cal-day.is-today .cal-day-num, html[data-layout="c"] .cal
   align-self: flex-start;
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--theme-text);
-  color: var(--theme-paper);
+  background: var(--theme-active);
+  outline: 1px solid var(--theme-accent);
+  color: var(--theme-accent-strong);
 }
 html[data-layout="a"] .cal-day.has-event, html[data-layout="c"] .cal-day.has-event {
   background: var(--theme-paper);
@@ -782,7 +778,8 @@ html[data-layout="a"] .cal-day-tag, html[data-layout="c"] .cal-day-tag {
   text-overflow: ellipsis;
 }
 html[data-layout="a"] .cal-day-tag.is-review, html[data-layout="c"] .cal-day-tag.is-review {
-  color: var(--browse-warn-text);
+  background: var(--browse-warn-bg);
+  color: var(--theme-text);
 }
 html[data-layout="a"] .cal-tag-mobile, html[data-layout="c"] .cal-tag-mobile {
   display: none;
@@ -1194,9 +1191,6 @@ html[data-layout="a"] .state-panel-error, html[data-layout="c"] .state-panel-err
   border-color: var(--browse-danger-border);
   background: var(--browse-danger-bg);
 }
-html[data-layout="a"] .state-panel-error h2, html[data-layout="c"] .state-panel-error h2 {
-  color: var(--browse-danger-text);
-}
 html[data-layout="a"] .state-panel-error p, html[data-layout="c"] .state-panel-error p {
   color: var(--theme-text);
 }
@@ -1249,10 +1243,9 @@ html[data-layout="a"] .inline-error, html[data-layout="c"] .inline-error {
   border: 1px solid var(--browse-danger-border);
   border-radius: 10px;
   padding: 16px;
-  color: var(--browse-danger-text);
   font-size: 14px;
 }
-html[data-layout="a"] .panel-loading, html[data-layout="c"] .panel-loading {
+html[data-layout="a"] .panel-body > .muted[role="status"], html[data-layout="c"] .panel-body > .muted[role="status"] {
   font-size: 14px;
   color: var(--theme-muted);
 }
