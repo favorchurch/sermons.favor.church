@@ -7,6 +7,7 @@ import {
 } from './security.ts';
 import { handleLibraryRoute } from '../api/index.ts';
 import { FAVICON_PATH, isStaticPath, serveFavicon, serveStatic } from '../ui/assets.ts';
+import { parsePrefsPatch, readStoredPrefs, mergePrefs } from './prefs.ts';
 import { googleAuthorizationUrl, pkceChallenge, exchangeCode, verifyGoogleIdToken, type GoogleIdentity } from './google.ts';
 
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -132,14 +133,46 @@ async function finishLogin(request: Request, env: Env): Promise<Response> {
   }
 }
 
-async function session(request: Request, env: Env): Promise<Account | null> {
+type SessionAccount = Account & { view_prefs: string };
+
+async function session(request: Request, env: Env): Promise<SessionAccount | null> {
   const token = getCookie(request, SESSION_COOKIE);
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  const found = await env.DB.prepare(`SELECT a.id, a.email_normalized, a.display_name, a.layout_theme
+  const found = await env.DB.prepare(`SELECT a.id, a.email_normalized, a.display_name, a.layout_theme, a.view_prefs
     FROM auth_sessions s JOIN user_accounts a ON a.id = s.account_id
     WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
-      AND a.disabled_at IS NULL`).bind(await sha256(token), NOW()).first<Account>();
+      AND a.disabled_at IS NULL`).bind(await sha256(token), NOW()).first<SessionAccount>();
   return found || null;
+}
+
+/** PATCH /api/me accepts { layout } and/or { prefs: partial }. Nothing is written unless every part is valid. */
+async function updateMe(request: Request, env: Env, actor: SessionAccount): Promise<Response> {
+  const body = await readJson(request);
+  const keys = body ? Object.keys(body) : [];
+  if (!body || keys.length === 0 || keys.some(key => key !== 'layout' && key !== 'prefs')) return reply(400, { error: 'invalid_layout' });
+  if (Object.hasOwn(body, 'layout') && !isLayoutPreference(body.layout)) return reply(400, { error: 'invalid_layout' });
+  const patch = Object.hasOwn(body, 'prefs') ? parsePrefsPatch(body.prefs) : {};
+  if (!patch) return reply(400, { error: 'invalid_prefs' });
+  // A prefs-only patch must not write layout_theme: the session read may be stale and would revert a concurrent layout change.
+  const newLayout = isLayoutPreference(body.layout) ? body.layout : null;
+  // Compare-and-set on the stored JSON so two concurrent patches cannot drop each other's keys.
+  let stored = actor.view_prefs;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const merged = mergePrefs(readStoredPrefs(stored), patch);
+    if (!merged) return reply(400, { error: 'prefs_too_large' });
+    const written = await env.DB.prepare('UPDATE user_accounts SET layout_theme = COALESCE(?, layout_theme), view_prefs = ? WHERE id = ? AND view_prefs = ? AND disabled_at IS NULL')
+      .bind(newLayout, merged.json, actor.id, stored).run();
+    if (written.meta.changes === 1) {
+      const layout = newLayout ?? (await env.DB.prepare('SELECT layout_theme FROM user_accounts WHERE id = ?').bind(actor.id).first<{ layout_theme: LayoutPreference }>())?.layout_theme ?? actor.layout_theme;
+      const response = reply(200, { account: { id: actor.id, email_normalized: actor.email_normalized, display_name: actor.display_name, layout, prefs: merged.prefs } });
+      response.headers.append('set-cookie', layoutCookie(layout));
+      return response;
+    }
+    const current = await env.DB.prepare('SELECT view_prefs FROM user_accounts WHERE id = ? AND disabled_at IS NULL').bind(actor.id).first<{ view_prefs: string }>();
+    if (!current) return reply(401, { error: 'unauthenticated' });
+    stored = current.view_prefs;
+  }
+  return reply(409, { error: 'prefs_conflict' });
 }
 
 async function membership(env: Env, workspaceId: string, actorId: string): Promise<Membership | null> {
@@ -349,21 +382,11 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     const actor = await session(request, env);
     if (!actor) return reply(401, { error: 'unauthenticated' });
     if (pathname === '/api/me' && request.method === 'GET') {
-      const response = reply(200, { account: { id: actor.id, email_normalized: actor.email_normalized, display_name: actor.display_name, layout: actor.layout_theme } });
+      const response = reply(200, { account: { id: actor.id, email_normalized: actor.email_normalized, display_name: actor.display_name, layout: actor.layout_theme, prefs: readStoredPrefs(actor.view_prefs) } });
       response.headers.append('set-cookie', layoutCookie(actor.layout_theme));
       return response;
     }
-    if (pathname === '/api/me' && request.method === 'PATCH') {
-      const body = await readJson(request);
-      if (!body || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'layout') || !isLayoutPreference(body.layout)) {
-        return reply(400, { error: 'invalid_layout' });
-      }
-      const layout = body.layout;
-      await env.DB.prepare('UPDATE user_accounts SET layout_theme = ? WHERE id = ? AND disabled_at IS NULL').bind(layout, actor.id).run();
-      const response = reply(200, { account: { id: actor.id, email_normalized: actor.email_normalized, display_name: actor.display_name, layout } });
-      response.headers.append('set-cookie', layoutCookie(layout));
-      return response;
-    }
+    if (pathname === '/api/me' && request.method === 'PATCH') return await updateMe(request, env, actor);
     if (pathname === '/api/workspaces') {
       if (request.method === 'GET') return await listWorkspaces(env, actor);
       if (request.method === 'POST') return await createWorkspace(request, env, actor);

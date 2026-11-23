@@ -370,6 +370,16 @@ async function qaSessions() {
     /no-store/.test(ok.headers.get('cache-control') || '') && ok.headers.get('x-content-type-options') === 'nosniff', `status ${ok.status}`);
   const welcome = await http('GET', '/welcome', { cookie: asSession(A.owner.session) });
   check('SES-9', '/welcome never carries session data itself (303 to /api/me)', welcome.status === 303 && welcome.headers.get('location') === '/api/me' && welcome.text === '', `status ${welcome.status}`);
+  const prefsCookie = asSession(A.owner.session);
+  const prefsOf = res => JSON.stringify(res.data?.account?.prefs);
+  const setPrefs = await http('PATCH', '/api/me', { cookie: prefsCookie, body: { prefs: { libraryView: 'rows', sort: 'title' } } });
+  const getPrefs = await http('GET', '/api/me', { cookie: prefsCookie });
+  check('SES-10', 'PATCH prefs then GET /api/me round-trips the synthetic account prefs', setPrefs.status === 200 && getPrefs.status === 200 &&
+    prefsOf(setPrefs) === '{"libraryView":"rows","sort":"title"}' && prefsOf(getPrefs) === prefsOf(setPrefs), `status ${setPrefs.status}/${getPrefs.status}`);
+  const badPrefs = await http('PATCH', '/api/me', { cookie: prefsCookie, body: { prefs: { libraryView: 'bogus' } } });
+  check('SES-11', 'PATCH with an invalid pref -> 400 and the stored prefs are unchanged', badPrefs.status === 400 && prefsOf(await http('GET', '/api/me', { cookie: prefsCookie })) === prefsOf(setPrefs), `status ${badPrefs.status}`);
+  const clearPrefs = await http('PATCH', '/api/me', { cookie: prefsCookie, body: { prefs: { libraryView: null, sort: null } } });
+  check('SES-12', 'PATCH prefs with null clears the keys', clearPrefs.status === 200 && prefsOf(clearPrefs) === '{}' && prefsOf(await http('GET', '/api/me', { cookie: prefsCookie })) === '{}', `status ${clearPrefs.status}`);
 }
 
 async function qaTenancy() {
