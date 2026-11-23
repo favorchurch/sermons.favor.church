@@ -192,8 +192,8 @@ test(':is() lists expand into one selector each', () => {
   assert.deepEqual(splitList('.a :is(.b, .c), .d'), ['.a :is(.b, .c)', '.d']);
 });
 
-test('index.html links app.css, then layout.css, then other.css', () => {
-  assert.deepEqual(SHEETS, ['app.css', 'themes/layout.css', 'themes/other.css']);
+test('index.html links app.css, layout.css, browse.css, then other.css', () => {
+  assert.deepEqual(SHEETS, ['app.css', 'themes/layout.css', 'themes/browse.css', 'themes/other.css']);
 });
 
 test('the cascade resolver sees the stylesheet (guards against a parser that finds nothing)', () => {
