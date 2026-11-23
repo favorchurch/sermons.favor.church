@@ -13,6 +13,7 @@ const J = path => new URL(`../public/assets/js/${path}`, import.meta.url).pathna
 const { createApi } = await import(J('api.js'));
 const { createApp } = await import(J('app.js'));
 const { joinForm } = await import(J('views/join.js'));
+const { layoutSection } = await import(J('views/settings-layout.js'));
 
 // ---------------------------------------------------------------- minimal fake DOM and app harness
 
@@ -318,6 +319,98 @@ test('every Settings section renders the same markup in every layout', async () 
     assert.equal(seen.a.markup, seen.original.markup, `${section} in A`);
     assert.equal(seen.c.markup, seen.original.markup, `${section} in C`);
   }
+});
+
+
+// ---------------------------------------------------------------- Settings > Layout cards
+
+/** Splits at top-level (outside parentheses and brackets) on any character for which isSep is true. */
+function splitTop(text, isSep) {
+  const parts = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if ('([' .includes(text[i])) depth++;
+    else if (')]'.includes(text[i])) depth--;
+    else if (depth === 0 && isSep(text[i])) { parts.push(text.slice(start, i)); start = i + 1; }
+  }
+  parts.push(text.slice(start));
+  return parts.map(part => part.trim()).filter(Boolean);
+}
+
+/** True when one compound selector (no combinators) matches the described element. Dynamic pseudo-classes count as matching. */
+function compoundMatches(node, compound) {
+  let rest = compound;
+  const tag = /^[a-z][a-z0-9]*/i.exec(rest);
+  if (tag) { if (node.tag !== tag[0].toLowerCase()) return false; rest = rest.slice(tag[0].length); }
+  while (rest) {
+    let m;
+    if ((m = /^\.([\w-]+)/.exec(rest))) { if (!node.classes.has(m[1])) return false; }
+    else if ((m = /^\[([\w-]+)(?:="([^"]*)")?\]/.exec(rest))) { if (m[2] === undefined ? !node.attrs.has(m[1]) : node.attrs.get(m[1]) !== m[2]) return false; }
+    else if ((m = /^\*/.exec(rest))) { /* universal */ }
+    else if ((m = /^::[\w-]+/.exec(rest))) return false;
+    else if ((m = /^:(is|where|not)\(/.exec(rest))) {
+      let depth = 1, end = m[0].length;
+      while (depth > 0 && end < rest.length) depth += rest[end] === '(' ? 1 : rest[end] === ')' ? -1 : 0, end++;
+      const any = splitTop(rest.slice(m[0].length, end - 1), c => c === ',').some(alt => compoundMatches(node, alt));
+      if (m[1] === 'not' ? any : !any) return false;
+      m = [rest.slice(0, end)];
+    }
+    else if ((m = /^:[\w-]+/.exec(rest))) { /* :hover, :focus-visible, :disabled, :last-child ... */ }
+    else throw new Error('selector part not understood: ' + rest);
+    rest = rest.slice(m[0].length);
+  }
+  return true;
+}
+
+/** Descendant-combinator match of a selector against an element and its ancestor chain, nearest ancestor last. A child combinator is read as a descendant one, which can only over-report. */
+function selectorReaches(selector, element, ancestors) {
+  const compounds = splitTop(selector, c => /[\s>]/.test(c));
+  if (!compoundMatches(element, compounds.pop())) return false;
+  let at = ancestors.length - 1;
+  while (compounds.length) {
+    const compound = compounds.pop();
+    while (at >= 0 && !compoundMatches(ancestors[at], compound)) at--;
+    if (at-- < 0) return false;
+  }
+  return true;
+}
+
+const describeNode = (tag, classes, attrs = {}) => ({ tag, classes: new Set(classes.split(' ').filter(Boolean)), attrs: new Map(Object.entries(attrs)) });
+
+test('the selector matcher finds an unguarded button rule and passes a guarded one', () => {
+  const card = describeNode('button', 'btn btn-primary place-main layout-option', { 'aria-pressed': 'true' });
+  const chain = [describeNode('html', '', { 'data-layout': 'a' }), describeNode('main', 'settings')];
+  assert.ok(selectorReaches('html[data-layout="a"] :is(.search-page, .settings) .btn-primary', card, chain));
+  assert.ok(selectorReaches('html[data-layout="a"] .settings .btn:hover', card, chain));
+  assert.ok(selectorReaches('html[data-layout="a"] .settings :focus-visible', card, chain));
+  assert.ok(!selectorReaches('html[data-layout="a"] .settings .btn-primary:where(:not(.layout-option))', card, chain));
+  assert.ok(!selectorReaches('html[data-layout="c"] .settings .btn-primary', card, chain));
+  assert.ok(!selectorReaches('html[data-layout="a"] .dialog .btn-primary', card, chain));
+  assert.ok(!selectorReaches('html[data-layout="a"] .settings .btn::before', card, chain));
+});
+
+test('other.css has no rule that matches the Settings > Layout option cards, so layout.css styles them alone', () => {
+  const cards = [];
+  globalThis.document = new FakeDocument();
+  for (const active of ['original', 'a', 'c']) {
+    const section = layoutSection({ state: { layout: active, layoutSaving: false, layoutError: null, phase: 'ready' }, changeLayout() {} });
+    cards.push(...all(section, e => e.tag === 'button' && e.hasClass('layout-option')));
+  }
+  assert.equal(cards.length, 9);
+  assert.ok(cards.some(card => card.getAttribute('aria-pressed') === 'true') && cards.some(card => card.getAttribute('aria-pressed') === 'false'));
+  const offenders = new Set();
+  for (const layout of THEMED) {
+    const chain = [
+      describeNode('html', '', { 'data-layout': layout }), describeNode('body', ''), describeNode('main', 'settings'),
+      describeNode('div', 'settings-layout'), describeNode('div', 'settings-body'),
+      describeNode('section', 'settings-section theme-layout-settings'), describeNode('div', 'layout-options switch-list', { role: 'group' })
+    ];
+    for (const card of cards) {
+      const node = describeNode('button', card.getAttribute('class'), { type: 'button', 'aria-pressed': card.getAttribute('aria-pressed'), 'data-layout-option': card.getAttribute('data-layout-option') });
+      for (const rule of otherRules) if (rule.layout === layout && selectorReaches(rule.selector, node, chain)) offenders.add(rule.selector);
+    }
+  }
+  assert.deepEqual([...offenders], []);
 });
 
 // ---------------------------------------------------------------- stylesheet coverage

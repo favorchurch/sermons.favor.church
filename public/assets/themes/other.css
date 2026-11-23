@@ -23,8 +23,8 @@ html[data-layout="c"] {
   --o-neutral-text: #47594b;
   --o-display: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif;
 }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) :focus-visible,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) :focus-visible { outline: 2.5px solid var(--o-focus); outline-offset: 2px; border-radius: 6px; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) :where(:not(.layout-option)):focus-visible,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) :where(:not(.layout-option)):focus-visible { outline: 2.5px solid var(--o-focus); outline-offset: 2px; border-radius: 6px; }
 
 html[data-layout="a"] .search-page h1,
 html[data-layout="c"] .search-page h1,
@@ -51,8 +51,8 @@ html[data-layout="c"] .search-sub {
   line-height: 1.5;
 }
 
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn {
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)),
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)) {
   min-height: 44px;
   padding: 0 18px;
   border: 1px solid var(--o-edge);
@@ -64,22 +64,22 @@ html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state)
   line-height: 1;
   transition: background-color .15s ease, border-color .15s ease;
 }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:hover { background: var(--o-subtle); border-color: var(--o-ink2); transform: none; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:not(.btn-primary):not(.btn-danger):active,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:not(.btn-primary):not(.btn-danger):active { background: var(--o-hover); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:disabled,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:disabled { opacity: .55; cursor: not-allowed; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary { background: var(--theme-accent); border-color: var(--theme-accent); color: var(--theme-accent-text); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:hover { background: var(--theme-accent-strong); border-color: var(--theme-accent-strong); }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger { background: var(--o-bad-text); border-color: var(--o-bad-text); color: #fff; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:hover,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:hover { background: #7f2121; border-color: #7f2121; }
-html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet,
-html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet { border-color: transparent; background: transparent; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):hover { background: var(--o-subtle); border-color: var(--o-ink2); transform: none; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):not(.btn-primary):not(.btn-danger):active,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):not(.btn-primary):not(.btn-danger):active { background: var(--o-hover); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):disabled,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn:where(:not(.layout-option)):disabled { opacity: .55; cursor: not-allowed; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)),
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)) { background: var(--theme-accent); border-color: var(--theme-accent); color: var(--theme-accent-text); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)):hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-primary:where(:not(.layout-option)):hover { background: var(--theme-accent-strong); border-color: var(--theme-accent-strong); }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)),
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)) { background: var(--o-bad-text); border-color: var(--o-bad-text); color: #fff; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)):hover,
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-danger:where(:not(.layout-option)):hover { background: #7f2121; border-color: #7f2121; }
+html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet:where(:not(.layout-option)),
+html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form, .state) .btn-quiet:where(:not(.layout-option)) { border-color: transparent; background: transparent; }
 
 html[data-layout="a"] :is(.search-page, .settings, .dialog, .state-form) .field label,
 html[data-layout="c"] :is(.search-page, .settings, .dialog, .state-form) .field label { font-size: 14px; font-weight: 600; color: var(--theme-text); }
