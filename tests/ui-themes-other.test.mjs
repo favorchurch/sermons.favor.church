@@ -442,6 +442,27 @@ test('the narrow-screen Settings rules do not restyle the outer nav wrapper that
   } finally { f.db.close(); }
 });
 
+test('at phone width the abilities caption is a full-width block, not a shrink-to-fit table-caption', () => {
+  const start = otherCss.indexOf('@media (max-width: 720px)');
+  assert.ok(start >= 0, 'the 720px block exists');
+  const open = otherCss.indexOf('{', start);
+  let depth = 0, end = open;
+  for (let i = open; i < otherCss.length; i++) {
+    if (otherCss[i] === '{') depth++;
+    else if (otherCss[i] === '}' && --depth === 0) { end = i; break; }
+  }
+  const block = otherCss.slice(open + 1, end);
+  for (const layout of THEMED) {
+    const rule = [...block.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .find(([, prelude]) => prelude.split(',').some(s => s.trim() === `html[data-layout="${layout}"] .settings .abilities caption`));
+    assert.ok(rule, `layout ${layout} has a 720px rule for the abilities caption`);
+    assert.match(rule[2], /display:\s*block/);
+    assert.match(rule[2], /width:\s*100%/);
+  }
+  // app.css makes the table a block at this width, which is why the caption needs the override.
+  assert.match(appCss, /\.sermon-table, \.sermon-table tbody[^{]*\{[^}]*display:\s*block/);
+});
+
 /** Classes the pages render that app.css styles and that look the same in a layout, so other.css need not restyle them. */
 const SHARED_LOOK = new Set([
   'panel-body', 'section-actions', 'settings-body', // spacing and min-width only

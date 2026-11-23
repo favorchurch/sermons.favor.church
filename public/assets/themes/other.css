@@ -371,6 +371,11 @@ html[data-layout="c"] .settings .field input[type="file"] { height: auto; paddin
   html[data-layout="a"] .settings .sermon-table :is(th, td),
 html[data-layout="c"] .settings .sermon-table :is(th, td) { padding: 12px 16px; border-bottom: 1px solid var(--o-rule2); }
 }
+@media (max-width: 720px) {
+  /* app.css turns .sermon-table into a block here, which wraps a table-caption in a shrink-to-fit anonymous table. */
+  html[data-layout="a"] .settings .abilities caption,
+html[data-layout="c"] .settings .abilities caption { display: block; width: 100%; }
+}
 @media (max-width: 900px) {
   html[data-layout="a"] .settings-layout,
 html[data-layout="c"] .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
