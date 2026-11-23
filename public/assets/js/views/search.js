@@ -7,6 +7,10 @@ import { SCOPES, notesHref } from '../router.js';
 import { highlightParts, matchedOn, shapeSearch, noteReason, truncated, VERSION_STATUS } from '../search-model.js';
 import { SOURCE_LABELS, plural } from '../format.js';
 
+// Layouts A and C add a subtitle and a small open-book illustration (SVG art only). Original renders exactly as before.
+const themed = () => ['a', 'c'].includes(globalThis.document?.documentElement?.getAttribute?.('data-layout'));
+const OPEN_BOOKS_ART = "data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' width='76' height='52' viewBox='0 0 76 52'%3E%3Cpath d='M12 14c0-2.2 1.8-4 4-4h18c2.2 0 4 1.8 4 4v26c0-1.6-1.4-3-3-3H14a2 2 0 0 1-2-2V14z' fill='%23e9f1e7' stroke='%23476b51' stroke-width='1.5'/%3E%3Cpath d='M64 14c0-2.2-1.8-4-4-4H42c-2.2 0-4 1.8-4 4v26c0-1.6 1.4-3 3-3h21a2 2 0 0 0 2-2V14z' fill='%23ffffff' stroke='%23476b51' stroke-width='1.5'/%3E%3Cpath d='M46 10h4v12l-2-1.8-2 1.8z' fill='%23c8a45c'/%3E%3Cpath d='M18 19h12M18 24h10M18 29h8' stroke='%23476b51' stroke-width='1.4' stroke-linecap='round' opacity='.55'/%3E%3Cpath d='M46 25h11M46 30h9' stroke='%235a6b5e' stroke-width='1.4' stroke-linecap='round' opacity='.45'/%3E%3Crect x='6' y='43' width='64' height='3.5' rx='1.75' fill='%23c9b7a0'/%3E%3C/svg%3E";
+
 /** Excerpt text with matches wrapped in <mark>. Text goes in as text nodes only. */
 export function excerptNode(excerpt) {
   return h('p', { class: 'excerpt' }, ...highlightParts(excerpt?.text, excerpt?.highlights)
@@ -63,13 +67,20 @@ export function searchPage(ctx) {
     h('div', { class: 'search-options' }, scopes,
       h('label', { class: 'check', for: 'search-archived' }, archived, ' Include archived sermons')));
 
+  const isThemed = themed();
   const body = route.q
     ? resultsView(shapeSearch({ scope: route.scope, quick: ctx.quick, deep: ctx.deep, q: route.q }), route, ctx)
-    : h('p', { class: 'muted' }, 'Searches sermon titles, series, Scripture, tags and the text of indexed notes. Titles, series, Scripture and tags match every word you type. Notes match the words as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.');
+    : idleCopy(isThemed);
   return h('section', { class: 'search-page', 'aria-labelledby': 'page-title' },
     h('h1', { id: 'page-title', tabindex: '-1' }, 'Search'),
+    isThemed ? h('p', { class: 'search-sub' }, 'Find sermons by Scripture passage metadata or inside indexed notes.') : null,
     form,
     h('div', { class: 'search-results', id: 'search-results' }, body));
+}
+
+function idleCopy(isThemed) {
+  const copy = h('p', { class: 'muted' }, 'Searches sermon titles, series, Scripture, tags and the text of indexed notes. Titles, series, Scripture and tags match every word you type. Notes match the words as a phrase, in order. Notes only appear once an Owner has allowed them to be searched.');
+  return isThemed ? [h('img', { class: 'search-art', src: OPEN_BOOKS_ART, alt: '', width: 76, height: 52 }), copy] : copy;
 }
 
 /** A result group: its own pending line, error with Try again, or its items. */
