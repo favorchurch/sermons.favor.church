@@ -15,7 +15,7 @@ export function layoutSection({ state, changeLayout }) {
     h('div', { class: 'layout-options switch-list', role: 'group', 'aria-label': 'Layout' },
       ...LAYOUTS.map(value => h('button', {
         type: 'button',
-        class: state.layout === value ? 'btn btn-primary layout-option' : 'btn layout-option',
+        class: state.layout === value ? 'btn btn-primary place-main layout-option' : 'btn place-main layout-option',
         'data-layout-option': value,
         'aria-pressed': String(state.layout === value),
         disabled: Boolean(state.layoutSaving),
