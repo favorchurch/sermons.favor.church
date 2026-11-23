@@ -12,6 +12,9 @@ const root = resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 const mime = { '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 const LAYOUTS = ['a', 'c', 'original'];
+// The loading fixture holds the library list until the browser leaves or this long passes. It must outlast any
+// capture step (navigation, settle waits, retries), so the loading screen is still up when a screenshot is taken.
+export const LOADING_HOLD_MS = 600000;
 const FIXTURES = ['default', 'empty', 'error', 'loading', 'no-workspace'];
 const FIXTURE_COOKIE = 'sb_preview';
 const LAYOUT_COOKIE = 'sb_layout';
@@ -45,7 +48,7 @@ function readCookie(header, name) {
 }
 
 export async function createPreviewServer(options = {}) {
-  const settings = { port: 4181, signedOut: false, layout: 'a', empty: false, loadingDelayMs: 20000, ...options };
+  const settings = { port: 4181, signedOut: false, layout: 'a', empty: false, loadingDelayMs: LOADING_HOLD_MS, ...options };
   const origin = 'https://preview.example.test';
 
   async function openFixture(store) {
@@ -158,7 +161,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const { server, db } = await createPreviewServer(options);
     server.on('close', () => db.close());
     server.listen(options.port, '127.0.0.1', () => console.log(`Theme preview at http://127.0.0.1:${options.port}/ (${options.signedOut ? 'signed out' : 'preview owner'}, layout ${options.layout}${options.empty ? ', empty' : ''})`));
-    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close());
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+      server.close();
+      server.closeAllConnections(); // a held loading request would otherwise keep the server open
+    });
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Unable to start theme preview');
     process.exitCode = 1;
