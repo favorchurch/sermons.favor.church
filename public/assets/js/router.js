@@ -12,7 +12,7 @@ export const VIEW_LABELS = { covers: 'Covers', rows: 'Quick rows', table: 'Table
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 export const SCOPES = [['everything', 'Everything'], ['bible', 'Bible verses'], ['notes', 'Inside notes']];
 export const SETTINGS_SECTIONS = [
-  ['places', 'Places'], ['people', 'People & Access'], ['import', 'Import Review'], ['docs', 'Docs & Privacy'], ['workspace', 'Workspace']
+  ['places', 'Places'], ['people', 'People & Access'], ['import', 'Import Review'], ['docs', 'Docs & Privacy'], ['workspace', 'Workspace'], ['layout', 'Layout']
 ];
 export const MAX_QUERY = 200;
 export const isUuid = value => typeof value === 'string' && UUID.test(value);

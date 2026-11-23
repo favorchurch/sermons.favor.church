@@ -3,6 +3,7 @@
 // storage, clock) is injected so the whole flow can run under a fake DOM in tests.
 import { h, mount, rememberFocus, restoreFocus } from './dom.js';
 import { ApiError, describeError } from './api.js';
+import { applyLayout, isLayout, LAYOUT_LABELS, readLayoutCookie } from './layout.js';
 import { createLibraryClient } from './data.js';
 import { parseRoute, hrefFor, sermonHref, notesHref, cleanQuery } from './router.js';
 import { summarise } from './library-model.js';
@@ -20,9 +21,10 @@ import { newDraftDialog, newWorkspaceDialog, editSermonDialog, logPreachingDialo
 
 const WORKSPACE_KEY = 'sermon-bank.workspace';
 
-export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate }) {
+export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash, setHash, storage, today, navigate, initialLayout }) {
+  const bootLayout = isLayout(initialLayout) ? initialLayout : readLayoutCookie();
   const state = {
-    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null,
+    phase: 'boot', account: null, workspaces: [], workspaceId: null, role: null, layout: bootLayout, layoutSaving: false, layoutError: null,
     items: [], events: [], index: indexEvents([]), query: '', archive: 'active', sort: 'recent', error: null
   };
   let client = null;
@@ -63,7 +65,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   function renderHeader() {
-    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
+    mount(headerRoot, header({ state, route: parseRoute(getHash()), switchWorkspace, newWorkspace, signOut, changeLayout, search: q => runSearch({ q, scope: 'everything', archived: false }) }));
   }
 
   async function signOut() {
@@ -98,6 +100,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
   }
 
   async function start() {
+    applyLayout(state.layout);
     renderHeader();
     render();
     let me, list;
@@ -105,11 +108,48 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       [me, list] = await Promise.all([api.get('/api/me'), api.get('/api/workspaces')]);
     } catch (error) { return fail(error, start); }
     state.account = me.account;
+    state.layout = isLayout(me.account?.layout) ? me.account.layout : 'original';
+    applyLayout(state.layout);
     state.workspaces = list.workspaces || [];
     if (!state.workspaces.length) { state.phase = 'no-workspace'; renderHeader(); render(); return; }
     const saved = storage.get(WORKSPACE_KEY);
     state.workspaceId = (state.workspaces.find(w => w.id === saved) || state.workspaces[0]).id;
     await loadWorkspace();
+  }
+
+  async function changeLayout(layout, source = null) {
+    if (!state.account || state.phase === 'signedout' || !isLayout(layout) || layout === state.layout || state.layoutSaving) return;
+    const active = document.activeElement;
+    const origin = source ?? (
+      active?.getAttribute?.('data-layout-option') ? 'settings'
+        : active?.getAttribute?.('data-mobile-layout') ? 'mobile-menu'
+          : active?.getAttribute?.('data-quick-layout') ? 'header' : null
+    );
+    const previous = state.layout;
+    state.layout = layout;
+    state.layoutSaving = true;
+    state.layoutError = null;
+    applyLayout(layout);
+    renderHeader();
+    render();
+    try {
+      const result = await api.patch('/api/me', { layout });
+      state.layout = isLayout(result?.account?.layout) ? result.account.layout : layout;
+      applyLayout(state.layout);
+      announce(`Layout changed to ${LAYOUT_LABELS[state.layout]}.`);
+    } catch (error) {
+      state.layout = previous;
+      state.layoutError = error;
+      applyLayout(previous);
+      toast(describeError(error));
+    } finally {
+      state.layoutSaving = false;
+      renderHeader();
+      render();
+      if (origin === 'settings') root.querySelector(`[data-layout-option="${state.layout}"]`)?.focus();
+      else if (origin === 'mobile-menu') (headerRoot.querySelector('[data-test="account-menu"]') || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
+      else if (origin === 'header') (headerRoot.querySelector(`[data-quick-layout="${state.layout}"]`) || root.querySelector('#sermon-title') || root.querySelector('#page-title') || root)?.focus();
+    }
   }
 
   function switchWorkspace(id) {
@@ -316,19 +356,21 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
       h('h2', null, 'You don’t have a workspace yet'),
       h('p', null, 'Create your own private workspace, or use the invitation code an owner gave you.'),
       form,
-      joinForm({ join: joinWithCode }));
+      joinForm({ join: joinWithCode }),
+      h('a', { href: hrefFor({ name: 'settings', section: 'layout' }) }, 'Layout settings'));
   }
 
   function readyView(route) {
     // A result is only kept while its page is open, so coming back always shows what the server holds now.
     if (route.name !== 'search') search = null;
     if (!(route.name === 'sermon' && route.tab === 'notes')) notes = null;
+    if (!(route.name === 'settings' && route.section === 'layout')) state.layoutError = null;
     if (route.name === 'sermon') return sermonView(route);
     detail = null;
     if (route.name === 'search') return searchView(route);
     if (route.name === 'settings') {
       document.title = 'Settings · Sermon Bank';
-      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode });
+      return settingsPage({ route, state, client, toast, setHash: href => visit(href, () => {}), refreshLibrary, switchWorkspace, join: joinWithCode, changeLayout });
     }
     if (route.name !== 'library') {
       return emptyState({
@@ -370,7 +412,7 @@ export function createApp({ api, root, headerRoot, announcer, toastRoot, getHash
         title: 'The library could not be loaded', body: describeError(state.error?.error),
         actions: [h('button', { type: 'button', class: 'btn btn-primary', onclick: () => (state.error?.retry || start)() }, 'Try again')]
       });
-    } else if (state.phase === 'no-workspace') view = noWorkspaceView();
+    } else if (state.phase === 'no-workspace' && !(route.name === 'settings' && route.section === 'layout')) view = noWorkspaceView();
     else view = readyView(route);
     loadingShown = loadingNext;
 
