@@ -60,6 +60,15 @@ Sections are shown by role. A hidden section that is opened by address says it i
 | Docs & Privacy | everyone (controls by role) | Pick a sermon, see each version's state. Editors and above upload a PDF (checked locally for type and 10 MB, the server decides) or add a PDF version in one step. Owners consent (confirmation) and revoke (final, deletes the text). Download shows while a file exists and access is not revoked. |
 | Workspace | everyone | Workspace name, your role, counts, what each role can do, and switching workspaces. |
 
+### Saved view choices
+
+`public/assets/js/prefs.js` remembers the layout, Library view, sort, Active/Archived, series filter, search scope and workspace. It keeps them in two places:
+
+- **localStorage** (`sb_prefs`): read synchronously at boot, so the saved layout and Library view apply before the first paint. Offline the saved layout still applies, but the library list itself needs the server.
+- **The account** (`PATCH /api/me`, see [auth handoff](auth-handoff.md)): once `/api/me` answers, the account's choices win over localStorage, except for keys changed locally and not yet sent.
+
+A change applies at once, is written to localStorage, and is sent to the account. If the write fails (offline), the key stays pending and is sent on the browser's `online` event or on the next load. Opening `#/library` without a view uses the saved Library view. An explicit view in the address wins for that visit and becomes the saved choice. Signed out, or with localStorage unavailable or holding bad JSON, the app falls back to the defaults (layout `a`, Covers).
+
 ### API addition
 
 `GET /api/workspaces/:id/members` (Owner and Admin, `403` for Editor and Viewer, `404` outside the workspace) returns `{"members":[{"account_id","display_name","email","role","accepted_at"}]}` for every accepted, unrevoked member (no row cap), Owner first. It is the read side of the existing `PATCH /members/:accountUuid`. Pending invitations are not listed.
