@@ -21,7 +21,7 @@ export async function fixture() {
   const db = new DatabaseMock();
   const accounts = [['owner', 'owner@example.test'], ['admin', 'admin@example.test'], ['editor', 'editor@example.test'],
     ['viewer', 'viewer@example.test'], ['outsider', 'outsider@example.test'], ['owner2', 'owner2@example.test']];
-  for (const [key, email] of accounts) db.execute('INSERT INTO user_accounts(id,email_normalized,display_name) VALUES (?,?,?)', [ids[key], email, key]);
+  for (const [key, email] of accounts) db.execute("INSERT INTO user_accounts(id,email_normalized,display_name,layout_theme) VALUES (?,?,?,'original')", [ids[key], email, key]);
   db.execute('INSERT INTO workspaces(id,name,owner_account_id) VALUES (?,?,?),(?,?,?)', [ids.w1, 'Private Alpha', ids.owner, ids.w2, 'Private Beta', ids.owner2]);
   for (const [w, key, role] of [[ids.w1, 'owner', 'owner'], [ids.w1, 'admin', 'admin'], [ids.w1, 'editor', 'editor'], [ids.w1, 'viewer', 'viewer'], [ids.w2, 'owner2', 'owner']]) {
     db.execute('INSERT INTO workspace_memberships(workspace_id,account_id,role,accepted_at) VALUES (?,?,?,CURRENT_TIMESTAMP)', [w, ids[key], role]);

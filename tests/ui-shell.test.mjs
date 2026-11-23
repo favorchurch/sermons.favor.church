@@ -103,7 +103,7 @@ const textOf = node => node?.textContent ?? '';
 
 // ---------------------------------------------------------------- Worker gating
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 function withAssets(env) {
   const calls = [];
   env.ASSETS = {
@@ -118,11 +118,26 @@ function withAssets(env) {
   return calls;
 }
 
+test('signed-out visitors can fetch only the two self-hosted fonts', async () => {
+  const f = await fixture();
+  try {
+    const calls = withAssets(f.env);
+    for (const path of ['/assets/fonts/inter-latin.woff2', '/assets/fonts/plus-jakarta-sans-latin.woff2']) {
+      const font = await f.call('GET', path, null);
+      assert.equal(font.status, 200);
+      assert.equal(font.headers.get('content-type'), 'font/woff2');
+      assert.ok(font.text.length > 0);
+    }
+    for (const path of ['/assets/fonts/unknown.woff2', '/assets/js/main.js']) assert.equal((await f.call('GET', path, null)).status, 404);
+    assert.deepEqual(calls, ['/assets/fonts/inter-latin.woff2', '/assets/fonts/plus-jakarta-sans-latin.woff2']);
+  } finally { f.db.close(); }
+});
+
 test('signed-out visitors get the sign-in page and the app shell is never fetched', async () => {
   const f = await fixture();
   try {
     const calls = withAssets(f.env);
-    const res = await f.call('GET', '/', null);
+    const res = await f.call('GET', '/', null, undefined, { cookie: 'sb_layout=original' });
     assert.equal(res.status, 200);
     assert.match(res.text, /Continue with Google/);
     assert.ok(!res.text.includes('/assets/'), 'sign-in page must not reference app assets');
@@ -151,9 +166,7 @@ test('signed-in users get a static shell with no data in it and a strict CSP', a
       assert.ok(!res.text.includes(secret), `shell leaks ${secret}`);
     }
     const csp = res.headers.get('content-security-policy');
-    assert.match(csp, /script-src 'self'/);
-    assert.match(csp, /default-src 'none'/);
-    assert.match(csp, /frame-ancestors 'none'/);
+    assert.equal(csp, "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
     assert.ok(!/unsafe-inline|unsafe-eval/.test(csp));
     assert.equal(res.headers.get('cache-control'), 'private, no-cache');
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
@@ -343,7 +356,7 @@ test('signed-out visitors get the icon inline, /favicon.ico, and no other asset'
   const f = await fixture();
   try {
     const calls = withAssets(f.env);
-    const page = await f.call('GET', '/', null);
+    const page = await f.call('GET', '/', null, undefined, { cookie: 'sb_layout=original' });
     assert.equal(page.status, 200);
     assert.ok(!page.text.includes('/assets/'));
     const icon = page.text.match(/<link rel="icon" href="data:image\/svg\+xml,([^"]+)" type="image\/svg\+xml">/);
@@ -369,10 +382,10 @@ test('signed-out visitors get the icon inline, /favicon.ico, and no other asset'
   } finally { f.db.close(); }
 });
 
-test('sign-in page is variant A: name, one sentence, the Google button and one note, nothing else', async () => {
+test('Original sign-in page retains its name, copy and single-column structure', async () => {
   const f = await fixture();
   try {
-    const page = await f.call('GET', '/', null);
+    const page = await f.call('GET', '/', null, undefined, { cookie: 'sb_layout=original' });
     assert.equal(page.status, 200);
     const main = page.text.match(/<main>([\s\S]*)<\/main>/)[1];
     assert.match(page.text, /<title>Sermon Bank<\/title>/);
@@ -480,6 +493,10 @@ test('public/ is static, self-contained and free of unsafe patterns', () => {
     const text = read(file);
     const rel = file.slice(publicDir.length);
     assert.ok(!/favor/i.test(text), `${rel} must not carry Favor branding`);
+    if (file.endsWith('.txt')) {
+      assert.match(text, /SIL OPEN FONT LICENSE Version 1\.1/, `${rel} preserves its font license`);
+      continue;
+    }
     if (file.endsWith('.js')) {
       assert.ok(!/\.(innerHTML|outerHTML)\b|insertAdjacentHTML|document\.write|\beval\(|new Function\(/.test(text), `${rel} uses an HTML or code injection sink`);
       assert.ok(!/setAttribute\(\s*['"]style['"]/.test(text), `${rel} sets a style attribute (blocked by CSP)`);
