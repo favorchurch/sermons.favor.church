@@ -3,8 +3,9 @@
 **Status:** Requirements baseline v1.0 — 10 executive decisions locked; Phase B visual direction approved (C-neutral); Phase C UX contract drafted for review  
 **Prepared:** 10 November 2026  
 **Product URL (proposed):** `https://sermons.favor.church`  
-**Source repository:** `favorchurch/sermons.favor.church` (public; requirements developed on a non-default branch)  
+**Source repository:** `favorchurch/sermons.favor.church` (public)  
 **Operator / open-source publisher:** Favor Church  
+**Note (added when landed on main, 26 Nov 2026):** this is the 10 November requirements baseline. Implementation has since started and differs in places (the pilot uses Google-only sign-in, see `docs/auth-handoff.md` and `docs/pilot.md`); the Phase C contract lives in `docs/prototypes/sermon-bank/PHASE-C-CONTRACT.md`.  
 **Launch sequence:** (A) requirements and decisions → (B) interactive prototypes → (C) flow refinements and approval → implementation → private pilot → wider release.
 
 ## 1. Product vision
