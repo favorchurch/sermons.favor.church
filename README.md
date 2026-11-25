@@ -4,7 +4,7 @@ An open-source, private-by-default sermon archive for pastors and their teams.
 
 **Status:** Greenfield pilot. Production pilot at https://sermons.favor.church (invite-only); staging at https://sermons-preview.favor.church. Implemented and tested in this repository: Google sign-in with invite-only access and roles, the Living Library app (library, calendar, sermon detail, search and Find in notes, places, people and access, import review, private PDFs with Owner consent and revoke), and a seed and QA script for staging. Not built: Google Doc ingest, email delivery. To review it, start at the [pilot guide](docs/pilot.md). Contracts: [auth handoff](docs/auth-handoff.md), [library API](docs/library-api.md), [search](docs/search.md), [PDF sources](docs/sources.md), [UI](docs/ui.md), [import review](docs/import-review.md).
 
-- Product decisions: [PRD draft #1](https://github.com/favorchurch/sermons.favor.church/pull/1)
+- Product decisions: [PRD v1.0](docs/PRD.md)
 - Selected UX: [Living Library + Chronicle draft #4](https://github.com/favorchurch/sermons.favor.church/pull/4)
 - Engineering work: [issue #5](https://github.com/favorchurch/sermons.favor.church/issues/5)
 

@@ -26,7 +26,7 @@ The mock tested create/edit draft, add document version, consent, repeat preachi
 - **[Static desktop reference](selected-workspace.svg)** — fictional sample data, neutral color and layout.
 - [Exploration archive — A/B/C](explorations.html) — historic comparison only; **not** the implementation target.
 - [Canonical design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2) — approvals, constraints and remaining refinements.
-- [Product requirements (draft PR #1)](https://github.com/favorchurch/sermons.favor.church/pull/1).
+- [Product requirements (PRD v1.0)](../../PRD.md).
 
 ## Former C-neutral visual direction (superseded)
 
@@ -86,7 +86,7 @@ Use the three top switches to compare:
 - The application **must not edit original Google Docs or overwrite original PDFs**, regardless of role.
 - Owner controls Admin delegation and permanent data deletion; Admin can invite Editors/Viewers; Editor maintains records; Viewer reads/searches only.
 - C-neutral was approved as the visual direction; capture Phase C refinements in [design issue #2](https://github.com/favorchurch/sermons.favor.church/issues/2).
-- Source requirements: [draft PRD #1](https://github.com/favorchurch/sermons.favor.church/pull/1).
+- Source requirements: [PRD v1.0](../../PRD.md).
 
 ## Before implementing
 
