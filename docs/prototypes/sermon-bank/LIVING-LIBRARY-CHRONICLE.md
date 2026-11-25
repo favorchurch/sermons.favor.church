@@ -48,4 +48,4 @@ Chromium execution test: **37 checks passed, zero failures**, covering A’s boo
 
 **Selected for further refinement:** A + the monthly calendar from B + notes-first Bible verse search. This is a user-directed update to the previously selected C-neutral UX. The direction was implemented via issue #5, and the stacked design PRs were landed after review. The predecessor prototypes are kept as history.
 
-Source of locked business/privacy decisions: [PRD #1](https://github.com/favorchurch/sermons.favor.church/pull/1). Existing canonical design issue: [#2](https://github.com/favorchurch/sermons.favor.church/issues/2).
+Source of locked business/privacy decisions: [PRD v1.0](../../PRD.md). Existing canonical design issue: [#2](https://github.com/favorchurch/sermons.favor.church/issues/2).
