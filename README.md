@@ -2,7 +2,7 @@
 
 An open-source, private-by-default sermon archive for pastors and their teams.
 
-**Status:** Greenfield pilot. Production pilot at https://sermons.favor.church (invite-only); staging at https://sermons-preview.favor.church. Implemented and tested in this repository: Google sign-in with invite-only access and roles, the Living Library app (library, calendar, sermon detail, search and Find in notes, places, people and access, import review, private PDFs with Owner consent and revoke), and a seed and QA script for staging. Not built: Google Doc ingest, email delivery. To review it, start at the [pilot guide](docs/pilot.md). Contracts: [auth handoff](docs/auth-handoff.md), [library API](docs/library-api.md), [search](docs/search.md), [PDF sources](docs/sources.md), [UI](docs/ui.md), [import review](docs/import-review.md).
+**Status:** Production at https://sermons.favor.church; staging at https://sermons-preview.favor.church. Current source supports Google sign-in and explicit workspace creation by any verified Google account, with private workspace membership and roles, the Living Library app (library, calendar, sermon detail, search and Find in notes, places, people and access, import review, private PDFs with Owner consent and revoke), and a seed and QA script for staging. Verify each environment's deployed version separately. Not built: Google Doc ingest, email delivery. To review it, start at the [pilot guide](docs/pilot.md). Contracts: [auth handoff](docs/auth-handoff.md), [library API](docs/library-api.md), [search](docs/search.md), [PDF sources](docs/sources.md), [UI](docs/ui.md), [import review](docs/import-review.md).
 
 - Product decisions: [PRD v1.0](docs/PRD.md)
 - Selected UX: [Living Library + Chronicle draft #4](https://github.com/favorchurch/sermons.favor.church/pull/4)
@@ -24,7 +24,7 @@ The top level of `wrangler.jsonc` deliberately contains a **non-deployable D1 da
 A private staging environment (`env.staging` in `wrangler.jsonc`, synthetic data only) exists for the pilot. Setup, secrets handling and deploy are in [docs/auth-handoff.md](docs/auth-handoff.md). Two scripts run against it (both need a logged-in `wrangler`, both refuse anything but staging):
 
 ```sh
-pnpm seed:staging --workspace "<archive name or id>" [--dry-run]   # fictional demo sermons, events, places and indexed notes
+pnpm seed:staging --workspace "<workspace name or id>" [--dry-run] # fictional demo sermons, events, places and indexed notes
 pnpm qa:staging                                                    # end-to-end auth, access and search-isolation checks
 ```
 
